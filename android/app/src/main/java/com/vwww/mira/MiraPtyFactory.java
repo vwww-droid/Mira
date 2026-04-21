@@ -20,6 +20,7 @@ public final class MiraPtyFactory {
         String tmp = bootstrap.getTmpDir().getAbsolutePath();
         String basePath = prefix + "/bin:/system/bin:/system/xbin";
         String path = toolbox == null ? basePath : toolbox.pathPrefix() + ":" + basePath;
+        String toolboxPath = toolbox == null ? "" : toolbox.pathPrefix();
         String[] args = new String[] {"sh"};
         String[] env = new String[] {
             "PREFIX=" + prefix,
@@ -30,9 +31,12 @@ public final class MiraPtyFactory {
             "COLORTERM=truecolor",
             "MIRA_SANDBOX=1",
             "MIRA_PREFIX=" + prefix,
-            "MIRA_PATH_PREFIX=" + (toolbox == null ? "" : toolbox.pathPrefix()),
-            "MIRA_TOOLBOX_BIN=" + (toolbox == null ? "" : toolbox.pathPrefix()),
+            "MIRA_PATH_PREFIX=" + toolboxPath,
+            "MIRA_TOOLBOX_BIN=" + toolboxPath,
             "MIRA_BUSYBOX=" + (toolbox == null ? "" : toolbox.busyboxPath()),
+            "MIRA_BUSYBOX_ABI=" + (toolbox == null ? "" : toolbox.busyboxAbi()),
+            "MIRA_BUSYBOX_ASSET=" + (toolbox == null ? "" : toolbox.busyboxAssetPath()),
+            "MIRA_TOOLBOX_MANIFEST=" + (toolbox == null ? "" : toolbox.manifestPath()),
             "SHELL=" + prefix + "/bin/sh",
             "MIRA_APP_PACKAGE=" + context.getPackageName(),
             "ENV=" + home + "/.profile"

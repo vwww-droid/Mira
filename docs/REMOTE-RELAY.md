@@ -172,4 +172,4 @@ cat /proc/self/mountinfo | head
 4. 不实现 apt(包管理器), AI Agent(智能体) 自动执行或服务端动态工具包下发。
 5. 本阶段不使用共享令牌, 默认依赖企业自部署服务端边界。后续企业认证可接账号, 证书或 HMAC。
 6. Local Terminal(本地终端) 模式里仍有本地 WebView 专用的一次性 token, 该 token 不参与远程 Relay 协议。
-7. BusyBox 当前只内置 arm64-v8a 版本, 其他 ABI 后续按需补齐。
+7. BusyBox 当前内置 arm64-v8a, armeabi-v7a, x86 和 x86_64 四个 ABI 版本, 但不提供 apt 或动态工具包下发。

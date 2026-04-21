@@ -7,96 +7,45 @@ import android.system.ErrnoException;
 import android.system.Os;
 import android.util.Log;
 
+import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 public final class MiraToolbox implements Closeable {
     private static final String TAG = "MiraToolbox";
     private static final String ASSET_ROOT = "toolbox/busybox";
-
-    private static final String[] APPLETS = new String[] {
-        "awk",
-        "base64",
-        "basename",
-        "cat",
-        "chmod",
-        "chown",
-        "cksum",
-        "clear",
-        "cmp",
-        "cp",
-        "cut",
-        "date",
-        "df",
-        "dirname",
-        "dmesg",
-        "du",
-        "env",
-        "find",
-        "free",
-        "grep",
-        "head",
-        "hexdump",
-        "id",
-        "less",
-        "ln",
-        "ls",
-        "md5sum",
-        "mkdir",
-        "mount",
-        "mv",
-        "nc",
-        "netstat",
-        "od",
-        "pgrep",
-        "pidof",
-        "ping",
-        "printenv",
-        "printf",
-        "ps",
-        "pwd",
-        "readlink",
-        "realpath",
-        "rm",
-        "rmdir",
-        "sed",
-        "seq",
-        "sha1sum",
-        "sha256sum",
-        "sleep",
-        "sort",
-        "stat",
-        "strings",
-        "tail",
-        "tar",
-        "tee",
-        "test",
-        "top",
-        "touch",
-        "tr",
-        "uname",
-        "uniq",
-        "vi",
-        "watch",
-        "wc",
-        "wget",
-        "which",
-        "whoami",
-        "xargs"
-    };
+    private static final String APPLETS_ASSET = "toolbox/applets.txt";
+    private static final String MANIFEST_ASSET = "toolbox/manifest.json";
 
     private final File sessionDir;
     private final File binDir;
     private final File busyboxFile;
+    private final File manifestFile;
+    private final String busyboxAbi;
+    private final String busyboxAssetPath;
 
-    private MiraToolbox(File sessionDir, File binDir, File busyboxFile) {
+    private MiraToolbox(
+        File sessionDir,
+        File binDir,
+        File busyboxFile,
+        File manifestFile,
+        String busyboxAbi,
+        String busyboxAssetPath
+    ) {
         this.sessionDir = sessionDir;
         this.binDir = binDir;
         this.busyboxFile = busyboxFile;
+        this.manifestFile = manifestFile;
+        this.busyboxAbi = busyboxAbi;
+        this.busyboxAssetPath = busyboxAssetPath;
     }
 
     public static MiraToolbox prepare(Context context, String sessionId) throws IOException {
@@ -107,14 +56,17 @@ public final class MiraToolbox implements Closeable {
         File binDir = new File(sessionRoot, "bin");
         mkdir(binDir);
 
-        String assetPath = selectBusyBoxAsset(appContext.getAssets());
+        BusyBoxAsset asset = selectBusyBoxAsset(appContext.getAssets());
         File busyboxFile = new File(binDir, "busybox");
-        copyAsset(appContext.getAssets(), assetPath, busyboxFile);
+        copyAsset(appContext.getAssets(), asset.assetPath, busyboxFile);
         chmodExecutable(busyboxFile);
-        installApplets(busyboxFile, binDir);
+        installApplets(busyboxFile, binDir, loadApplets(appContext.getAssets()));
 
-        Log.i(TAG, "Prepared session toolbox " + assetPath + " -> " + binDir.getAbsolutePath());
-        return new MiraToolbox(sessionRoot, binDir, busyboxFile);
+        File manifestFile = new File(sessionRoot, "toolbox-manifest.json");
+        copyAsset(appContext.getAssets(), MANIFEST_ASSET, manifestFile);
+
+        Log.i(TAG, "Prepared session toolbox " + asset.assetPath + " -> " + binDir.getAbsolutePath());
+        return new MiraToolbox(sessionRoot, binDir, busyboxFile, manifestFile, asset.abi, asset.assetPath);
     }
 
     public String pathPrefix() {
@@ -125,13 +77,25 @@ public final class MiraToolbox implements Closeable {
         return busyboxFile.getAbsolutePath();
     }
 
+    public String manifestPath() {
+        return manifestFile == null ? "" : manifestFile.getAbsolutePath();
+    }
+
+    public String busyboxAbi() {
+        return busyboxAbi;
+    }
+
+    public String busyboxAssetPath() {
+        return busyboxAssetPath;
+    }
+
     @Override
     public void close() {
         deleteRecursively(sessionDir);
     }
 
-    private static void installApplets(File busyboxFile, File binDir) throws IOException {
-        for (String applet : APPLETS) {
+    private static void installApplets(File busyboxFile, File binDir, List<String> applets) throws IOException {
+        for (String applet : applets) {
             File link = new File(binDir, applet);
             if (link.exists() && !link.delete()) throw new IOException("无法替换 applet: " + link.getAbsolutePath());
             try {
@@ -142,11 +106,11 @@ public final class MiraToolbox implements Closeable {
         }
     }
 
-    private static String selectBusyBoxAsset(AssetManager assets) throws IOException {
+    private static BusyBoxAsset selectBusyBoxAsset(AssetManager assets) throws IOException {
         String[] abis = Build.SUPPORTED_ABIS == null ? new String[0] : Build.SUPPORTED_ABIS;
         for (String abi : abis) {
             String asset = assetForAbi(abi);
-            if (asset != null && assetExists(assets, asset)) return asset;
+            if (asset != null && assetExists(assets, asset)) return new BusyBoxAsset(abi, asset);
         }
         throw new IOException("未找到适配当前 ABI 的 busybox 资产");
     }
@@ -157,8 +121,25 @@ public final class MiraToolbox implements Closeable {
         if ("arm64-v8a".equals(normalized)) return ASSET_ROOT + "/arm64-v8a/busybox";
         if ("armeabi-v7a".equals(normalized) || "armeabi".equals(normalized)) return ASSET_ROOT + "/armeabi-v7a/busybox";
         if ("x86_64".equals(normalized)) return ASSET_ROOT + "/x86_64/busybox";
-        if ("x86".equals(normalized)) return ASSET_ROOT + "/i686/busybox";
+        if ("x86".equals(normalized)) return ASSET_ROOT + "/x86/busybox";
         return null;
+    }
+
+    private static List<String> loadApplets(AssetManager assets) throws IOException {
+        List<String> applets = new ArrayList<>();
+        try (
+            InputStream input = assets.open(APPLETS_ASSET);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))
+        ) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String applet = line.trim();
+                if (applet.isEmpty() || applet.startsWith("#")) continue;
+                applets.add(applet);
+            }
+        }
+        if (applets.isEmpty()) throw new IOException("toolbox applet 清单为空");
+        return applets;
     }
 
     private static boolean assetExists(AssetManager assets, String path) {
@@ -222,5 +203,15 @@ public final class MiraToolbox implements Closeable {
 
     private static String quote(String value) {
         return "'" + value.replace("'", "'\\''") + "'";
+    }
+
+    private static final class BusyBoxAsset {
+        final String abi;
+        final String assetPath;
+
+        BusyBoxAsset(String abi, String assetPath) {
+            this.abi = abi;
+            this.assetPath = assetPath;
+        }
     }
 }

@@ -1,7 +1,7 @@
 BusyBox 1.37.0
-ABI: arm64-v8a
+ABI: armeabi-v7a
 License: GPL-2.0
 Source: https://busybox.net/downloads/busybox-1.37.0.tar.bz2
 Build script: tools/toolbox/build-busybox-android.sh
-Asset: toolbox/busybox/arm64-v8a/busybox
-SHA256: cb2ea339701214e8c2c28f29f27f490fcc53cb21789b16504ec241b550a05afe
+Asset: toolbox/busybox/armeabi-v7a/busybox
+SHA256: 251e2b099a59d0e93ddfccb6f7597d096f7902c7c674d29036c7ab6cafdfe8e3

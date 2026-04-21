@@ -85,6 +85,6 @@ Mira 当前只需要先证明第三方 APK 内可以持有真实 PTY 并通过 W
 1. 构建或准备以 `com.vwww.mira` 为 prefix(路径前缀) 的 bootstrap 包。
 2. 将 `/data/user/0/com.vwww.mira/files/usr` 从目录骨架升级成真正的类 Termux 用户空间。
 3. 启动 shell 时优先使用 `files/usr/bin/bash` 或真实 `files/usr/bin/sh`。
-4. 按需补齐 BusyBox 的其他 ABI(应用二进制接口) 版本。
+4. 为工具箱增加命令白名单, 版本切换和可观测日志。
 5. 再评估是否接入 apt 包管理能力。
 6. 保留当前 WebSocket + PTY 通路不变。
