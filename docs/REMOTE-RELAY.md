@@ -73,7 +73,6 @@ http://<电脑局域网IP>:8765
 1. 安装并打开 Mira APK(安卓安装包)。
 2. 首页填写:
    ```text
-   Device Name: 任意名称
    Relay URL: Relay 页面显示的地址
    ```
 3. 点击 `Connect Relay`。

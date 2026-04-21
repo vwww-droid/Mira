@@ -277,7 +277,7 @@ http://<电脑局域网IP>:8765
 ### Android 端
 
 1. 打开 Mira APK 首页。
-2. 填写 Device Name(设备名称) 和 Relay URL(中继地址)。
+2. 填写 Relay URL(中继地址)。
 3. 点击 `Connect Relay`。
 4. 回到浏览器等待设备列表出现。
 5. 点击 `Open Terminal`。
