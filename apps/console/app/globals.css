@@ -26,11 +26,6 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-button,
-input {
-  font: inherit;
-}
-
 button {
   border-radius: 0;
 }
