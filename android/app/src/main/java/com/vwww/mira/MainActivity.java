@@ -7,6 +7,9 @@ import android.content.SharedPreferences;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -30,36 +33,88 @@ public final class MainActivity extends Activity {
     private void showControlPage() {
         SharedPreferences preferences = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         ScrollView scrollView = new ScrollView(this);
+        scrollView.setFillViewport(true);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(36, 36, 36, 36);
+        root.setLayoutParams(new ScrollView.LayoutParams(
+            ScrollView.LayoutParams.MATCH_PARENT,
+            ScrollView.LayoutParams.MATCH_PARENT
+        ));
         scrollView.addView(root);
+
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
 
         TextView title = title("Mira", 44, Typeface.create("serif", Typeface.BOLD));
         title.setLetterSpacing(0.04f);
-        root.addView(title);
+        title.setLayoutParams(new LinearLayout.LayoutParams(
+            0,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            1f
+        ));
+        titleRow.addView(title);
 
         TextView byline = title("by vw2x", 13, Typeface.create("sans-serif-condensed", Typeface.NORMAL));
         byline.setLetterSpacing(0.12f);
-        byline.setPadding(2, 0, 0, 30);
-        root.addView(byline);
+        byline.setGravity(Gravity.RIGHT);
+        titleRow.addView(byline);
+        root.addView(titleRow);
+
+        root.addView(spacer());
+
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.VERTICAL);
+        controls.setGravity(Gravity.CENTER_HORIZONTAL);
+        controls.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
 
         relayUrlInput = input("Relay URL", preferences.getString(KEY_RELAY_URL, ""));
-        root.addView(relayUrlInput);
+        controls.addView(relayUrlInput);
 
         Button start = new Button(this);
         start.setText("Connect Relay");
         start.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         start.setOnClickListener(view -> connectRelay());
-        root.addView(start);
+        controls.addView(button(start));
 
         Button stop = new Button(this);
         stop.setText("Disconnect");
         stop.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         stop.setOnClickListener(view -> disconnectRelay());
-        root.addView(stop);
+        controls.addView(button(stop));
+
+        root.addView(controls);
+        root.addView(spacer());
 
         setContentView(scrollView);
+    }
+
+    private View spacer() {
+        View view = new View(this);
+        view.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            0,
+            1f
+        ));
+        return view;
+    }
+
+    private Button button(Button button) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        params.setMargins(0, 16, 0, 0);
+        button.setLayoutParams(params);
+        return button;
     }
 
     private TextView title(String text, int size, Typeface typeface) {
@@ -77,6 +132,10 @@ public final class MainActivity extends Activity {
         editText.setSingleLine(true);
         editText.setPadding(0, 18, 0, 18);
         editText.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+        editText.setLayoutParams(new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
         return editText;
     }
 
