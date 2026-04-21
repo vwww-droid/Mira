@@ -27,12 +27,6 @@ Mira Toolbox(工具箱) 用来替代 Termux package repository(包仓库) 的第
 android/app/src/main/assets/toolbox/manifest.json
 ```
 
-命令入口清单位于:
-
-```text
-android/app/src/main/assets/toolbox/applets.txt
-```
-
 每个 ABI 目录下还保留对应 `SOURCE.txt`, 记录版本, 来源, 构建脚本和 SHA256(安全哈希摘要)。
 
 ## 构建来源
@@ -72,7 +66,7 @@ Open Terminal
   -> 按设备 ABI 选择 BusyBox 资产
   -> /data/user/0/com.vwww.mira/cache/mira-sessions/<sessionId>/bin/busybox
   -> 执行 busybox --list 获取真实支持的 applet(子命令)
-  -> 读取 applets.txt 并只为真实支持的 applet 创建 symlink(符号链接)
+  -> 为全部真实支持的 applet 创建 symlink(符号链接)
   -> 复制 manifest.json 到 session 根目录
   -> MiraPtyFactory 把 session bin 放到 PATH 前面
   -> 创建 PTY(伪终端)
@@ -106,7 +100,7 @@ ls /proc/self | head -3
 
 预期 `busybox` 和 `ls` 都来自 `cache/mira-sessions/<sessionId>/bin`。
 
-如果 `applets.txt` 里请求了当前 BusyBox 二进制不支持的命令, Mira 不会创建对应入口, 避免遮蔽 Android 系统自带命令。例如当前二进制不支持 `stat`, 因此 `stat` 会继续走 `/system/bin/stat`。
+Mira 不再使用手写 applet 白名单。BusyBox 二进制支持什么命令, 当前 session 就释放什么命令入口。若二进制不支持某个系统命令, Mira 不会创建对应入口, 因此不会遮蔽 Android 系统自带命令。
 
 ## 当前边界
 

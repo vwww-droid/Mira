@@ -15,16 +15,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
 public final class MiraToolbox implements Closeable {
     private static final String TAG = "MiraToolbox";
     private static final String ASSET_ROOT = "toolbox/busybox";
-    private static final String APPLETS_ASSET = "toolbox/applets.txt";
     private static final String MANIFEST_ASSET = "toolbox/manifest.json";
 
     private final File sessionDir;
@@ -62,9 +59,8 @@ public final class MiraToolbox implements Closeable {
         File busyboxFile = new File(binDir, "busybox");
         copyAsset(appContext.getAssets(), asset.assetPath, busyboxFile);
         chmodExecutable(busyboxFile);
-        List<String> requestedApplets = loadApplets(appContext.getAssets());
         Set<String> supportedApplets = queryBusyBoxApplets(busyboxFile);
-        installApplets(busyboxFile, binDir, requestedApplets, supportedApplets);
+        installApplets(busyboxFile, binDir, supportedApplets);
 
         File manifestFile = new File(sessionRoot, "toolbox-manifest.json");
         copyAsset(appContext.getAssets(), MANIFEST_ASSET, manifestFile);
@@ -98,10 +94,11 @@ public final class MiraToolbox implements Closeable {
         deleteRecursively(sessionDir);
     }
 
-    private static void installApplets(File busyboxFile, File binDir, List<String> applets, Set<String> supportedApplets) throws IOException {
+    private static void installApplets(File busyboxFile, File binDir, Set<String> applets) throws IOException {
+        int installed = 0;
         for (String applet : applets) {
-            if (!supportedApplets.contains(applet)) {
-                Log.i(TAG, "Skip unsupported busybox applet " + applet);
+            if (!isSafeAppletName(applet)) {
+                Log.w(TAG, "Skip unsafe busybox applet name " + applet);
                 continue;
             }
             File link = new File(binDir, applet);
@@ -111,7 +108,9 @@ public final class MiraToolbox implements Closeable {
             } catch (ErrnoException symlinkFailed) {
                 writeWrapper(link, busyboxFile, applet);
             }
+            installed++;
         }
+        Log.i(TAG, "Installed " + installed + " busybox applets");
     }
 
     private static Set<String> queryBusyBoxApplets(File busyboxFile) throws IOException {
@@ -137,6 +136,12 @@ public final class MiraToolbox implements Closeable {
         return applets;
     }
 
+    private static boolean isSafeAppletName(String applet) {
+        if (applet == null || applet.isEmpty()) return false;
+        if ("busybox".equals(applet) || ".".equals(applet) || "..".equals(applet)) return false;
+        return !applet.contains("/") && applet.indexOf('\0') == -1;
+    }
+
     private static BusyBoxAsset selectBusyBoxAsset(AssetManager assets) throws IOException {
         String[] abis = Build.SUPPORTED_ABIS == null ? new String[0] : Build.SUPPORTED_ABIS;
         for (String abi : abis) {
@@ -154,23 +159,6 @@ public final class MiraToolbox implements Closeable {
         if ("x86_64".equals(normalized)) return ASSET_ROOT + "/x86_64/busybox";
         if ("x86".equals(normalized)) return ASSET_ROOT + "/x86/busybox";
         return null;
-    }
-
-    private static List<String> loadApplets(AssetManager assets) throws IOException {
-        List<String> applets = new ArrayList<>();
-        try (
-            InputStream input = assets.open(APPLETS_ASSET);
-            BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))
-        ) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                String applet = line.trim();
-                if (applet.isEmpty() || applet.startsWith("#")) continue;
-                applets.add(applet);
-            }
-        }
-        if (applets.isEmpty()) throw new IOException("toolbox applet 清单为空");
-        return applets;
     }
 
     private static boolean assetExists(AssetManager assets, String path) {

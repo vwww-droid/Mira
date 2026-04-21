@@ -9,7 +9,6 @@ NDK_BIN="$NDK_DIR/toolchains/llvm/prebuilt/darwin-x86_64/bin"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/.mira/tmp/busybox-android}"
 ASSET_DIR="$ROOT_DIR/android/app/src/main/assets/toolbox/busybox"
 MANIFEST_PATH="$ROOT_DIR/android/app/src/main/assets/toolbox/manifest.json"
-APPLETS_PATH="$ROOT_DIR/android/app/src/main/assets/toolbox/applets.txt"
 ABI_LIST="${ABI_LIST:-arm64-v8a armeabi-v7a x86 x86_64}"
 ABI_ORDER="arm64-v8a armeabi-v7a x86 x86_64"
 SOURCE_URL="https://busybox.net/downloads/busybox-$BUSYBOX_VERSION.tar.bz2"
@@ -133,7 +132,6 @@ generate_metadata() {
   SOURCE_URL="$SOURCE_URL" \
   ASSET_DIR="$ASSET_DIR" \
   MANIFEST_PATH="$MANIFEST_PATH" \
-  APPLETS_PATH="$APPLETS_PATH" \
   ABI_ORDER="$ABI_ORDER" \
   python3 - <<'PY'
 from pathlib import Path
@@ -145,15 +143,7 @@ version = os.environ['BUSYBOX_VERSION']
 source_url = os.environ['SOURCE_URL']
 asset_dir = Path(os.environ['ASSET_DIR'])
 manifest_path = Path(os.environ['MANIFEST_PATH'])
-applets_path = Path(os.environ['APPLETS_PATH'])
 abi_order = os.environ['ABI_ORDER'].split()
-
-applets = []
-if applets_path.exists():
-    for line in applets_path.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith('#'):
-            applets.append(line)
 
 abis = []
 for abi in abi_order:
@@ -191,9 +181,8 @@ manifest = {
         'license': 'GPL-2.0',
         'source': source_url,
         'buildScript': 'tools/toolbox/build-busybox-android.sh',
-        'appletsAsset': 'toolbox/applets.txt',
-        'runtimeInstallMode': 'requested applets filtered by busybox --list',
-        'requestedApplets': applets,
+        'runtimeInstallMode': 'all applets from busybox --list',
+        'installedAppletsSource': 'runtime busybox --list',
         'abis': abis,
     },
 }
