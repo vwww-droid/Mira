@@ -6,7 +6,7 @@
     cursorBlink: true,
     convertEol: true,
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-    fontSize: 14,
+    fontSize: 13,
     theme: {
       background: '#05070d',
       foreground: '#e5e7eb',
