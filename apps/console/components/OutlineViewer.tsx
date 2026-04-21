@@ -1,9 +1,17 @@
+'use client';
+
 import clsx from 'clsx';
+import { useEffect, useRef, useState } from 'react';
 import type { Outline, OutlineNode, OutlineRect } from '@/lib/types';
 
 type RenderRect = {
   x: number;
   y: number;
+  width: number;
+  height: number;
+};
+
+type Viewport = {
   width: number;
   height: number;
 };
@@ -16,12 +24,32 @@ type NormalizedNode = {
 };
 
 const MIN_VIEWPORT = { width: 360, height: 720 };
+const OUTLINE_LABEL_SIZE = 11;
 
 export function OutlineViewer({ outline, className }: { outline?: Outline | null; className?: string }) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const [hostSize, setHostSize] = useState({ width: 0, height: 0 });
   const nodes = flattenOutline(outline);
   const viewport = getViewport(outline, nodes);
+  const layout = computeMeetLayout(viewport, hostSize);
+  const hasOutline = Boolean(outline && nodes.length > 0);
 
-  if (!outline || nodes.length === 0) {
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const updateSize = () => {
+      const rect = host.getBoundingClientRect();
+      const width = Math.round(rect.width);
+      const height = Math.round(rect.height);
+      setHostSize((previous) => (previous.width === width && previous.height === height ? previous : { width, height }));
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [hasOutline]);
+
+  if (!hasOutline) {
     return (
       <div className={clsx('grid h-full min-h-[420px] place-items-center bg-[#111] p-6 text-center font-mono text-[#d8d8d8]', className)}>
         <div>
@@ -34,7 +62,7 @@ export function OutlineViewer({ outline, className }: { outline?: Outline | null
   }
 
   return (
-    <div className={clsx('relative h-full min-h-[420px] overflow-hidden bg-[#111]', className)}>
+    <div ref={hostRef} className={clsx('relative h-full min-h-[420px] overflow-hidden bg-[#111]', className)}>
       <svg
         viewBox={`0 0 ${viewport.width} ${viewport.height}`}
         role="img"
@@ -43,7 +71,7 @@ export function OutlineViewer({ outline, className }: { outline?: Outline | null
         preserveAspectRatio="xMidYMid meet"
       >
         <rect x="0" y="0" width={viewport.width} height={viewport.height} fill="#111" />
-        {nodes.map(({ key, node, rect, depth }, index) => {
+        {nodes.map(({ key, node, rect, depth }) => {
           const important = isImportantNode(node);
           const stroke = important ? '#2fd0a6' : depth < 2 ? '#6b7280' : '#3f3f46';
           const fill = important ? 'rgba(47,208,166,0.08)' : 'rgba(255,255,255,0.018)';
@@ -60,16 +88,33 @@ export function OutlineViewer({ outline, className }: { outline?: Outline | null
                 vectorEffect="non-scaling-stroke"
                 opacity={Math.max(0.22, 0.88 - depth * 0.08)}
               />
-              {important && rect.width > 72 && rect.height > 24 && (
-                <text x={rect.x + 7} y={rect.y + 16} fill="#d8fff3" fontSize="12" fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace">
-                  {labelForNode(node, index)}
-                </text>
-              )}
             </g>
           );
         })}
       </svg>
-      <div className="pointer-events-none absolute bottom-2 left-2 bg-[#111] px-1 font-mono text-[10px] text-[#8a8a8a]">
+      {layout &&
+        nodes.map(({ key, node, rect }, index) => {
+          if (!isImportantNode(node)) return null;
+          const renderedWidth = rect.width * layout.scale;
+          const renderedHeight = rect.height * layout.scale;
+          if (renderedWidth < 54 || renderedHeight < 14) return null;
+          return (
+            <div
+              key={`${key}-label`}
+              className="pointer-events-none absolute overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[#d8fff3]"
+              style={{
+                left: layout.offsetX + rect.x * layout.scale + 4,
+                top: layout.offsetY + rect.y * layout.scale + 3,
+                maxWidth: Math.max(24, renderedWidth - 8),
+                fontSize: OUTLINE_LABEL_SIZE,
+                lineHeight: `${OUTLINE_LABEL_SIZE}px`,
+              }}
+            >
+              {labelForNode(node, index)}
+            </div>
+          );
+        })}
+      <div className="pointer-events-none absolute bottom-2 left-2 bg-[#111] px-1 font-mono text-[11px] text-[#8a8a8a]">
         {nodes.length} nodes · {Math.round(viewport.width)} x {Math.round(viewport.height)}
       </div>
     </div>
@@ -90,7 +135,7 @@ function flattenOutline(outline?: Outline | null): NormalizedNode[] {
   return result;
 }
 
-function getViewport(outline: Outline | undefined | null, nodes: NormalizedNode[]) {
+function getViewport(outline: Outline | undefined | null, nodes: NormalizedNode[]): Viewport {
   const maxRight = Math.max(
     ...nodes.map(({ rect }) => rect.x + rect.width),
     outline?.screen?.width || outline?.width || outline?.rootBounds?.right || 0,
@@ -102,6 +147,17 @@ function getViewport(outline: Outline | undefined | null, nodes: NormalizedNode[
     MIN_VIEWPORT.height,
   );
   return { width: maxRight, height: maxBottom };
+}
+
+function computeMeetLayout(viewport: Viewport, hostSize: Viewport) {
+  if (viewport.width <= 0 || viewport.height <= 0 || hostSize.width <= 0 || hostSize.height <= 0) return null;
+  const scale = Math.min(hostSize.width / viewport.width, hostSize.height / viewport.height);
+  if (!Number.isFinite(scale) || scale <= 0) return null;
+  return {
+    scale,
+    offsetX: (hostSize.width - viewport.width * scale) / 2,
+    offsetY: (hostSize.height - viewport.height * scale) / 2,
+  };
 }
 
 function readRect(node: OutlineNode): RenderRect | null {

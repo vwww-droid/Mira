@@ -14,7 +14,7 @@ export function browserWsUrl(): string {
   return `${protocol}//${window.location.host}/ws/browser`;
 }
 
-async function request<T>(path: string, body?: unknown): Promise<T> {
+async function request<T>(path: string, body?: unknown, options?: { acceptActiveSessionConflict?: boolean }): Promise<T> {
   const response = await fetch(apiUrl(path), {
     method: body ? 'POST' : 'GET',
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
@@ -29,6 +29,16 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
     data = { error: text };
   }
   if (!response.ok) {
+    if (
+      options?.acceptActiveSessionConflict &&
+      response.status === 409 &&
+      typeof data === 'object' &&
+      data &&
+      'sessionId' in data &&
+      typeof (data as { sessionId?: unknown }).sessionId === 'string'
+    ) {
+      return { sessionId: (data as { sessionId: string }).sessionId } as T;
+    }
     const message = typeof data === 'object' && data && 'error' in data ? String((data as { error: unknown }).error) : response.statusText;
     throw new Error(message);
   }
@@ -40,7 +50,7 @@ export function listDevices(): Promise<DevicesResponse> {
 }
 
 export function openSession(installId: string, cols: number, rows: number): Promise<OpenSessionResponse> {
-  return request<OpenSessionResponse>('/api/open', { installId, cols, rows });
+  return request<OpenSessionResponse>('/api/open', { installId, cols, rows }, { acceptActiveSessionConflict: true });
 }
 
 export function closeSession(sessionId: string): Promise<{ ok: boolean }> {

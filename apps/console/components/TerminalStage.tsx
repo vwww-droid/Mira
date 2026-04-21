@@ -182,6 +182,7 @@ export function TerminalStage({
 
   const handleOpen = useCallback(async () => {
     if (!device) return;
+    if (sessionIdRef.current || sessionStatus === 'opening' || transportStatus === 'connecting') return;
     fitAndResize();
     setSessionStatus('opening');
     record('session.open', device.installId);
@@ -197,7 +198,7 @@ export function TerminalStage({
       record('open.failed', message);
       terminalRef.current?.writeln(`\r\n\x1b[31m${message}\x1b[0m`);
     }
-  }, [connectBrowser, device, fitAndResize, onRefreshDevices, record, size.cols, size.rows]);
+  }, [connectBrowser, device, fitAndResize, onRefreshDevices, record, sessionStatus, size.cols, size.rows, transportStatus]);
 
   const handleClose = useCallback(async () => {
     const closingSession = sessionIdRef.current;
@@ -223,7 +224,7 @@ export function TerminalStage({
       if (autoOpenDeviceRef.current === device.installId) autoOpenDeviceRef.current = null;
       return;
     }
-    if (sessionId || sessionStatus === 'opening' || device.state === 'opening' || device.state === 'active') return;
+    if (sessionId || sessionStatus === 'opening' || transportStatus === 'connecting') return;
     if (autoOpenDeviceRef.current === device.installId) return;
     autoOpenDeviceRef.current = device.installId;
     const timer = window.setTimeout(() => {
@@ -231,7 +232,7 @@ export function TerminalStage({
       void handleOpen();
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [device, handleOpen, sessionId, sessionStatus]);
+  }, [device, handleOpen, sessionId, sessionStatus, transportStatus]);
 
   useEffect(() => {
     return () => {
@@ -239,7 +240,7 @@ export function TerminalStage({
     };
   }, []);
 
-  const canOpen = Boolean(device && device.state !== 'offline' && device.state !== 'active' && device.state !== 'opening' && !sessionId);
+  const canOpen = Boolean(device && device.state !== 'offline' && !sessionId && sessionStatus !== 'opening' && transportStatus !== 'connecting');
   const openButtonClass = canOpen
     ? 'border-[#777] bg-[#f0f0f0] text-[#111] hover:bg-white'
     : 'cursor-not-allowed border-[#444] bg-[#222] text-[#777]';
