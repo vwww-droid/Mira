@@ -106,7 +106,15 @@ public final class MiraControlClient implements Closeable {
         JSONObject json = identity.deviceMeta(deviceName, stateProvider == null ? "idle" : stateProvider.currentState(), "");
         json.put("type", "device.register");
         json.put("transport", "control");
+        json.put("relayUrl", normalizeRelayUrl(relayUrl));
         return json;
+    }
+
+    private String normalizeRelayUrl(String value) {
+        String raw = value == null ? "" : value.trim();
+        if (raw.isEmpty()) return "";
+        if (!raw.contains("://")) return "https://" + raw;
+        return raw;
     }
 
     private String controlWsUrl(String value) throws Exception {

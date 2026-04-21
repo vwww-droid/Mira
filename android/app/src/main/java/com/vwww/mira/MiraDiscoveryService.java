@@ -34,9 +34,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class MiraDiscoveryService extends Service {
     public static final String ACTION_START = "com.vwww.mira.discovery.START";
     public static final String ACTION_STOP = "com.vwww.mira.discovery.STOP";
+    public static final String ACTION_STATUS = "com.vwww.mira.discovery.STATUS";
     public static final String EXTRA_DEVICE_NAME = "device_name";
     public static final String EXTRA_DISCOVERY_PORT = "discovery_port";
     public static final String EXTRA_RELAY_URL = "relay_url";
+    public static final String EXTRA_STATUS = "status";
 
     private static final String TAG = "MiraDiscovery";
 
@@ -119,6 +121,7 @@ public final class MiraDiscoveryService extends Service {
             running.set(false);
             lifecycleGeneration.incrementAndGet();
             releaseMulticastLock();
+            publishStatus("startup failed: " + e.getMessage());
             throw new RuntimeException(e);
         }
         Log.i(TAG, "Discovery started udp=" + discoveryPort + " wake=" + wakeServer.getLocalPort() + " ip=" + localIPv4());
@@ -131,6 +134,7 @@ public final class MiraDiscoveryService extends Service {
     }
 
     private void startControlClient() {
+        publishStatus("connecting relay");
         controlClient = new MiraControlClient(
             this,
             identity,
@@ -146,6 +150,7 @@ public final class MiraDiscoveryService extends Service {
                 @Override
                 public void onControlStatus(String status) {
                     Log.i(TAG, "Control status " + status);
+                    publishStatus(status);
                 }
             }
         );
@@ -166,6 +171,14 @@ public final class MiraDiscoveryService extends Service {
         releaseMulticastLock();
         udpSocket = null;
         wakeServer = null;
+        publishStatus("disconnected");
+    }
+
+    private void publishStatus(String status) {
+        Intent intent = new Intent(ACTION_STATUS);
+        intent.setPackage(getPackageName());
+        intent.putExtra(EXTRA_STATUS, status);
+        sendBroadcast(intent);
     }
 
     private void udpLoop(int generation, DatagramSocket socket, ServerSocket server) {

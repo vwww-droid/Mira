@@ -66,17 +66,39 @@ class RelaySession:
 
 
 class RelayState:
-    def __init__(self, discovery_port: int, advertise_url: str) -> None:
+    def __init__(self, discovery_port: int, advertise_url: str, advertise_url_file: str = "") -> None:
         self.discovery_port = discovery_port
-        self.advertise_url = advertise_url.rstrip("/")
+        self._advertise_url = advertise_url.rstrip("/")
+        self.advertise_url_file = Path(advertise_url_file) if advertise_url_file else None
         self.devices: dict[str, DeviceRecord] = {}
         self.sessions: dict[str, RelaySession] = {}
         self.lock = asyncio.Lock()
 
+    @property
+    def advertise_url(self) -> str:
+        if self.advertise_url_file is not None:
+            try:
+                advertise_url = self.advertise_url_file.read_text(encoding="utf-8").strip()
+            except OSError:
+                advertise_url = ""
+            if advertise_url:
+                return advertise_url.rstrip("/")
+        return self._advertise_url
+
     def server_ws_url(self) -> str:
-        parsed = urlparse(self.advertise_url)
-        scheme = "wss" if parsed.scheme == "https" else "ws"
-        return f"{scheme}://{parsed.netloc}/ws/device"
+        return relay_ws_url(self.advertise_url, "/ws/device")
+
+
+def relay_ws_url(relay_url: str, path: str) -> str:
+    parsed = urlparse(relay_url)
+    scheme = "wss" if parsed.scheme in {"https", "wss"} else "ws"
+    return f"{scheme}://{parsed.netloc}{path}"
+
+
+def is_local_advertise_url(advertise_url: str) -> bool:
+    parsed = urlparse(advertise_url)
+    host = (parsed.hostname or "").lower()
+    return host in {"localhost", "0.0.0.0", "127.0.0.1", "::1"} or host.startswith("127.")
 
 
 async def read_http_request(reader: asyncio.StreamReader) -> tuple[str, str, str, dict[str, str], bytes]:
@@ -280,7 +302,7 @@ async def api_open(state: RelayState, body: dict[str, Any]) -> bytes:
         "protocol": PROTOCOL_VERSION,
         "installId": install_id,
         "sessionId": session_id,
-        "serverWs": state.server_ws_url(),
+        "serverWs": relay_ws_url(str(record.data.get("relayUrl") or state.advertise_url), "/ws/device"),
         "cols": int(body.get("cols") or 120),
         "rows": int(body.get("rows") or 36),
     }
@@ -583,13 +605,26 @@ async def handle_client(state: RelayState, reader: asyncio.StreamReader, writer:
             await writer.wait_closed()
 
 
-async def run_server(host: str, port: int, discovery_port: int, advertise_url: str) -> None:
-    state = RelayState(discovery_port=discovery_port, advertise_url=advertise_url or f"http://{host}:{port}")
+async def run_server(
+    host: str,
+    port: int,
+    discovery_port: int,
+    advertise_url: str,
+    advertise_url_file: str = "",
+) -> None:
+    state = RelayState(
+        discovery_port=discovery_port,
+        advertise_url=advertise_url or f"http://{host}:{port}",
+        advertise_url_file=advertise_url_file,
+    )
     server = await asyncio.start_server(lambda r, w: handle_client(state, r, w), host, port)
     addresses = ", ".join(str(sock.getsockname()) for sock in server.sockets or [])
     print(f"Mira Relay listening on {addresses}", flush=True)
     print(f"Open {state.advertise_url}", flush=True)
-    print(f"Android Relay URL {state.advertise_url}", flush=True)
+    if is_local_advertise_url(state.advertise_url):
+        print("Android Relay URL pending public tunnel or LAN IP", flush=True)
+    else:
+        print(f"Android Relay URL {state.advertise_url}", flush=True)
     print(f"Control WebSocket {state.server_ws_url().replace('/ws/device', '/ws/control')}", flush=True)
     print(f"Legacy discovery UDP port {discovery_port}", flush=True)
     async with server:
@@ -602,8 +637,9 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--discovery-port", type=int, default=8766)
     parser.add_argument("--advertise-url", default="")
+    parser.add_argument("--advertise-url-file", default="")
     args = parser.parse_args()
-    asyncio.run(run_server(args.host, args.port, args.discovery_port, args.advertise_url))
+    asyncio.run(run_server(args.host, args.port, args.discovery_port, args.advertise_url, args.advertise_url_file))
 
 
 if __name__ == "__main__":

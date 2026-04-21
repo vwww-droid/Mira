@@ -1,8 +1,10 @@
 package com.vwww.mira;
 
 import android.app.Activity;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -15,12 +17,24 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.net.URI;
+import java.util.Locale;
+
 public final class MainActivity extends Activity {
     private static final String PREFS = "mira_ui";
     private static final String KEY_RELAY_URL = "relay_url";
 
     private MiraIdentity identity;
     private EditText relayUrlInput;
+    private TextView statusText;
+    private boolean receiverRegistered;
+    private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (!MiraDiscoveryService.ACTION_STATUS.equals(intent.getAction())) return;
+            setStatus(intent.getStringExtra(MiraDiscoveryService.EXTRA_STATUS));
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -30,8 +44,20 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onStart() {
+        super.onStart();
+        if (!receiverRegistered) {
+            registerReceiver(statusReceiver, new IntentFilter(MiraDiscoveryService.ACTION_STATUS));
+            receiverRegistered = true;
+        }
+    }
+
+    @Override
     protected void onStop() {
-        disconnectRelay();
+        if (receiverRegistered) {
+            unregisterReceiver(statusReceiver);
+            receiverRegistered = false;
+        }
         super.onStop();
     }
 
@@ -96,6 +122,10 @@ public final class MainActivity extends Activity {
         stop.setOnClickListener(view -> disconnectRelay());
         controls.addView(button(stop));
 
+        statusText = title("Status: disconnected", 14, Typeface.create("monospace", Typeface.NORMAL));
+        statusText.setPadding(0, 18, 0, 0);
+        controls.addView(statusText);
+
         root.addView(controls);
         root.addView(spacer());
 
@@ -147,6 +177,10 @@ public final class MainActivity extends Activity {
     private void connectRelay() {
         String relayUrl = relayUrlInput.getText().toString().trim();
         if (relayUrl.isEmpty()) return;
+        if (isPhoneLocalhostUrl(relayUrl)) {
+            setStatus("Do not use localhost on phone. Paste the Cloudflare Android Relay URL.");
+            return;
+        }
         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_RELAY_URL, relayUrl)
             .apply();
@@ -156,11 +190,33 @@ public final class MainActivity extends Activity {
         intent.putExtra(MiraDiscoveryService.EXTRA_DEVICE_NAME, identity.defaultDeviceName());
         intent.putExtra(MiraDiscoveryService.EXTRA_RELAY_URL, relayUrl);
         startService(intent);
+        setStatus("connecting relay");
     }
 
     private void disconnectRelay() {
         Intent intent = new Intent(this, MiraDiscoveryService.class);
         intent.setAction(MiraDiscoveryService.ACTION_STOP);
         startService(intent);
+        setStatus("disconnected");
+    }
+
+    private void setStatus(String status) {
+        if (statusText == null) return;
+        String value = status == null || status.trim().isEmpty() ? "unknown" : status.trim();
+        statusText.setText("Status: " + value);
+    }
+
+    private boolean isPhoneLocalhostUrl(String value) {
+        try {
+            String raw = value.trim();
+            if (!raw.contains("://")) raw = "https://" + raw;
+            URI uri = new URI(raw);
+            String host = uri.getHost();
+            if (host == null) return false;
+            host = host.toLowerCase(Locale.ROOT);
+            return "localhost".equals(host) || "0.0.0.0".equals(host) || "::1".equals(host) || host.startsWith("127.");
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 }
