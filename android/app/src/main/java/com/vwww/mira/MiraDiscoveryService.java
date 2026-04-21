@@ -1,14 +1,9 @@
 package com.vwww.mira;
 
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.net.wifi.WifiManager;
-import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
 
@@ -43,8 +38,6 @@ public final class MiraDiscoveryService extends Service {
     public static final String EXTRA_DISCOVERY_PORT = "discovery_port";
     public static final String EXTRA_RELAY_URL = "relay_url";
 
-    private static final int NOTIFICATION_ID = 1001;
-    private static final String CHANNEL_ID = "mira_discovery";
     private static final String TAG = "MiraDiscovery";
 
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -86,9 +79,8 @@ public final class MiraDiscoveryService extends Service {
             relayUrl = intent.getStringExtra(EXTRA_RELAY_URL) == null ? "" : intent.getStringExtra(EXTRA_RELAY_URL).trim();
         }
         if (running.get()) stopDiscovery();
-        startForeground(NOTIFICATION_ID, buildNotification(relayUrl.isEmpty() ? "Mira discovery idle" : "Mira relay connecting"));
         startDiscovery();
-        return START_STICKY;
+        return START_NOT_STICKY;
     }
 
     @Override
@@ -153,7 +145,7 @@ public final class MiraDiscoveryService extends Service {
 
                 @Override
                 public void onControlStatus(String status) {
-                    updateNotification("Mira relay " + status);
+                    Log.i(TAG, "Control status " + status);
                 }
             }
         );
@@ -268,7 +260,6 @@ public final class MiraDiscoveryService extends Service {
         );
         relayClient.start();
         state = "active";
-        updateNotification("Mira terminal active");
         Log.i(TAG, "Relay session opening sessionId=" + sessionId);
         return true;
     }
@@ -280,7 +271,6 @@ public final class MiraDiscoveryService extends Service {
         }
         relayClient = null;
         state = "idle";
-        updateNotification(relayUrl.isEmpty() ? "Mira discovery idle" : "Mira relay connected");
         Log.i(TAG, "Relay session closed");
     }
 
@@ -290,36 +280,6 @@ public final class MiraDiscoveryService extends Service {
             relayClient = null;
         }
         state = "idle";
-    }
-
-    private Notification buildNotification(String text) {
-        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Mira Discovery", NotificationManager.IMPORTANCE_LOW);
-            manager.createNotificationChannel(channel);
-        }
-        Intent intent = new Intent(this, MainActivity.class);
-        PendingIntent pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            intent,
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0
-        );
-        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-            ? new Notification.Builder(this, CHANNEL_ID)
-            : new Notification.Builder(this);
-        return builder
-            .setContentTitle("Mira Discovery")
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .build();
-    }
-
-    private void updateNotification(String text) {
-        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        manager.notify(NOTIFICATION_ID, buildNotification(text));
     }
 
     private void acquireMulticastLock() {

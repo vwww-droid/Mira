@@ -5,7 +5,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Typeface;
-import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -28,6 +27,12 @@ public final class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         identity = new MiraIdentity(this);
         showControlPage();
+    }
+
+    @Override
+    protected void onStop() {
+        disconnectRelay();
+        super.onStop();
     }
 
     private void showControlPage() {
@@ -150,8 +155,7 @@ public final class MainActivity extends Activity {
         intent.setAction(MiraDiscoveryService.ACTION_START);
         intent.putExtra(MiraDiscoveryService.EXTRA_DEVICE_NAME, identity.defaultDeviceName());
         intent.putExtra(MiraDiscoveryService.EXTRA_RELAY_URL, relayUrl);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent);
-        else startService(intent);
+        startService(intent);
     }
 
     private void disconnectRelay() {
