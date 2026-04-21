@@ -100,6 +100,7 @@ RELAY_JS = r"""(() => {
   let socket = null;
   let activeSession = null;
   let activeInstallId = null;
+  let deviceAttached = false;
   let refreshTimer = null;
   let resizeTimer = null;
 
@@ -179,6 +180,7 @@ RELAY_JS = r"""(() => {
     if (socket) socket.close();
     activeSession = sessionId;
     activeInstallId = device.installId;
+    deviceAttached = false;
     titleEl.textContent = `${device.deviceName || device.model || 'Mira Device'} · ${sessionId.slice(0, 8)}`;
     closeButton.disabled = false;
     term.clear();
@@ -191,12 +193,20 @@ RELAY_JS = r"""(() => {
     socket.addEventListener('message', (event) => {
       let message;
       try { message = JSON.parse(event.data); } catch (_) { return; }
-      if (message.type === 'terminal.output') term.write(base64ToBytes(message.dataBase64));
-      if (message.type === 'session.status') setStatus(message.state || 'session status', message.state === 'active');
+      if (message.type === 'terminal.output') {
+        deviceAttached = true;
+        term.write(base64ToBytes(message.dataBase64));
+      }
+      if (message.type === 'session.status') {
+        deviceAttached = message.state === 'active';
+        setStatus(message.state || 'session status', deviceAttached);
+        if (deviceAttached) fitAndResize();
+      }
       if (message.type === 'session.close') {
         setStatus('session closed');
         closeButton.disabled = true;
         activeSession = null;
+        deviceAttached = false;
         refreshDevices().catch(() => {});
       }
       if (message.type === 'error') term.writeln(`\r\n\x1b[31m${message.error}\x1b[0m`);
@@ -219,6 +229,7 @@ RELAY_JS = r"""(() => {
     await api('/api/close', { sessionId: activeSession }).catch(() => {});
     if (socket) socket.close();
     activeSession = null;
+    deviceAttached = false;
     closeButton.disabled = true;
     setStatus('session close requested');
     await refreshDevices().catch(() => {});
@@ -226,11 +237,11 @@ RELAY_JS = r"""(() => {
 
   function fitAndResize() {
     fitAddon.fit();
-    if (activeSession) send({ type: 'terminal.resize', sessionId: activeSession, cols: term.cols, rows: term.rows });
+    if (activeSession && deviceAttached) send({ type: 'terminal.resize', sessionId: activeSession, cols: term.cols, rows: term.rows });
   }
 
   term.onData((data) => {
-    if (!activeSession) return;
+    if (!activeSession || !deviceAttached) return;
     send({ type: 'terminal.input', sessionId: activeSession, dataBase64: bytesToBase64(data) });
   });
   window.addEventListener('resize', () => {
@@ -270,6 +281,7 @@ class RelaySession:
     browsers: set[BrowserClient] = field(default_factory=set)
     ring: bytearray = field(default_factory=bytearray)
     active: bool = True
+    pending_resize: dict[str, Any] | None = None
 
     def append_output(self, chunk: bytes) -> None:
         self.ring.extend(chunk)
@@ -546,10 +558,14 @@ async def handle_device_ws(state: RelayState, reader: asyncio.StreamReader, writ
                 return
             session.device_writer = writer
             session.device_lock = asyncio.Lock()
+            pending_resize = session.pending_resize
+            session.pending_resize = None
             if record := state.devices.get(install_id):
                 record.data["state"] = "active"
                 record.last_seen = time.time()
         print(f"Device attached session={session_id} installId={install_id}", flush=True)
+        if pending_resize is not None:
+            await send_json(writer, session.device_lock, pending_resize)
         await broadcast_session(session, {"type": "session.status", "sessionId": session_id, "state": "active"})
         while True:
             frame = await read_frame(reader)
@@ -704,6 +720,9 @@ async def handle_browser_ws(state: RelayState, reader: asyncio.StreamReader, wri
                 continue
             if message_type in {"terminal.input", "terminal.resize"}:
                 if session.device_writer is None:
+                    if message_type == "terminal.resize":
+                        session.pending_resize = message
+                        continue
                     await send_json(writer, client.lock, {"type": "error", "error": "device is not connected"})
                     continue
                 await send_json(session.device_writer, session.device_lock, message)
