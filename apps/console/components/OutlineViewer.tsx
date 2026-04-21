@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import type { Outline, OutlineNode } from '@/lib/types';
+import type { Outline, OutlineNode, OutlineRect } from '@/lib/types';
 
 type RenderRect = {
   x: number;
@@ -81,11 +81,12 @@ function flattenOutline(outline?: Outline | null): NormalizedNode[] {
   const roots = outline.nodes?.length ? outline.nodes : outline.root ? [outline.root] : [];
   const result: NormalizedNode[] = [];
   const walk = (node: OutlineNode, depth: number, path: string) => {
+    if (node.visible === false) return;
     const rect = readRect(node);
     if (rect && rect.width > 0 && rect.height > 0) result.push({ key: `${path}-${result.length}`, node, rect, depth });
     node.children?.forEach((child, index) => walk(child, depth + 1, `${path}.${index}`));
   };
-  roots.forEach((node, index) => walk(node, 0, String(index)));
+  roots.forEach((node, index) => walk(node, node.depth ?? 0, node.path || String(index)));
   return result;
 }
 
@@ -104,7 +105,7 @@ function getViewport(outline: Outline | undefined | null, nodes: NormalizedNode[
 }
 
 function readRect(node: OutlineNode): RenderRect | null {
-  const candidate = node.bounds || node.rect || node.frame;
+  const candidate = node.visibleBounds || visibleBoundsFrom(node.bounds) || node.bounds || node.rect || node.frame;
   if (typeof candidate === 'string') return parseAndroidBounds(candidate);
   if (candidate && typeof candidate === 'object') {
     const left = numberValue(candidate.x ?? candidate.left);
@@ -124,6 +125,11 @@ function readRect(node: OutlineNode): RenderRect | null {
   return null;
 }
 
+function visibleBoundsFrom(value: OutlineNode['bounds']): OutlineRect | string | null | undefined {
+  if (!value || typeof value !== 'object') return null;
+  return value.visible && typeof value.visible === 'object' ? value.visible : null;
+}
+
 function parseAndroidBounds(value: string): RenderRect | null {
   const match = value.match(/\[(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\]\[(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\]/);
   if (!match) return null;
@@ -137,9 +143,9 @@ function numberValue(value: unknown): number | null {
 }
 
 function isImportantNode(node: OutlineNode): boolean {
-  return Boolean(node.text || node.label || node.resourceId || node.resourceName || node.contentDescription || node.clickable);
+  return Boolean(node.role === 'button' || node.role === 'input' || node.text || node.label || node.resourceId || node.resourceName || node.contentDescription || node.clickable);
 }
 
 function labelForNode(node: OutlineNode, index: number): string {
-  return String(node.text || node.label || node.resourceId || node.resourceName || node.contentDescription || node.className || `node-${index}`).slice(0, 28);
+  return String(node.text || node.label || node.resourceName || node.contentDescription || node.simpleClass || node.className || `node-${index}`).slice(0, 28);
 }

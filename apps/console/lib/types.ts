@@ -9,10 +9,14 @@ export type OutlineRect = {
   bottom?: number;
   width?: number;
   height?: number;
+  visible?: OutlineRect | null;
 };
 
 export type OutlineNode = {
   id?: string;
+  path?: string;
+  role?: string;
+  simpleClass?: string;
   label?: string;
   text?: string;
   className?: string;
@@ -20,10 +24,14 @@ export type OutlineNode = {
   resourceName?: string;
   contentDescription?: string;
   clickable?: boolean;
+  focused?: boolean;
+  selected?: boolean;
+  alpha?: number;
   enabled?: boolean;
   visible?: boolean;
   depth?: number;
-  bounds?: OutlineRect | string;
+  bounds?: OutlineRect | string | null;
+  visibleBounds?: OutlineRect | string | null;
   rect?: OutlineRect | string;
   frame?: OutlineRect | string;
   x?: number;
@@ -36,6 +44,10 @@ export type OutlineNode = {
 export type Outline = {
   available?: boolean;
   reason?: string;
+  schema?: string;
+  stale?: boolean;
+  staleReason?: string;
+  nodeCount?: number;
   packageName?: string;
   activityName?: string;
   screen?: OutlineRect & { density?: number };

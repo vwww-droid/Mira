@@ -62,8 +62,13 @@ public final class MainActivity extends Activity {
             unregisterReceiver(statusReceiver);
             receiverRegistered = false;
         }
-        MiraOutlineCollector.getInstance().unregister(this);
         super.onStop();
+    }
+
+    @Override
+    protected void onDestroy() {
+        MiraOutlineCollector.getInstance().unregister(this);
+        super.onDestroy();
     }
 
     private void showControlPage() {

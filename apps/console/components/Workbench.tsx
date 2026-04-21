@@ -35,6 +35,8 @@ function InfoPanel({ device }: { device: MiraDevice }) {
     ['Model', device.model || device.deviceName || 'unknown'],
     ['Device ID', shortId(device.installId, 36)],
     ['Screen', screenText],
+    ['Components', String(device.outline?.nodeCount ?? device.outline?.nodes?.length ?? 'unknown')],
+    ['Outline', device.outline?.stale ? `stale: ${device.outline.staleReason || 'cached'}` : device.outline?.available === false ? device.outline.reason || 'unavailable' : 'live'],
     ['Proxy', 'none'],
     ['Cur Application', device.packageName || 'unknown'],
     ['Cur Activity', device.outline?.activityName || 'unknown'],

@@ -31,7 +31,7 @@ public final class MiraControlClient implements Closeable {
     }
 
     private static final String TAG = "MiraControlClient";
-    private static final long OUTLINE_PERIOD_SECONDS = 10;
+    private static final long OUTLINE_PERIOD_SECONDS = 2;
 
     private final Context context;
     private final MiraIdentity identity;
