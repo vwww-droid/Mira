@@ -63,14 +63,6 @@ export default function RelayConsolePage() {
     };
   }, [refreshDevices]);
 
-  useEffect(() => {
-    if (!selectedId && devices.length === 1) {
-      const [device] = devices;
-      setSelectedId(device.installId);
-      window.location.hash = `device=${encodeURIComponent(device.installId)}`;
-    }
-  }, [devices, selectedId]);
-
   const selectDevice = useCallback(
     (device: MiraDevice) => {
       setSelectedId(device.installId);
