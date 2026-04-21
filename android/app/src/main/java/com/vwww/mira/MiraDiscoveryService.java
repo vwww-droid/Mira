@@ -34,6 +34,7 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class MiraDiscoveryService extends Service {
     public static final String ACTION_START = "com.vwww.mira.discovery.START";
@@ -47,6 +48,7 @@ public final class MiraDiscoveryService extends Service {
     private static final String TAG = "MiraDiscovery";
 
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final AtomicInteger lifecycleGeneration = new AtomicInteger(0);
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     private MiraIdentity identity;
@@ -103,6 +105,7 @@ public final class MiraDiscoveryService extends Service {
 
     private void startDiscovery() {
         if (!running.compareAndSet(false, true)) return;
+        int generation = lifecycleGeneration.incrementAndGet();
         state = "idle";
         try {
             bootstrap.installIfNeeded();
@@ -122,12 +125,15 @@ public final class MiraDiscoveryService extends Service {
             udpSocket.bind(new InetSocketAddress(discoveryPort));
         } catch (IOException e) {
             running.set(false);
+            lifecycleGeneration.incrementAndGet();
             releaseMulticastLock();
             throw new RuntimeException(e);
         }
         Log.i(TAG, "Discovery started udp=" + discoveryPort + " wake=" + wakeServer.getLocalPort() + " ip=" + localIPv4());
-        udpThread = new Thread(this::udpLoop, "MiraDiscoveryUdp");
-        wakeThread = new Thread(this::wakeLoop, "MiraDiscoveryWake");
+        DatagramSocket currentUdpSocket = udpSocket;
+        ServerSocket currentWakeServer = wakeServer;
+        udpThread = new Thread(() -> udpLoop(generation, currentUdpSocket, currentWakeServer), "MiraDiscoveryUdp");
+        wakeThread = new Thread(() -> wakeLoop(generation, currentWakeServer), "MiraDiscoveryWake");
         udpThread.start();
         wakeThread.start();
     }
@@ -157,6 +163,7 @@ public final class MiraDiscoveryService extends Service {
 
     private void stopDiscovery() {
         running.set(false);
+        lifecycleGeneration.incrementAndGet();
         closeRelay();
         if (controlClient != null) {
             controlClient.close();
@@ -169,35 +176,35 @@ public final class MiraDiscoveryService extends Service {
         wakeServer = null;
     }
 
-    private void udpLoop() {
+    private void udpLoop(int generation, DatagramSocket socket, ServerSocket server) {
         byte[] buffer = new byte[65535];
-        while (running.get()) {
+        while (running.get() && lifecycleGeneration.get() == generation) {
             try {
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-                udpSocket.receive(packet);
+                socket.receive(packet);
                 String text = new String(packet.getData(), packet.getOffset(), packet.getLength(), StandardCharsets.UTF_8);
                 JSONObject request = new JSONObject(text);
                 if (!"mira.discover".equals(request.optString("type"))) continue;
                 Log.i(TAG, "Discovery request from " + packet.getAddress().getHostAddress() + ":" + packet.getPort());
-                String wakeUrl = "http://" + localIPv4() + ":" + wakeServer.getLocalPort() + "/session/open";
+                String wakeUrl = "http://" + localIPv4() + ":" + server.getLocalPort() + "/session/open";
                 JSONObject response = identity.deviceMeta(deviceName, state, wakeUrl);
                 byte[] payload = response.toString().getBytes(StandardCharsets.UTF_8);
                 DatagramPacket reply = new DatagramPacket(payload, payload.length, packet.getAddress(), packet.getPort());
-                udpSocket.send(reply);
+                socket.send(reply);
                 Log.i(TAG, "Discovery response sent to " + packet.getAddress().getHostAddress() + ":" + packet.getPort());
             } catch (Throwable throwable) {
-                if (running.get()) Log.w(TAG, "Discovery loop error", throwable);
+                if (running.get() && lifecycleGeneration.get() == generation) Log.w(TAG, "Discovery loop error", throwable);
             }
         }
     }
 
-    private void wakeLoop() {
-        while (running.get()) {
+    private void wakeLoop(int generation, ServerSocket server) {
+        while (running.get() && lifecycleGeneration.get() == generation) {
             try {
-                Socket socket = wakeServer.accept();
+                Socket socket = server.accept();
                 executor.execute(() -> handleWakeClient(socket));
             } catch (IOException e) {
-                if (running.get()) Log.w(TAG, "Wake loop error", e);
+                if (running.get() && lifecycleGeneration.get() == generation) Log.w(TAG, "Wake loop error", e);
             }
         }
     }
@@ -247,25 +254,30 @@ public final class MiraDiscoveryService extends Service {
 
     private synchronized boolean openRelaySession(JSONObject body) {
         if (relayClient != null) return false;
+        String sessionId = body.optString("sessionId");
         state = "opening";
         relayClient = new MiraRelayClient(
             this,
             bootstrap,
             identity,
             body.optString("serverWs"),
-            body.optString("sessionId"),
+            sessionId,
             body.optInt("cols", 80),
             body.optInt("rows", 24),
-            this::onRelayClosed
+            () -> onRelayClosed(sessionId)
         );
         relayClient.start();
         state = "active";
         updateNotification("Mira terminal active");
-        Log.i(TAG, "Relay session opening sessionId=" + body.optString("sessionId"));
+        Log.i(TAG, "Relay session opening sessionId=" + sessionId);
         return true;
     }
 
-    private synchronized void onRelayClosed() {
+    private synchronized void onRelayClosed(String sessionId) {
+        if (relayClient != null && !relayClient.hasSession(sessionId)) {
+            Log.i(TAG, "Ignoring stale relay close sessionId=" + sessionId);
+            return;
+        }
         relayClient = null;
         state = "idle";
         updateNotification(relayUrl.isEmpty() ? "Mira discovery idle" : "Mira relay connected");

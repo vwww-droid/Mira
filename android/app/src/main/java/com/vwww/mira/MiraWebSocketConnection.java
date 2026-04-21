@@ -1,5 +1,6 @@
 package com.vwww.mira;
 
+import android.os.Looper;
 import android.util.Base64;
 import android.util.Log;
 
@@ -25,9 +26,9 @@ public final class MiraWebSocketConnection implements Closeable {
     private static final int MAX_FRAME_SIZE = 1024 * 1024;
 
     private final Object writeLock = new Object();
-    private Socket socket;
-    private InputStream input;
-    private OutputStream output;
+    private volatile Socket socket;
+    private volatile InputStream input;
+    private volatile OutputStream output;
 
     private MiraWebSocketConnection(Socket socket, InputStream input, OutputStream output) {
         this.socket = socket;
@@ -104,39 +105,42 @@ public final class MiraWebSocketConnection implements Closeable {
 
     public void sendFrame(byte[] payload, int opcode) throws IOException {
         synchronized (writeLock) {
-            if (output == null) return;
-            output.write(0x80 | opcode);
+            OutputStream frameOutput = output;
+            if (frameOutput == null) return;
+            frameOutput.write(0x80 | opcode);
             int length = payload.length;
             byte[] mask = new byte[4];
             new SecureRandom().nextBytes(mask);
             if (length < 126) {
-                output.write(0x80 | length);
+                frameOutput.write(0x80 | length);
             } else if (length <= 0xFFFF) {
-                output.write(0x80 | 126);
-                output.write((length >> 8) & 0xFF);
-                output.write(length & 0xFF);
+                frameOutput.write(0x80 | 126);
+                frameOutput.write((length >> 8) & 0xFF);
+                frameOutput.write(length & 0xFF);
             } else {
-                output.write(0x80 | 127);
+                frameOutput.write(0x80 | 127);
                 long longLength = length;
-                for (int i = 7; i >= 0; i--) output.write((int) ((longLength >> (8 * i)) & 0xFF));
+                for (int i = 7; i >= 0; i--) frameOutput.write((int) ((longLength >> (8 * i)) & 0xFF));
             }
-            output.write(mask);
-            for (int i = 0; i < payload.length; i++) output.write(payload[i] ^ mask[i % 4]);
-            output.flush();
+            frameOutput.write(mask);
+            for (int i = 0; i < payload.length; i++) frameOutput.write(payload[i] ^ mask[i % 4]);
+            frameOutput.flush();
         }
     }
 
     public WebSocketFrame readFrame() throws IOException {
-        int first = readByte(input);
-        int second = readByte(input);
+        InputStream frameInput = input;
+        if (frameInput == null) throw new IOException("WebSocket closed");
+        int first = readByte(frameInput);
+        int second = readByte(frameInput);
         int opcode = first & 0x0F;
         boolean masked = (second & 0x80) != 0;
         long length = second & 0x7F;
-        if (length == 126) length = readUnsignedShort(input);
-        else if (length == 127) length = readLong(input);
+        if (length == 126) length = readUnsignedShort(frameInput);
+        else if (length == 127) length = readLong(frameInput);
         if (length > MAX_FRAME_SIZE) throw new IOException("WebSocket frame too large");
-        byte[] mask = masked ? readExactly(input, 4) : null;
-        byte[] payload = readExactly(input, (int) length);
+        byte[] mask = masked ? readExactly(frameInput, 4) : null;
+        byte[] payload = readExactly(frameInput, (int) length);
         if (masked && mask != null) {
             for (int i = 0; i < payload.length; i++) payload[i] = (byte) (payload[i] ^ mask[i % 4]);
         }
@@ -189,13 +193,24 @@ public final class MiraWebSocketConnection implements Closeable {
 
     @Override
     public void close() {
-        try {
-            if (socket != null) socket.close();
-        } catch (IOException ignored) {
-        }
+        Socket closing = socket;
         socket = null;
         input = null;
         output = null;
+        if (closing == null) return;
+        if (Looper.getMainLooper() == Looper.myLooper()) {
+            Thread closer = new Thread(() -> closeQuietly(closing), "MiraWebSocketCloser");
+            closer.start();
+        } else {
+            closeQuietly(closing);
+        }
+    }
+
+    private static void closeQuietly(Socket closing) {
+        try {
+            closing.close();
+        } catch (IOException ignored) {
+        }
     }
 
     public static final class WebSocketFrame {

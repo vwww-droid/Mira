@@ -27,7 +27,7 @@ public final class MiraRelayClient implements Closeable {
     private final Runnable onClose;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
-    private MiraWebSocketConnection websocket;
+    private volatile MiraWebSocketConnection websocket;
     private MiraPtyProcess pty;
     private MiraToolbox toolbox;
     private Thread workerThread;
@@ -59,20 +59,36 @@ public final class MiraRelayClient implements Closeable {
         workerThread.start();
     }
 
+    public boolean hasSession(String value) {
+        return sessionId.equals(value);
+    }
+
     private void runRelay() {
         try {
             bootstrap.installIfNeeded();
+            if (!running.get()) return;
             toolbox = MiraToolbox.prepare(context, sessionId);
+            if (!running.get()) return;
             pty = MiraPtyFactory.create(context, bootstrap, initialRows, initialColumns, toolbox);
             Log.i(TAG, "PTY started pid=" + pty.getPid() + " cols=" + initialColumns + " rows=" + initialRows);
-            websocket = MiraWebSocketConnection.connect(serverWs);
-            sendJson(attachMessage());
+            if (!running.get()) return;
+            MiraWebSocketConnection connected = MiraWebSocketConnection.connect(serverWs);
+            if (!running.get()) {
+                connected.close();
+                return;
+            }
+            websocket = connected;
+            connected.sendJson(attachMessage());
             Log.i(TAG, "Device attached sessionId=" + sessionId + " installId=" + identity.getInstallId());
             ptyReaderThread = new Thread(this::pumpPtyToServer, "MiraRelayPtyReader-" + pty.getPid());
             ptyReaderThread.start();
             readServerLoop();
         } catch (Throwable throwable) {
-            Log.w(TAG, "Relay failed", throwable);
+            if (!running.get()) {
+                Log.i(TAG, "Relay closed");
+            } else {
+                Log.w(TAG, "Relay failed", throwable);
+            }
         } finally {
             close();
             if (onClose != null) onClose.run();
@@ -89,11 +105,13 @@ public final class MiraRelayClient implements Closeable {
     }
 
     private void readServerLoop() throws Exception {
-        while (running.get() && websocket != null) {
-            MiraWebSocketConnection.WebSocketFrame frame = websocket.readFrame();
+        while (running.get()) {
+            MiraWebSocketConnection current = websocket;
+            if (current == null) break;
+            MiraWebSocketConnection.WebSocketFrame frame = current.readFrame();
             if (frame.isClose()) break;
             if (frame.isPing()) {
-                websocket.sendPong(frame.payload);
+                current.sendPong(frame.payload);
                 continue;
             }
             if (!frame.isText()) continue;
@@ -143,7 +161,8 @@ public final class MiraRelayClient implements Closeable {
     }
 
     private void sendJson(JSONObject json) throws IOException {
-        if (websocket != null) websocket.sendJson(json);
+        MiraWebSocketConnection current = websocket;
+        if (current != null) current.sendJson(json);
     }
 
     @Override
@@ -153,10 +172,9 @@ public final class MiraRelayClient implements Closeable {
             pty.close();
             pty = null;
         }
-        if (websocket != null) {
-            websocket.close();
-            websocket = null;
-        }
+        MiraWebSocketConnection closing = websocket;
+        websocket = null;
+        if (closing != null) closing.close();
         if (toolbox != null) {
             toolbox.close();
             toolbox = null;

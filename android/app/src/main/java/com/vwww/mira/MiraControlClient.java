@@ -31,7 +31,7 @@ public final class MiraControlClient implements Closeable {
     private final Callback callback;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
-    private MiraWebSocketConnection websocket;
+    private volatile MiraWebSocketConnection websocket;
     private Thread workerThread;
 
     public MiraControlClient(
@@ -60,8 +60,13 @@ public final class MiraControlClient implements Closeable {
         while (running.get()) {
             try {
                 String controlWs = controlWsUrl(relayUrl);
-                websocket = MiraWebSocketConnection.connect(controlWs);
-                websocket.sendJson(registerMessage());
+                MiraWebSocketConnection connected = MiraWebSocketConnection.connect(controlWs);
+                if (!running.get()) {
+                    connected.close();
+                    break;
+                }
+                websocket = connected;
+                connected.sendJson(registerMessage());
                 notifyStatus("control connected");
                 readControlLoop();
             } catch (Throwable throwable) {
@@ -77,11 +82,13 @@ public final class MiraControlClient implements Closeable {
     }
 
     private void readControlLoop() throws Exception {
-        while (running.get() && websocket != null) {
-            MiraWebSocketConnection.WebSocketFrame frame = websocket.readFrame();
+        while (running.get()) {
+            MiraWebSocketConnection current = websocket;
+            if (current == null) break;
+            MiraWebSocketConnection.WebSocketFrame frame = current.readFrame();
             if (frame.isClose()) break;
             if (frame.isPing()) {
-                websocket.sendPong(frame.payload);
+                current.sendPong(frame.payload);
                 continue;
             }
             if (!frame.isText()) continue;
@@ -133,10 +140,9 @@ public final class MiraControlClient implements Closeable {
     }
 
     private void closeSocketOnly() {
-        if (websocket != null) {
-            websocket.close();
-            websocket = null;
-        }
+        MiraWebSocketConnection closing = websocket;
+        websocket = null;
+        if (closing != null) closing.close();
     }
 
     @Override
