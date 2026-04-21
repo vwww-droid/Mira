@@ -326,6 +326,8 @@ python3 -m mira.mcp.server \
 
 Codex CLI(命令行接口) 非交互执行时建议给每个 Mira MCP tool(工具) 显式配置 `approval_mode = "approve"`, 避免工具调用在本地审批层被取消。完整配置示例见 `docs/MCP.md`。
 
+如果要让 Codex 自主做 Magisk(安卓 root 管理框架) 手机风险发现, 使用 `mira_magisk_risk_review` prompt(提示模板)。该 prompt 只提供环境上下文: 目标是 Magisk 手机, 当前 shell 位于第三方 app 权限内, 真实 PTY 可操作, 会话里可以使用 BusyBox(单文件工具集)。
+
 核心工具包括:
 
 1. `mira_discover_devices`: 扫描设备。

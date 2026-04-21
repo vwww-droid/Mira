@@ -322,7 +322,8 @@ class MiraMcpServer:
             "instructions": (
                 "Use Mira tools to discover Android devices, open an on-demand PTY session, run short diagnostic commands, "
                 "read terminal output, and close the session. Prefer mira_run_command for non-interactive analysis. "
-                "Start with mira_discover_devices, then inspect id, uname, getprop, mountinfo, processes, network state, and toolbox metadata."
+                "Start with mira_discover_devices, then inspect id, uname, getprop, mountinfo, processes, network state, and toolbox metadata. "
+                "When the user asks for Magisk risk review, provide only the environment context: Magisk phone, third-party app shell, real PTY, and BusyBox availability."
             ),
         }
 
@@ -419,7 +420,7 @@ class MiraMcpServer:
             {
                 "name": "mira_close_terminal",
                 "title": "Close Android PTY session",
-                "description": "Close a Mira terminal session and clean the device-side PTY/toolbox state.",
+                "description": "Close a Mira terminal session and clean the device-side PTY/toolbox state. Can also request Relay to close a known sessionId from a previous MCP process.",
                 "inputSchema": {"type": "object", "properties": {"sessionId": {"type": "string"}}, "required": ["sessionId"]},
             },
         ]
@@ -536,9 +537,12 @@ class MiraMcpServer:
         session_id = str(arguments.get("sessionId") or "")
         session = self.sessions.pop(session_id, None)
         if session is None:
-            raise ToolError(f"unknown session: {session_id}")
+            if not session_id:
+                raise ToolError("sessionId is required")
+            self.relay.request("/api/close", {"sessionId": session_id}, timeout=5.0)
+            return {"sessionId": session_id, "closed": True, "localSession": False}
         session.close()
-        return {"sessionId": session_id, "closed": True}
+        return {"sessionId": session_id, "closed": True, "localSession": True}
 
     def resolve_install_id(self, value: Any) -> str:
         install_id = str(value or "")
@@ -560,6 +564,7 @@ class MiraMcpServer:
     def resource_list(self) -> list[dict[str, Any]]:
         return [
             {"uri": "mira://analysis-guide", "name": "Mira Android analysis guide", "mimeType": "text/markdown"},
+            {"uri": "mira://magisk-app-shell-context", "name": "Mira Magisk app-shell context", "mimeType": "text/markdown"},
             {"uri": "mira://sessions", "name": "Mira active MCP sessions", "mimeType": "application/json"},
             {"uri": "mira://relay", "name": "Mira relay configuration", "mimeType": "application/json"},
         ]
@@ -568,6 +573,8 @@ class MiraMcpServer:
         uri = str(params.get("uri") or "")
         if uri == "mira://analysis-guide":
             return {"contents": [{"uri": uri, "mimeType": "text/markdown", "text": ANALYSIS_GUIDE}]}
+        if uri == "mira://magisk-app-shell-context":
+            return {"contents": [{"uri": uri, "mimeType": "text/markdown", "text": MAGISK_CONTEXT}]}
         if uri == "mira://sessions":
             data = {key: {"installId": value.install_id, "status": value.status, "active": value.active} for key, value in self.sessions.items()}
             return {"contents": [{"uri": uri, "mimeType": "application/json", "text": json.dumps(data, ensure_ascii=False, indent=2)}]}
@@ -583,24 +590,31 @@ class MiraMcpServer:
                 "title": "Mira Android terminal triage",
                 "description": "Guide an AI client to collect basic Android sandbox, toolbox, mount, process and network context through Mira terminal tools.",
                 "arguments": [{"name": "installId", "description": "Optional target installId", "required": False}],
-            }
+            },
+            {
+                "name": "mira_magisk_risk_review",
+                "title": "Mira Magisk app-shell risk review",
+                "description": "Tell an AI client the device is a Magisk phone reached through a third-party app shell with BusyBox available.",
+                "arguments": [{"name": "installId", "description": "Optional target installId", "required": False}],
+            },
         ]
 
     def get_prompt(self, params: dict[str, Any]) -> dict[str, Any]:
         name = str(params.get("name") or "")
-        if name != "mira_android_triage":
+        if name not in {"mira_android_triage", "mira_magisk_risk_review"}:
             raise ToolError(f"unknown prompt: {name}")
         arguments = params.get("arguments") or {}
         install_id = str(arguments.get("installId") or "") if isinstance(arguments, dict) else ""
         suffix = f" Target installId: {install_id}." if install_id else " If exactly one device is known, select it automatically."
+        prompt_text = ANALYSIS_PROMPT if name == "mira_android_triage" else RISK_PROMPT
         return {
-            "description": "Mira Android terminal triage workflow",
+            "description": "Mira Android terminal triage workflow" if name == "mira_android_triage" else "Mira Magisk app-shell risk review workflow",
             "messages": [
                 {
                     "role": "user",
                     "content": {
                         "type": "text",
-                        "text": ANALYSIS_PROMPT + suffix,
+                        "text": prompt_text + suffix,
                     },
                 }
             ],
@@ -634,6 +648,19 @@ ANALYSIS_GUIDE = """# Mira Android 分析指南
 7. 分析结束后调用 `mira_close_terminal` 清理 PTY 和临时 toolbox 会话目录。
 """
 
+MAGISK_CONTEXT = """# Mira Magisk 第三方 app shell 环境上下文
+
+1. 目标设备是一台已安装 Magisk 的 Android 手机。
+2. 你进入的是 Mira 这个第三方 app sandbox 内的真实 PTY shell, 不是 adb shell, 也不是 root shell。
+3. 这个 shell 默认按第三方 app 的 UID, SELinux context 和 Android 权限模型运行。
+4. Mira 会在会话里放入 BusyBox, 通常可以直接执行 `busybox`, 也可以优先使用 `/system/bin/...` 调用系统命令。
+5. 当前 `$PATH` 里可能包含 Mira 临时 toolbox 目录, 因此遇到命令差异时要区分系统命令和 BusyBox applet。
+6. 你可以自己选择要采集的证据和分析路径, 目标是发现风险点并给出建议。
+7. 除非用户明确要求, 默认不要修改设备状态, 不要写系统文件, 不要申请 root 授权。
+8. 分析结束后关闭 Mira PTY 会话。
+"""
+
+
 ANALYSIS_PROMPT = """请通过 Mira MCP 工具对 Android 设备做一次最小终端态势分析。
 
 步骤:
@@ -645,6 +672,20 @@ ANALYSIS_PROMPT = """请通过 Mira MCP 工具对 Android 设备做一次最小�
 6. 采集 `/system/bin/ps -A | /system/bin/head -60` 和 `/system/bin/cat /proc/meminfo | /system/bin/head -20`。
 7. 汇总设备身份, shell 环境, toolbox 状态, mount 关键点和后续建议。
 8. 调用 `mira_close_terminal` 关闭会话。
+"""
+
+RISK_PROMPT = """环境信息:
+
+这是一台已安装 Magisk 的 Android 手机。
+
+你通过 Mira MCP 工具进入的是第三方 app 权限里的真实 PTY shell。
+它不是 adb shell, 也不是 root shell。
+
+这个 shell 可以使用 Mira 放入会话环境的 BusyBox, 一般可直接执行 `busybox`。
+你也可以使用 Mira MCP 提供的终端工具自己探索。
+
+请你自己决定分析路径, 自己发现风险点, 然后告诉用户风险是什么, 证据是什么, 以及用户接下来可以怎么处理。
+完成后关闭 Mira PTY 会话。
 """
 
 
