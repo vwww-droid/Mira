@@ -17,11 +17,14 @@ Remote On-Demand Terminal(按需远程终端) 现在采用手机主动连接 Rel
 
 ## 一键公网启动
 
-本机需要安装 cloudflared(Cloudflare 隧道命令行):
+本机需要先安装并认证 cpolar(国内内网穿透服务)。macOS(苹果桌面系统)可以使用官网下载的可执行文件, 也可以通过 Homebrew(包管理工具)安装:
 
 ```bash
-brew install cloudflare/cloudflare/cloudflared
+brew tap probezy/core && brew install cpolar
+cpolar authtoken <YOUR_AUTH_TOKEN>
 ```
+
+`<YOUR_AUTH_TOKEN>` 在 `https://dashboard.cpolar.com/get-started` 获取, 不要提交到仓库或聊天记录。
 
 启动:
 
@@ -32,10 +35,10 @@ brew install cloudflare/cloudflare/cloudflared
 脚本会自动:
 
 1. 先启动本地 Mira Relay。
-2. 启动 Cloudflare Quick Tunnel(随机公网隧道)。
-3. 等随机 `https://*.trycloudflare.com` 地址通过 DNS(域名解析) 和 HTTP(网页请求) 校验。
+2. 启动 cpolar HTTP(网页协议) 隧道。
+3. 等 cpolar 输出的 `https://*.cpolar.top` 地址通过 HTTP(网页请求) 校验。
 4. 用这个地址更新 Mira Relay 的公网地址。
-4. 打印 Browser URL 和 Android Relay URL。
+5. 打印 Browser URL 和 Android Relay URL。
 
 手机端填写脚本打印的 Android Relay URL, 不需要 Scan LAN, 不需要二维码。
 
@@ -46,9 +49,15 @@ MIRA_RELAY_PORT=8765 ./tools/relay/start-public-relay.sh
 MIRA_RELAY_HOST=127.0.0.1 ./tools/relay/start-public-relay.sh
 ```
 
+如果仍然想使用 Cloudflare Quick Tunnel(Cloudflare 临时隧道), 可以显式指定:
+
+```bash
+MIRA_TUNNEL_PROVIDER=cloudflare ./tools/relay/start-public-relay.sh
+```
+
 ## 使用外部公网隧道
 
-如果 Cloudflare Quick Tunnel 在当前网络下不可用, 可以先用 cpolar(国内内网穿透服务), frp(快速反向代理工具), NATAPP(内网穿透服务) 或其他服务把本机 `8765` 端口映射到公网。
+如果你已经在另一个终端里手动运行 cpolar, frp(快速反向代理工具), NATAPP(内网穿透服务) 或其他服务, 可以把本机 `8765` 端口映射到公网后交给 Mira 复用。
 
 拿到公网地址后, 通过 `MIRA_PUBLIC_URL` 交给 Mira:
 
@@ -60,12 +69,12 @@ MIRA_PUBLIC_URL=https://example.cpolar.top ./mira-web
 
 1. 启动本地 Mira Relay。
 2. 等待 `MIRA_PUBLIC_URL` 可以访问到本地 Relay。
-3. 跳过 Cloudflare Quick Tunnel。
+3. 跳过自动启动 cpolar。
 4. 把 `MIRA_PUBLIC_URL` 打印为 Browser URL 和 Android Relay URL。
 
 ### cpolar 快速尝试
 
-安装和认证按 cpolar 官网文档完成后, 先单独启动隧道:
+安装和认证按 cpolar 官网文档完成后, 可以先单独启动隧道:
 
 ```bash
 cpolar http 8765
@@ -74,16 +83,18 @@ cpolar http 8765
 复制 cpolar 输出的公网 HTTP 或 HTTPS 地址, 例如:
 
 ```text
-https://xxxx.cpolar.top
+https://xxxx.r36.cpolar.top
 ```
 
 再启动 Mira:
 
 ```bash
-MIRA_PUBLIC_URL=https://xxxx.cpolar.top ./mira-web
+MIRA_PUBLIC_URL=https://xxxx.r36.cpolar.top ./mira-web
 ```
 
 保持 cpolar 进程和 `./mira-web` 同时运行。手机端填写 Mira 打印的 Android Relay URL。
+
+默认 `./mira-web` 会自己管理 cpolar 进程。如果已经手动运行 `cpolar http 8765`, 推荐使用 `MIRA_PUBLIC_URL` 方式, 避免重复启动 cpolar。
 
 ## 局域网启动
 

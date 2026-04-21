@@ -6,13 +6,16 @@ PORT="${MIRA_RELAY_PORT:-8765}"
 HOST="${MIRA_RELAY_HOST:-0.0.0.0}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-cloudflared}"
+CPOLAR_BIN="${CPOLAR_BIN:-cpolar}"
 CONSOLE_DIR="${ROOT_DIR}/apps/console"
 LOG_FILE=""
 CLOUDFLARED_PID=""
+CPOLAR_PID=""
 RELAY_PID=""
 ADVERTISE_URL_FILE=""
 LOCAL_ADVERTISE_URL="${MIRA_LOCAL_ADVERTISE_URL:-http://localhost:${PORT}}"
 PUBLIC_URL="${MIRA_PUBLIC_URL:-}"
+TUNNEL_PROVIDER="${MIRA_TUNNEL_PROVIDER:-cpolar}"
 TUNNEL_ATTEMPTS="${MIRA_TUNNEL_ATTEMPTS:-0}"
 TUNNEL_URL_TIMEOUT_SECONDS="${MIRA_TUNNEL_URL_TIMEOUT_SECONDS:-30}"
 TUNNEL_DNS_TIMEOUT_SECONDS="${MIRA_TUNNEL_DNS_TIMEOUT_SECONDS:-45}"
@@ -29,7 +32,11 @@ Environment variables:
   MIRA_RELAY_PORT   Relay port, default 8765
   MIRA_RELAY_HOST   Relay bind host, default 0.0.0.0
   PYTHON_BIN        Python command, default python3
+  CPOLAR_BIN        cpolar command, default cpolar
   CLOUDFLARED_BIN   cloudflared command, default cloudflared
+  MIRA_TUNNEL_PROVIDER
+                   Public tunnel provider, default cpolar. Set to cloudflare
+                   to use Cloudflare quick tunnel instead.
   MIRA_SKIP_CONSOLE_BUILD
                    Set to 1 to skip building apps/console
   MIRA_RELAY_AUTO_KILL_PORT_PROCESS
@@ -40,7 +47,7 @@ Environment variables:
                    default http://localhost:8765
   MIRA_PUBLIC_URL
                    Existing public tunnel URL from cpolar, frp, NATAPP, or
-                   another provider. When set, Cloudflare quick tunnel is skipped.
+                   another provider. When set, automatic tunnel startup is skipped.
   MIRA_LAN_RELAY_URL
                    LAN URL shown for Android devices on the same Wi-Fi,
                    auto-detected by default
@@ -61,16 +68,50 @@ MSG
   exit 0
 fi
 
+resolve_cpolar_bin() {
+  if command -v "${CPOLAR_BIN}" >/dev/null 2>&1; then
+    command -v "${CPOLAR_BIN}"
+    return 0
+  fi
+  if [[ -x "${HOME}/.local/bin/cpolar" ]]; then
+    echo "${HOME}/.local/bin/cpolar"
+    return 0
+  fi
+  return 1
+}
+
 stop_cloudflared() {
+  local should_remove_log=0
+
   if [[ -n "${CLOUDFLARED_PID}" ]] && kill -0 "${CLOUDFLARED_PID}" 2>/dev/null; then
+    should_remove_log=1
     kill "${CLOUDFLARED_PID}" 2>/dev/null || true
     wait "${CLOUDFLARED_PID}" 2>/dev/null || true
+  elif [[ -n "${CLOUDFLARED_PID}" ]]; then
+    should_remove_log=1
   fi
   CLOUDFLARED_PID=""
-  if [[ -n "${LOG_FILE}" ]]; then
+  if [[ "${should_remove_log}" == "1" && -n "${LOG_FILE}" ]]; then
     rm -f "${LOG_FILE}"
+    LOG_FILE=""
   fi
-  LOG_FILE=""
+}
+
+stop_cpolar() {
+  local should_remove_log=0
+
+  if [[ -n "${CPOLAR_PID}" ]] && kill -0 "${CPOLAR_PID}" 2>/dev/null; then
+    should_remove_log=1
+    kill "${CPOLAR_PID}" 2>/dev/null || true
+    wait "${CPOLAR_PID}" 2>/dev/null || true
+  elif [[ -n "${CPOLAR_PID}" ]]; then
+    should_remove_log=1
+  fi
+  CPOLAR_PID=""
+  if [[ "${should_remove_log}" == "1" && -n "${LOG_FILE}" ]]; then
+    rm -f "${LOG_FILE}"
+    LOG_FILE=""
+  fi
 }
 
 stop_relay() {
@@ -87,6 +128,7 @@ stop_relay() {
 
 cleanup() {
   stop_cloudflared
+  stop_cpolar
   stop_relay
 }
 trap cleanup EXIT INT TERM
@@ -406,6 +448,66 @@ wait_for_public_url() {
   return 1
 }
 
+wait_for_cpolar_url() {
+  local max_checks https_url http_url
+
+  max_checks=$((TUNNEL_URL_TIMEOUT_SECONDS * 2))
+  PUBLIC_URL=""
+
+  if (( max_checks <= 0 )); then
+    max_checks=1
+  fi
+
+  for _ in $(seq 1 "${max_checks}"); do
+    if ! kill -0 "${CPOLAR_PID}" 2>/dev/null; then
+      cat "${LOG_FILE}" >&2 || true
+      echo "cpolar exited before publishing a URL." >&2
+      return 1
+    fi
+    https_url="$(grep -Eo 'Forwarding[[:space:]]+https://[^[:space:]]+' "${LOG_FILE}" | awk '{print $2}' | head -n 1 || true)"
+    http_url="$(grep -Eo 'Forwarding[[:space:]]+http://[^[:space:]]+' "${LOG_FILE}" | awk '{print $2}' | head -n 1 || true)"
+    PUBLIC_URL="${https_url:-${http_url}}"
+    if [[ -n "${PUBLIC_URL}" ]]; then
+      PUBLIC_URL="${PUBLIC_URL%/}"
+      return 0
+    fi
+    sleep 0.5
+  done
+
+  cat "${LOG_FILE}" >&2 || true
+  echo "Timed out waiting for cpolar public URL." >&2
+  return 1
+}
+
+start_cpolar_tunnel() {
+  local resolved_cpolar_bin
+
+  if ! resolved_cpolar_bin="$(resolve_cpolar_bin)"; then
+    echo "cpolar not found. Install cpolar first, then rerun ./mira-web." >&2
+    echo "macOS: download from https://dashboard.cpolar.com/get-started or install with Homebrew." >&2
+    echo "After installing, run: cpolar authtoken <YOUR_AUTH_TOKEN>" >&2
+    return 1
+  fi
+
+  LOG_FILE="$(mktemp -t mira-cpolar.XXXXXX.log)"
+  echo "Starting cpolar tunnel for http://localhost:${PORT} ..."
+  "${resolved_cpolar_bin}" http "${PORT}" >"${LOG_FILE}" 2>&1 &
+  CPOLAR_PID="$!"
+
+  if ! wait_for_cpolar_url; then
+    stop_cpolar
+    return 1
+  fi
+
+  echo "cpolar tunnel URL is published: ${PUBLIC_URL}"
+  if wait_for_public_url "${PUBLIC_URL}"; then
+    return 0
+  fi
+
+  stop_cpolar
+  return 1
+}
+
 wait_for_tunnel_url() {
   local max_checks
 
@@ -500,6 +602,11 @@ watch_children() {
       wait "${CLOUDFLARED_PID}" 2>/dev/null || true
       exit 1
     fi
+    if [[ -n "${CPOLAR_PID}" ]] && ! kill -0 "${CPOLAR_PID}" 2>/dev/null; then
+      echo "cpolar stopped." >&2
+      wait "${CPOLAR_PID}" 2>/dev/null || true
+      exit 1
+    fi
     sleep 1
   done
 }
@@ -562,7 +669,40 @@ Press Ctrl-C to stop the local relay.
 
 MSG
   fi
-elif start_cloudflare_tunnel; then
+elif [[ "${TUNNEL_PROVIDER}" == "cpolar" ]]; then
+  if start_cpolar_tunnel; then
+    update_advertise_url "${PUBLIC_URL}"
+    LAN_RELAY_URL="$(lan_relay_url)"
+
+    cat <<MSG
+
+Mira Relay is ready.
+Local Browser URL: ${LOCAL_ADVERTISE_URL}
+LAN Android Relay URL: ${LAN_RELAY_URL:-unavailable}
+Browser URL: ${PUBLIC_URL}
+Android Relay URL: ${PUBLIC_URL}
+
+Using cpolar public tunnel.
+Open either browser URL on your computer.
+On the phone, paste Android Relay URL, then tap Connect Relay.
+Press Ctrl-C to stop both relay and cpolar.
+
+MSG
+  else
+    LAN_RELAY_URL="$(lan_relay_url)"
+    cat <<MSG
+
+Mira Relay is ready for local browser access.
+Local Browser URL: ${LOCAL_ADVERTISE_URL}
+LAN Android Relay URL: ${LAN_RELAY_URL:-unavailable}
+
+cpolar tunnel is unavailable, so no Android Relay URL was created.
+Install cpolar, run cpolar authtoken, or set MIRA_PUBLIC_URL manually.
+Press Ctrl-C to stop the local relay.
+
+MSG
+  fi
+elif [[ "${TUNNEL_PROVIDER}" == "cloudflare" ]] && start_cloudflare_tunnel; then
   update_advertise_url "${PUBLIC_URL}"
   LAN_RELAY_URL="$(lan_relay_url)"
 
@@ -578,6 +718,19 @@ Open either browser URL on your computer.
 On the phone, prefer LAN Android Relay URL when the phone is on the same Wi-Fi.
 If LAN is unavailable, paste Android Relay URL, then tap Connect Relay.
 Press Ctrl-C to stop both relay and tunnel.
+
+MSG
+elif [[ "${TUNNEL_PROVIDER}" != "cloudflare" ]]; then
+  LAN_RELAY_URL="$(lan_relay_url)"
+  cat <<MSG
+
+Mira Relay is ready for local browser access.
+Local Browser URL: ${LOCAL_ADVERTISE_URL}
+LAN Android Relay URL: ${LAN_RELAY_URL:-unavailable}
+
+Unknown MIRA_TUNNEL_PROVIDER: ${TUNNEL_PROVIDER}
+Use cpolar, cloudflare, or set MIRA_PUBLIC_URL.
+Press Ctrl-C to stop the local relay.
 
 MSG
 else
