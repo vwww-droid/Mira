@@ -12,6 +12,7 @@ CLOUDFLARED_PID=""
 RELAY_PID=""
 ADVERTISE_URL_FILE=""
 LOCAL_ADVERTISE_URL="${MIRA_LOCAL_ADVERTISE_URL:-http://localhost:${PORT}}"
+PUBLIC_URL="${MIRA_PUBLIC_URL:-}"
 TUNNEL_ATTEMPTS="${MIRA_TUNNEL_ATTEMPTS:-0}"
 TUNNEL_URL_TIMEOUT_SECONDS="${MIRA_TUNNEL_URL_TIMEOUT_SECONDS:-30}"
 TUNNEL_DNS_TIMEOUT_SECONDS="${MIRA_TUNNEL_DNS_TIMEOUT_SECONDS:-45}"
@@ -22,7 +23,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<'MSG'
 Usage: tools/relay/start-public-relay.sh
 
-Starts a Mira relay server and a random Cloudflare quick tunnel.
+Starts a Mira relay server and a public tunnel.
 
 Environment variables:
   MIRA_RELAY_PORT   Relay port, default 8765
@@ -37,6 +38,9 @@ Environment variables:
   MIRA_LOCAL_ADVERTISE_URL
                    Local browser URL before the public tunnel is ready,
                    default http://localhost:8765
+  MIRA_PUBLIC_URL
+                   Existing public tunnel URL from cpolar, frp, NATAPP, or
+                   another provider. When set, Cloudflare quick tunnel is skipped.
   MIRA_LAN_RELAY_URL
                    LAN URL shown for Android devices on the same Wi-Fi,
                    auto-detected by default
@@ -379,6 +383,29 @@ wait_for_tunnel_http() {
   return 1
 }
 
+wait_for_public_url() {
+  local public_url max_checks
+
+  public_url="$1"
+  max_checks=$((TUNNEL_HTTP_TIMEOUT_SECONDS * 2))
+
+  if (( max_checks <= 0 )); then
+    return 0
+  fi
+
+  echo "Waiting for public tunnel HTTP to reach Mira Relay at ${public_url} ..."
+  for _ in $(seq 1 "${max_checks}"); do
+    if http_get_succeeds "${public_url}"; then
+      echo "Public tunnel HTTP is ready."
+      return 0
+    fi
+    sleep 0.5
+  done
+
+  echo "Public tunnel did not return HTTP within ${TUNNEL_HTTP_TIMEOUT_SECONDS}s: ${public_url}" >&2
+  return 1
+}
+
 wait_for_tunnel_url() {
   local max_checks
 
@@ -502,7 +529,40 @@ fi
 
 start_relay_server
 
-if start_cloudflare_tunnel; then
+if [[ -n "${MIRA_PUBLIC_URL:-}" ]]; then
+  PUBLIC_URL="${MIRA_PUBLIC_URL%/}"
+  if wait_for_public_url "${PUBLIC_URL}"; then
+    update_advertise_url "${PUBLIC_URL}"
+    LAN_RELAY_URL="$(lan_relay_url)"
+
+    cat <<MSG
+
+Mira Relay is ready.
+Local Browser URL: ${LOCAL_ADVERTISE_URL}
+LAN Android Relay URL: ${LAN_RELAY_URL:-unavailable}
+Browser URL: ${PUBLIC_URL}
+Android Relay URL: ${PUBLIC_URL}
+
+Using external public tunnel from MIRA_PUBLIC_URL.
+Keep your tunnel provider client, such as cpolar or frp, running.
+Press Ctrl-C to stop the local relay.
+
+MSG
+  else
+    LAN_RELAY_URL="$(lan_relay_url)"
+    cat <<MSG
+
+Mira Relay is ready for local browser access.
+Local Browser URL: ${LOCAL_ADVERTISE_URL}
+LAN Android Relay URL: ${LAN_RELAY_URL:-unavailable}
+
+MIRA_PUBLIC_URL is set but unreachable: ${PUBLIC_URL}
+Start or fix the external tunnel, then rerun this command.
+Press Ctrl-C to stop the local relay.
+
+MSG
+  fi
+elif start_cloudflare_tunnel; then
   update_advertise_url "${PUBLIC_URL}"
   LAN_RELAY_URL="$(lan_relay_url)"
 

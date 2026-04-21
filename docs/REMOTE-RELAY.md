@@ -31,9 +31,10 @@ brew install cloudflare/cloudflare/cloudflared
 
 脚本会自动:
 
-1. 启动 Cloudflare Quick Tunnel(随机公网隧道)。
-2. 拿到随机 `https://*.trycloudflare.com` 地址。
-3. 用这个地址启动 Mira Relay。
+1. 先启动本地 Mira Relay。
+2. 启动 Cloudflare Quick Tunnel(随机公网隧道)。
+3. 等随机 `https://*.trycloudflare.com` 地址通过 DNS(域名解析) 和 HTTP(网页请求) 校验。
+4. 用这个地址更新 Mira Relay 的公网地址。
 4. 打印 Browser URL 和 Android Relay URL。
 
 手机端填写脚本打印的 Android Relay URL, 不需要 Scan LAN, 不需要二维码。
@@ -44,6 +45,45 @@ brew install cloudflare/cloudflare/cloudflared
 MIRA_RELAY_PORT=8765 ./tools/relay/start-public-relay.sh
 MIRA_RELAY_HOST=127.0.0.1 ./tools/relay/start-public-relay.sh
 ```
+
+## 使用外部公网隧道
+
+如果 Cloudflare Quick Tunnel 在当前网络下不可用, 可以先用 cpolar(国内内网穿透服务), frp(快速反向代理工具), NATAPP(内网穿透服务) 或其他服务把本机 `8765` 端口映射到公网。
+
+拿到公网地址后, 通过 `MIRA_PUBLIC_URL` 交给 Mira:
+
+```bash
+MIRA_PUBLIC_URL=https://example.cpolar.top ./mira-web
+```
+
+这种模式下脚本会:
+
+1. 启动本地 Mira Relay。
+2. 等待 `MIRA_PUBLIC_URL` 可以访问到本地 Relay。
+3. 跳过 Cloudflare Quick Tunnel。
+4. 把 `MIRA_PUBLIC_URL` 打印为 Browser URL 和 Android Relay URL。
+
+### cpolar 快速尝试
+
+安装和认证按 cpolar 官网文档完成后, 先单独启动隧道:
+
+```bash
+cpolar http 8765
+```
+
+复制 cpolar 输出的公网 HTTP 或 HTTPS 地址, 例如:
+
+```text
+https://xxxx.cpolar.top
+```
+
+再启动 Mira:
+
+```bash
+MIRA_PUBLIC_URL=https://xxxx.cpolar.top ./mira-web
+```
+
+保持 cpolar 进程和 `./mira-web` 同时运行。手机端填写 Mira 打印的 Android Relay URL。
 
 ## 局域网启动
 
