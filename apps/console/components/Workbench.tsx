@@ -1,3 +1,6 @@
+'use client';
+
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DeviceFrame } from '@/components/DeviceFrame';
 import { ConsoleEvent, TerminalStage } from '@/components/TerminalStage';
 import { deviceTitle, shortId } from '@/lib/format';
@@ -16,8 +19,26 @@ export function Workbench({
   onEvent: (event: ConsoleEvent) => void;
   onRefreshDevices: () => void;
 }) {
+  const hostRef = useRef<HTMLElement | null>(null);
+  const [hostSize, setHostSize] = useState({ width: 0, height: 0 });
+  const leftWidth = useMemo(() => adaptiveDevicePaneWidth(selectedDevice, hostSize), [hostSize, selectedDevice]);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const update = () => setHostSize({ width: host.clientWidth, height: host.clientHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <section className="grid min-h-0 flex-1 grid-cols-[286px_minmax(0,1fr)] overflow-hidden bg-[#f5f5f5] text-[#111]">
+    <section
+      ref={hostRef}
+      className="grid min-h-0 flex-1 overflow-hidden bg-[#f5f5f5] text-[#111]"
+      style={{ gridTemplateColumns: `${leftWidth}px minmax(0,1fr)` }}
+    >
       <DeviceFrame device={selectedDevice} />
       <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_168px]">
         <TerminalStage device={selectedDevice} onEvent={onEvent} onRefreshDevices={onRefreshDevices} />
@@ -25,6 +46,18 @@ export function Workbench({
       </div>
     </section>
   );
+}
+
+function adaptiveDevicePaneWidth(device: MiraDevice, hostSize: { width: number; height: number }) {
+  const screen = device.outline?.screen;
+  const screenWidth = Number(screen?.width) || 1080;
+  const screenHeight = Number(screen?.height) || 2280;
+  const aspect = screenWidth > 0 && screenHeight > 0 ? screenWidth / screenHeight : 9 / 19.5;
+  const target = (hostSize.height || 720) * aspect;
+  const maxByWidth = hostSize.width ? hostSize.width * 0.48 : 620;
+  const max = Math.max(240, Math.min(640, maxByWidth));
+  const min = Math.min(300, max);
+  return Math.round(Math.max(min, Math.min(target, max)));
 }
 
 function InfoPanel({ device }: { device: MiraDevice }) {

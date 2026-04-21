@@ -36,6 +36,7 @@ export function TerminalStage({
   const socketRef = useRef<WebSocket | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const deviceAttachedRef = useRef(false);
+  const autoOpenDeviceRef = useRef<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>('idle');
   const [transportStatus, setTransportStatus] = useState<'idle' | 'connecting' | 'connected' | 'closed' | 'error'>('idle');
@@ -144,13 +145,17 @@ export function TerminalStage({
       }
       if (message.type === 'terminal.output') {
         deviceAttachedRef.current = true;
+        terminalRef.current?.focus();
         terminalRef.current?.write(base64ToBytes(message.dataBase64 || ''));
       } else if (message.type === 'session.status') {
         const nextState = message.state || 'unknown';
         deviceAttachedRef.current = nextState === 'active';
         setSessionStatus(nextState);
         record('session.status', nextState);
-        if (nextState === 'active') fitAndResize();
+        if (nextState === 'active') {
+          fitAndResize();
+          window.setTimeout(() => terminalRef.current?.focus(), 0);
+        }
       } else if (message.type === 'session.close') {
         deviceAttachedRef.current = false;
         sessionIdRef.current = null;
@@ -210,6 +215,25 @@ export function TerminalStage({
   }, [onRefreshDevices, record]);
 
   useEffect(() => {
+    if (!device) {
+      autoOpenDeviceRef.current = null;
+      return;
+    }
+    if (device.state === 'offline') {
+      if (autoOpenDeviceRef.current === device.installId) autoOpenDeviceRef.current = null;
+      return;
+    }
+    if (sessionId || sessionStatus === 'opening' || device.state === 'opening' || device.state === 'active') return;
+    if (autoOpenDeviceRef.current === device.installId) return;
+    autoOpenDeviceRef.current = device.installId;
+    const timer = window.setTimeout(() => {
+      terminalRef.current?.focus();
+      void handleOpen();
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [device, handleOpen, sessionId, sessionStatus]);
+
+  useEffect(() => {
     return () => {
       socketRef.current?.close();
     };
@@ -247,7 +271,7 @@ export function TerminalStage({
             Select a device.
           </div>
         )}
-        <div ref={terminalHost} className="h-full w-full" />
+        <div ref={terminalHost} className="h-full w-full" onMouseDown={() => terminalRef.current?.focus()} />
       </div>
     </section>
   );
