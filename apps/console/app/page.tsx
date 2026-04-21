@@ -16,12 +16,11 @@ import {
   Radio,
   RefreshCw,
   Search,
-  Shield,
   Sparkles,
   TerminalSquare,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DeviceCard } from '@/components/DeviceCard';
 import { StatusPill } from '@/components/StatusPill';
 import { ConsoleEvent, TerminalStage } from '@/components/TerminalStage';
@@ -45,6 +44,7 @@ export default function RelayConsolePage() {
   const [relayUrl, setRelayUrl] = useState('');
   const [events, setEvents] = useState<ConsoleEvent[]>([]);
   const [copied, setCopied] = useState(false);
+  const devicesSnapshot = useRef('');
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.installId === selectedId) || null,
@@ -59,7 +59,12 @@ export default function RelayConsolePage() {
   const refreshDevices = useCallback(async () => {
     try {
       const data = await listDevices();
-      setDevices(data.devices || []);
+      const nextDevices = data.devices || [];
+      const nextSnapshot = JSON.stringify(nextDevices);
+      if (nextSnapshot !== devicesSnapshot.current) {
+        devicesSnapshot.current = nextSnapshot;
+        setDevices(nextDevices);
+      }
       setError(null);
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : String(fetchError));
@@ -131,14 +136,7 @@ export default function RelayConsolePage() {
             onRefreshDevices={refreshDevices}
           />
         ) : (
-          <Lobby
-            devices={devices}
-            loading={loading}
-            relayUrl={relayUrl}
-            copied={copied}
-            onCopyRelay={handleCopyRelay}
-            onSelect={selectDevice}
-          />
+          <Lobby devices={devices} onSelect={selectDevice} />
         )}
       </div>
     </main>
@@ -217,76 +215,16 @@ function TopBar({
   );
 }
 
-function Lobby({
-  devices,
-  loading,
-  relayUrl,
-  copied,
-  onCopyRelay,
-  onSelect,
-}: {
+function Lobby({ devices, onSelect }: {
   devices: MiraDevice[];
-  loading: boolean;
-  relayUrl: string;
-  copied: boolean;
-  onCopyRelay: () => void;
   onSelect: (device: MiraDevice) => void;
 }) {
   return (
     <section className="min-h-0 flex-1 overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/45 p-5 shadow-[0_24px_120px_rgba(0,0,0,0.32)] backdrop-blur-2xl lg:p-6">
-      <div className="grid h-full min-h-0 grid-cols-1 gap-5 xl:grid-cols-[1.02fr_1.25fr]">
-        <div className="flex min-h-0 flex-col justify-between rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_18%_0%,rgba(52,211,153,0.16),transparent_32%),radial-gradient(circle_at_84%_20%,rgba(96,165,250,0.12),transparent_26%),rgba(15,23,42,0.66)] p-6 lg:p-7">
-          <div>
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-200">
-              <Shield size={14} /> Remote PTY ready
-            </div>
-            <h1 className="max-w-xl text-4xl font-black leading-[0.96] tracking-[-0.08em] text-slate-50 md:text-6xl">
-              Device control room.
-            </h1>
-            <p className="mt-5 max-w-lg text-sm leading-7 text-slate-400">
-              保持 Android Mira 前台并连接 Relay URL. 选择已连接设备后进入三栏工作台, 中央终端直接承载交互主视图.
-            </p>
-          </div>
-          <div className="mt-10 grid gap-3 rounded-[1.5rem] border border-white/10 bg-black/24 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Relay URL</div>
-                <div className="mt-1 text-xs text-slate-500">手机端请填入该地址并连接.</div>
-              </div>
-              <StatusPill state={devices.length ? 'active' : 'opening'} label={devices.length ? 'devices visible' : 'waiting'} />
-            </div>
-            <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/80 px-3 py-2">
-              <code className="min-w-0 flex-1 truncate font-mono text-sm text-emerald-300">{relayUrl || 'loading...'}</code>
-              <button type="button" onClick={onCopyRelay} className="inline-flex h-10 items-center gap-2 rounded-2xl bg-white/[0.07] px-3 text-sm font-semibold text-slate-200 transition hover:bg-white/[0.12]">
-                {copied ? <Check size={15} /> : <Clipboard size={15} />}
-                {copied ? 'Copied' : 'Copy'}
-              </button>
-            </div>
-          </div>
-        </div>
-        <div className="min-h-0 overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/56 p-4 lg:p-5">
-          <div className="mb-5 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-2xl font-bold tracking-[-0.04em]">Connected devices</div>
-              <div className="mt-1 text-sm text-slate-500">Select a device to enter the workbench.</div>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.035] px-3 py-2 font-mono text-xs text-slate-400">{devices.length} total</div>
-          </div>
-          <div className="mira-scrollbar grid max-h-[calc(100vh-220px)] grid-cols-1 gap-3 overflow-auto pr-1 2xl:grid-cols-2">
-            {devices.map((device) => (
-              <DeviceCard key={device.installId} device={device} onSelect={onSelect} />
-            ))}
-            {!devices.length && (
-              <div className="grid min-h-[18rem] place-items-center rounded-[1.5rem] border border-dashed border-white/10 bg-white/[0.025] text-center">
-                <div>
-                  <MonitorSmartphone className="mx-auto mb-3 text-slate-500" />
-                  <div className="font-semibold text-slate-300">{loading ? 'Waiting for devices' : 'No devices connected'}</div>
-                  <div className="mt-2 max-w-xs text-sm leading-6 text-slate-500">在 Android Mira 首页填入 Relay URL, 点击 Connect Relay.</div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+      <div className="mira-scrollbar grid h-full min-h-0 grid-cols-1 content-start gap-3 overflow-auto pr-1 xl:grid-cols-2 2xl:grid-cols-3">
+        {devices.map((device) => (
+          <DeviceCard key={device.installId} device={device} onSelect={onSelect} />
+        ))}
       </div>
     </section>
   );

@@ -14,7 +14,6 @@ export function StatusPill({ state, label }: { state?: string; label?: string })
       )}
     >
       <span className="relative flex h-2 w-2">
-        {tone === 'good' && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-45" />}
         <span
           className={clsx(
             'relative inline-flex h-2 w-2 rounded-full',
