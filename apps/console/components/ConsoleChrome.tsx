@@ -44,9 +44,9 @@ export function TopBar({
 
 export function Lobby({ devices, onSelect }: { devices: MiraDevice[]; onSelect: (device: MiraDevice) => void }) {
   return (
-    <section className="min-h-0 flex-1 overflow-auto bg-[#f5f5f5] p-4 text-[#111]">
-      <div className="border border-[#cfcfcf] bg-white">
-        <div className="border-b border-[#cfcfcf] px-3 py-2 font-mono text-[12px] font-semibold">Devices</div>
+    <section className="min-h-0 flex-1 overflow-auto bg-[#f5f5f5] p-3 text-[#111]">
+      <div className="w-fit min-w-[540px] max-w-full border border-[#cfcfcf] bg-white">
+        <div className="border-b border-[#cfcfcf] px-2 py-1 font-mono text-[10px] font-semibold leading-3">Devices</div>
         {devices.length ? (
           <div className="divide-y divide-[#dedede]">
             {devices.map((device) => (
@@ -54,7 +54,7 @@ export function Lobby({ devices, onSelect }: { devices: MiraDevice[]; onSelect: 
                 key={device.installId}
                 type="button"
                 onClick={() => onSelect(device)}
-                className="grid w-full grid-cols-[220px_150px_1fr_90px] gap-3 px-3 py-2 text-left font-mono text-[11px] hover:bg-[#f3f7ff]"
+                className="grid w-full grid-cols-[130px_88px_240px_54px] gap-2 px-2 py-0.5 text-left font-mono text-[9px] leading-3 hover:bg-[#f3f7ff]"
               >
                 <span className="truncate font-semibold">{deviceTitle(device)}</span>
                 <span className="truncate text-[#555]">{shortId(device.installId)}</span>
@@ -64,7 +64,7 @@ export function Lobby({ devices, onSelect }: { devices: MiraDevice[]; onSelect: 
             ))}
           </div>
         ) : (
-          <div className="px-3 py-10 font-mono text-[11px] text-[#666]">No device connected.</div>
+          <div className="px-2 py-6 font-mono text-[9px] leading-3 text-[#666]">No device connected.</div>
         )}
       </div>
     </section>
