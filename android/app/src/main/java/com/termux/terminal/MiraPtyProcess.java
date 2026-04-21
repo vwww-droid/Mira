@@ -77,6 +77,7 @@ public final class MiraPtyProcess implements Closeable {
     }
 
     private static void closeQuietly(Closeable closeable) {
+        if (closeable == null) return;
         try {
             closeable.close();
         } catch (IOException ignored) {

@@ -212,7 +212,7 @@ adb install -r android/app/build/outputs/apk/debug/mira-app-debug.apk
 adb shell am start -n com.vwww.mira/.MainActivity
 ```
 
-Mira APK 内部会启动随机本地端口, 并带一次性 token(访问令牌) 加载 WebView(网页视图)。端口和令牌不会写死在代码里。
+Mira APK 的 Local Terminal(本地终端) 模式会启动随机本地端口, 并带本地 WebView(网页视图) 专用的一次性 token(访问令牌)。端口和令牌不会写死在代码里, 该 token 不参与远程 Relay(中继) 协议。
 
 如果要从电脑浏览器访问设备内 Web Terminal, 可以用 adb forward(安卓调试桥端口转发):
 
@@ -273,6 +273,38 @@ sequenceDiagram
 4. `tools/termux/prepare-mira-termux-app.sh`: 生成改名后的 Termux app 工作区。
 
 完整说明见 `docs/TERMUX-FORK.md`。
+
+## Remote On-Demand Terminal 运行说明
+
+Mira 现在新增局域网 Relay Server(中继服务端), 支持服务端发现设备, 按需唤起 Android PTY, 再由浏览器远程控制同一个手机 shell。
+
+本阶段远程 Relay 不使用 Pairing Token(配对令牌)。企业自托管场景默认由自己的服务端边界控制访问, 协议里只使用 installId(安装标识) 识别设备和 sessionId(会话标识) 绑定会话。
+
+### 启动服务端
+
+```bash
+python3 -m mira.relay.server \
+  --host 0.0.0.0 \
+  --port 8765 \
+  --discovery-port 8766 \
+  --advertise-url http://<电脑局域网IP>:8765
+```
+
+浏览器打开:
+
+```text
+http://<电脑局域网IP>:8765
+```
+
+### Android 端
+
+1. 打开 Mira APK 首页。
+2. 填写 Device Name(设备名称) 和 Discovery Port(发现端口)。
+3. 点击 `Start Discovery`。
+4. 回到浏览器点击 `Scan LAN`。
+5. 发现设备后点击 `Open Terminal`。
+
+服务端会向设备发送 wake(唤醒) 请求, 设备收到后才创建 PTY 并主动连接服务端。详细说明见 `docs/REMOTE-RELAY.md`。
 
 ## Web Terminal MVP 运行说明
 

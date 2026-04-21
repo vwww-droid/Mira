@@ -11,7 +11,6 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -276,26 +275,7 @@ public final class MiraTerminalServer implements Closeable {
     }
 
     private MiraPtyProcess createPty() {
-        String shell = bootstrap.getShellPath().getAbsolutePath();
-        String cwd = bootstrap.getHomeDir().getAbsolutePath();
-        String prefix = bootstrap.getPrefixDir().getAbsolutePath();
-        String home = bootstrap.getHomeDir().getAbsolutePath();
-        String tmp = bootstrap.getTmpDir().getAbsolutePath();
-        String[] args = new String[] {"sh"};
-        String[] env = new String[] {
-            "PREFIX=" + prefix,
-            "HOME=" + home,
-            "TMPDIR=" + tmp,
-            "PATH=" + prefix + "/bin:/system/bin:/system/xbin",
-            "TERM=xterm-256color",
-            "COLORTERM=truecolor",
-            "MIRA_SANDBOX=1",
-            "MIRA_PREFIX=" + prefix,
-            "SHELL=" + prefix + "/bin/sh",
-            "MIRA_APP_PACKAGE=" + context.getPackageName(),
-            "ENV=" + home + "/.profile"
-        };
-        return new MiraPtyProcess(shell, cwd, args, env, 24, 80);
+        return MiraPtyFactory.create(context, bootstrap, 24, 80);
     }
 
     private void handleTerminalMessage(MiraPtyProcess pty, String message) throws IOException {
@@ -383,7 +363,8 @@ public final class MiraTerminalServer implements Closeable {
                 output.write(length & 0xFF);
             } else {
                 output.write(127);
-                for (int i = 7; i >= 0; i--) output.write((length >> (8 * i)) & 0xFF);
+                long longLength = length;
+                for (int i = 7; i >= 0; i--) output.write((int) ((longLength >> (8 * i)) & 0xFF));
             }
             output.write(payload);
             output.flush();

@@ -62,7 +62,7 @@ open "http://127.0.0.1:8765/?token=<token>"
 Mira Web Terminal listening on http://127.0.0.1:<device_port>/?token=<token>
 ```
 
-注意: 浏览器页面的 HTTP(超文本传输协议) 来源会变成 `http://127.0.0.1:8765`, 但设备内服务实际端口仍是随机端口。服务端会在 token 正确时允许 localhost 来源, 避免 WebSocket(网页长连接协议) 因端口不一致被拒绝。
+注意: 浏览器页面的 HTTP(超文本传输协议) 来源会变成 `http://127.0.0.1:8765`, 但设备内服务实际端口仍是随机端口。服务端会在 token 正确时允许 localhost 来源, 避免 WebSocket(网页长连接协议) 因端口不一致被拒绝。这个 token 是 Local Terminal(本地终端) 调试专用, 不参与 Remote Relay(远程中继) 协议。
 
 ## 当前明确限制
 
@@ -70,7 +70,7 @@ Mira Web Terminal listening on http://127.0.0.1:<device_port>/?token=<token>
 2. 当前 shell 使用 Android 系统自带 `/system/bin/sh`。
 3. 当前是单 WebSocket 连接对应单 PTY 会话。
 4. 当前没有实现后台前台服务保活。
-6. 当前没有实现 Probe(检测探针), Agent(智能体) 分析, 多设备管理或任务编排。
+5. 当前没有实现 Probe(检测探针), Agent(智能体) 分析, 多设备管理或任务编排。
 
 ## 为什么不直接复制 TermuxActivity
 
