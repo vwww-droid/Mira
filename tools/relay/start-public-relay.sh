@@ -55,8 +55,11 @@ if [[ "${MIRA_SKIP_CONSOLE_BUILD:-0}" != "1" && -f "${CONSOLE_DIR}/package.json"
       npm --prefix "${CONSOLE_DIR}" ci
     fi
     npm --prefix "${CONSOLE_DIR}" run build
+  elif [[ ! -f "${CONSOLE_DIR}/out/index.html" ]]; then
+    echo "npm not found and apps/console/out is missing. Build the console first." >&2
+    exit 1
   else
-    echo "npm not found. Relay will use the built-in fallback UI." >&2
+    echo "npm not found. Using existing apps/console/out." >&2
   fi
 fi
 

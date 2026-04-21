@@ -9,7 +9,7 @@ Remote On-Demand Terminal(按需远程终端) 现在采用手机主动连接 Rel
 本阶段继续保持最小闭环:
 
 1. Android 只维护轻量 control WebSocket(控制长连接), 不提前创建 PTY。
-2. 浏览器打开 Relay 页面, 自动看到已经连接的设备。
+2. 浏览器打开 Relay Console(中继控制台), 自动看到已经连接的设备。
 3. 用户点击 Open Terminal 后, Relay 通过 control 通道下发 session.open。
 4. Android 创建真实 PTY, 启动 shell(命令解释器), 再连接 `/ws/device`。
 5. 浏览器连接 `/ws/browser`, 输入和输出都经过 Relay 转发。
@@ -73,7 +73,7 @@ http://<电脑局域网IP>:8765
 1. 安装并打开 Mira APK(安卓安装包)。
 2. 首页填写:
    ```text
-   Relay URL: Relay 页面显示的地址
+   Relay URL: Relay Console 显示的地址
    ```
 3. 点击 `Connect Relay`。
 4. 浏览器设备列表出现手机后, 点击 `Open Terminal`。

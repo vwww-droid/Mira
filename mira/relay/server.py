@@ -27,234 +27,9 @@ from mira.bridge.websocket import (
 )
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-WEB_DIR = ROOT_DIR / "web"
 CONSOLE_OUT_DIR = ROOT_DIR / "apps" / "console" / "out"
 RING_LIMIT = 1024 * 1024
 PROTOCOL_VERSION = 1
-
-INDEX_HTML = """<!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Mira Relay Terminal</title>
-    <link rel="stylesheet" href="/vendor/xterm/xterm.css" />
-    <link rel="stylesheet" href="/relay.css" />
-  </head>
-  <body>
-    <main class="layout">
-      <aside class="sidebar">
-        <header>
-          <h1>Mira Relay</h1>
-          <p>Android 填写当前 Relay URL 后, 浏览器按需打开真实 PTY。</p>
-        </header>
-        <section class="connect-card">
-          <div class="section-title">Android Relay URL</div>
-          <code id="relayUrl"></code>
-          <p>在 Mira APK 首页填写这个地址, 点击 Connect Relay。</p>
-        </section>
-        <div id="status" class="status">waiting for devices</div>
-        <section>
-          <h2>Devices</h2>
-          <div id="devices" class="devices"></div>
-        </section>
-      </aside>
-      <section class="terminal-pane">
-        <div class="terminal-toolbar">
-          <div id="sessionTitle">No session</div>
-          <button id="closeSession" disabled>Close Session</button>
-        </div>
-        <div id="terminal" class="terminal"></div>
-      </section>
-    </main>
-    <script src="/vendor/xterm/xterm.js"></script>
-    <script src="/vendor/xterm/addon-fit.js"></script>
-    <script src="/relay.js"></script>
-  </body>
-</html>
-"""
-
-RELAY_CSS = """:root{color-scheme:dark;--bg:#0b1020;--panel:#111827;--line:#263043;--text:#e5e7eb;--muted:#9ca3af;--green:#34d399;--red:#f87171;--yellow:#fbbf24}*{box-sizing:border-box}html,body{height:100%;margin:0}body{background:#070b14;color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px}.layout{display:grid;grid-template-columns:360px 1fr;height:100%;gap:0}.sidebar{border-right:1px solid var(--line);background:linear-gradient(180deg,#111827,#0b1020);padding:18px;overflow:auto}.sidebar h1{font-size:20px;margin:0 0 6px}.sidebar p{color:var(--muted);font-size:13px;margin:0 0 18px}.sidebar button,.terminal-toolbar button,.device button{border:0;border-radius:10px;background:#2563eb;color:white;padding:10px 12px;cursor:pointer}.sidebar button:disabled,.terminal-toolbar button:disabled,.device button:disabled{background:#374151;color:#9ca3af;cursor:not-allowed}.connect-card{border:1px solid var(--line);border-radius:14px;background:#0f172a;padding:12px;margin:14px 0}.section-title{font-weight:700;margin-bottom:8px}.connect-card code{display:block;border:1px solid var(--line);border-radius:10px;background:#05070d;color:var(--green);padding:10px;word-break:break-all}.connect-card p{font-size:11px;line-height:1.5;margin:10px 0 0}.status{margin:12px 0;color:var(--yellow);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.devices{display:grid;gap:10px}.device{border:1px solid var(--line);border-radius:14px;background:#0f172a;padding:12px}.device-title{font-weight:700}.device-meta{color:var(--muted);font-size:11px;line-height:1.5;margin:6px 0 10px;word-break:break-all}.terminal-pane{display:grid;grid-template-rows:auto 1fr;min-width:0;background:radial-gradient(circle at top left,#111827,#05070d 55%)}.terminal-toolbar{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:12px 16px;background:#0b1020}.terminal{min-height:0;padding:12px}.xterm{height:100%}.ok{color:var(--green)}.bad{color:var(--red)}"""
-
-RELAY_JS = r"""(() => {
-  const relayUrlEl = document.getElementById('relayUrl');
-  const devicesEl = document.getElementById('devices');
-  const statusEl = document.getElementById('status');
-  const titleEl = document.getElementById('sessionTitle');
-  const closeButton = document.getElementById('closeSession');
-  const terminalEl = document.getElementById('terminal');
-
-  relayUrlEl.textContent = window.location.origin;
-
-  const term = new Terminal({
-    cursorBlink: true,
-    convertEol: true,
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-    fontSize: 13,
-    theme: { background: '#05070d', foreground: '#e5e7eb', cursor: '#34d399' },
-  });
-  const fitAddon = new FitAddon.FitAddon();
-  term.loadAddon(fitAddon);
-  term.open(terminalEl);
-  fitAddon.fit();
-
-  let socket = null;
-  let activeSession = null;
-  let activeInstallId = null;
-  let deviceAttached = false;
-  let refreshTimer = null;
-  let resizeTimer = null;
-
-  function setStatus(text, ok = false) {
-    statusEl.textContent = text;
-    statusEl.className = ok ? 'status ok' : 'status';
-  }
-
-  function bytesToBase64(value) {
-    const bytes = new TextEncoder().encode(value);
-    let binary = '';
-    for (const byte of bytes) binary += String.fromCharCode(byte);
-    return btoa(binary);
-  }
-
-  function base64ToBytes(value) {
-    const binary = atob(value || '');
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-    return bytes;
-  }
-
-  async function api(path, body) {
-    const response = await fetch(path, {
-      method: body ? 'POST' : 'GET',
-      headers: body ? { 'Content-Type': 'application/json' } : {},
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const text = await response.text();
-    let data = {};
-    try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { error: text }; }
-    if (!response.ok) throw new Error(data.error || response.statusText);
-    return data;
-  }
-
-  function renderDevices(devices) {
-    devicesEl.innerHTML = '';
-    if (!devices.length) {
-      devicesEl.innerHTML = '<div class="device-meta">No devices connected. Open Mira APK, enter the Relay URL, then tap Connect Relay.</div>';
-      return;
-    }
-    for (const device of devices) {
-      const item = document.createElement('div');
-      item.className = 'device';
-      const shortId = (device.installId || '').slice(0, 8);
-      const online = device.transport === 'control';
-      item.innerHTML = `
-        <div class="device-title">${device.deviceName || device.model || 'Mira Device'} <span class="device-meta">${shortId}</span></div>
-        <div class="device-meta">${device.model || ''} · ${device.arch || ''}<br>${device.address || ''}<br>${device.state || 'unknown'} · ${online ? 'relay connected' : 'legacy wake'}</div>
-      `;
-      const open = document.createElement('button');
-      open.textContent = 'Open Terminal';
-      open.disabled = device.state === 'offline' || device.state === 'active' || device.state === 'opening';
-      open.onclick = () => openTerminal(device);
-      item.appendChild(open);
-      devicesEl.appendChild(item);
-    }
-  }
-
-  async function refreshDevices() {
-    const data = await api('/api/devices');
-    const devices = data.devices || [];
-    renderDevices(devices);
-    if (!activeSession) setStatus(devices.length ? `connected ${devices.length} device(s)` : 'waiting for devices', devices.length > 0);
-  }
-
-  function wsUrl() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${window.location.host}/ws/browser`;
-  }
-
-  function send(message) {
-    if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
-  }
-
-  function connectBrowser(device, sessionId) {
-    if (socket) socket.close();
-    activeSession = sessionId;
-    activeInstallId = device.installId;
-    deviceAttached = false;
-    titleEl.textContent = `${device.deviceName || device.model || 'Mira Device'} · ${sessionId.slice(0, 8)}`;
-    closeButton.disabled = false;
-    term.clear();
-    term.writeln('\x1b[33mConnecting relay session...\x1b[0m');
-    socket = new WebSocket(wsUrl());
-    socket.addEventListener('open', () => {
-      send({ type: 'browser.attach', protocol: 1, installId: activeInstallId, sessionId: activeSession });
-      fitAndResize();
-    });
-    socket.addEventListener('message', (event) => {
-      let message;
-      try { message = JSON.parse(event.data); } catch (_) { return; }
-      if (message.type === 'terminal.output') {
-        deviceAttached = true;
-        term.write(base64ToBytes(message.dataBase64));
-      }
-      if (message.type === 'session.status') {
-        deviceAttached = message.state === 'active';
-        setStatus(message.state || 'session status', deviceAttached);
-        if (deviceAttached) fitAndResize();
-      }
-      if (message.type === 'session.close') {
-        setStatus('session closed');
-        closeButton.disabled = true;
-        activeSession = null;
-        deviceAttached = false;
-        refreshDevices().catch(() => {});
-      }
-      if (message.type === 'error') term.writeln(`\r\n\x1b[31m${message.error}\x1b[0m`);
-    });
-    socket.addEventListener('close', () => setStatus('browser websocket closed'));
-  }
-
-  async function openTerminal(device) {
-    setStatus('opening terminal...');
-    fitAddon.fit();
-    const data = await api('/api/open', {
-      installId: device.installId, cols: term.cols || 120, rows: term.rows || 36,
-    });
-    connectBrowser(device, data.sessionId);
-    await refreshDevices().catch(() => {});
-  }
-
-  async function closeSession() {
-    if (!activeSession) return;
-    await api('/api/close', { sessionId: activeSession }).catch(() => {});
-    if (socket) socket.close();
-    activeSession = null;
-    deviceAttached = false;
-    closeButton.disabled = true;
-    setStatus('session close requested');
-    await refreshDevices().catch(() => {});
-  }
-
-  function fitAndResize() {
-    fitAddon.fit();
-    if (activeSession && deviceAttached) send({ type: 'terminal.resize', sessionId: activeSession, cols: term.cols, rows: term.rows });
-  }
-
-  term.onData((data) => {
-    if (!activeSession || !deviceAttached) return;
-    send({ type: 'terminal.input', sessionId: activeSession, dataBase64: bytesToBase64(data) });
-  });
-  window.addEventListener('resize', () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(fitAndResize, 80);
-  });
-  closeButton.addEventListener('click', closeSession);
-  refreshDevices().catch(() => {});
-  refreshTimer = setInterval(() => refreshDevices().catch(() => {}), 2000);
-  window.addEventListener('beforeunload', () => clearInterval(refreshTimer));
-})();
-"""
 
 
 @dataclass(eq=False)
@@ -371,7 +146,8 @@ def console_static_response(path: str) -> bytes | None:
                 base / "index.html",
             ]
         )
-    candidates.append(root / "index.html")
+        if not Path(normalized).suffix:
+            candidates.append(root / "index.html")
 
     for candidate in candidates:
         try:
@@ -388,20 +164,11 @@ def static_response(path: str) -> bytes | None:
     if response is not None:
         return response
     if path == "/":
-        return http_response("200 OK", INDEX_HTML.encode("utf-8"), "text/html; charset=utf-8")
-    if path == "/relay.js":
-        return http_response("200 OK", RELAY_JS.encode("utf-8"), "text/javascript; charset=utf-8")
-    if path == "/relay.css":
-        return http_response("200 OK", RELAY_CSS.encode("utf-8"), "text/css; charset=utf-8")
-    if path.startswith("/vendor/"):
-        normalized = posixpath.normpath(unquote(path)).lstrip("/")
-        candidate = (WEB_DIR / normalized).resolve()
-        try:
-            candidate.relative_to(WEB_DIR.resolve())
-        except ValueError:
-            return None
-        if candidate.is_file():
-            return file_response(candidate)
+        message = (
+            "Mira console is not built. Run `npm --prefix apps/console install` "
+            "and `npm --prefix apps/console run build`, then restart relay.\n"
+        )
+        return http_response("503 Service Unavailable", message.encode("utf-8"), "text/plain; charset=utf-8")
     return None
 
 
