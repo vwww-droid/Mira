@@ -40,6 +40,7 @@ public final class MiraRelayClient implements Closeable {
     private InputStream input;
     private OutputStream output;
     private MiraPtyProcess pty;
+    private MiraToolbox toolbox;
     private Thread workerThread;
     private Thread ptyReaderThread;
 
@@ -72,7 +73,8 @@ public final class MiraRelayClient implements Closeable {
     private void runRelay() {
         try {
             bootstrap.installIfNeeded();
-            pty = MiraPtyFactory.create(context, bootstrap, initialRows, initialColumns);
+            toolbox = MiraToolbox.prepare(context, sessionId);
+            pty = MiraPtyFactory.create(context, bootstrap, initialRows, initialColumns, toolbox);
             Log.i(TAG, "PTY started pid=" + pty.getPid() + " cols=" + initialColumns + " rows=" + initialRows);
             connectWebSocket();
             sendJson(attachMessage());
@@ -284,6 +286,10 @@ public final class MiraRelayClient implements Closeable {
         } catch (IOException ignored) {
         }
         socket = null;
+        if (toolbox != null) {
+            toolbox.close();
+            toolbox = null;
+        }
     }
 
     private static final class WebSocketFrame {

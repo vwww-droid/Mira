@@ -263,9 +263,11 @@ sequenceDiagram
 
 详细说明见 `docs/ANDROID-MVP.md`。
 
-### Termux fork 路线
+### Termux fork 备用路线
 
-仓库已经加入 Termux fork(分叉)辅助路线:
+仓库保留 Termux fork(分叉)作为备用研究路线, 但当前主线已经改为 APK(安卓安装包) 直接打包 BusyBox(单文件工具集), 不接 Termux package repository(包仓库), 不维护 apt(包管理器) 软件源索引。
+
+备用路线包含:
 
 1. `third_party/termux-app`: 复用 Termux APK 和终端能力源码。
 2. `third_party/termux-packages`: 用新 package(包名) 重编 bootstrap。
@@ -279,6 +281,8 @@ sequenceDiagram
 Mira 现在新增局域网 Relay Server(中继服务端), 支持服务端发现设备, 按需唤起 Android PTY, 再由浏览器远程控制同一个手机 shell。
 
 本阶段远程 Relay 不使用 Pairing Token(配对令牌)。企业自托管场景默认由自己的服务端边界控制访问, 协议里只使用 installId(安装标识) 识别设备和 sessionId(会话标识) 绑定会话。
+
+远程 session 会自动释放内置 BusyBox(单文件工具集) 到临时工具目录, 并把该目录放到 PATH(命令搜索路径) 前面。当前只打包 arm64-v8a(64 位 ARM 应用二进制接口) 版本, 大小约 812 KiB, 会话关闭后删除释放副本。
 
 ### 启动服务端
 
@@ -305,6 +309,8 @@ http://<电脑局域网IP>:8765
 5. 发现设备后点击 `Open Terminal`。
 
 服务端会向设备发送 wake(唤醒) 请求, 设备收到后才创建 PTY 并主动连接服务端。详细说明见 `docs/REMOTE-RELAY.md`。
+
+内置工具箱说明见 `docs/TOOLBOX.md`。
 
 ## Web Terminal MVP 运行说明
 

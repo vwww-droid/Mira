@@ -1,0 +1,6 @@
+BusyBox 1.37.0
+License: GPL-2.0
+Source: https://busybox.net/downloads/busybox-1.37.0.tar.bz2
+Build script: tools/toolbox/build-busybox-android.sh
+Asset: toolbox/busybox/arm64-v8a/busybox
+SHA256: c9370fa9f68484f26d7930496c40f811e5e98395c64ec6f99e4d0dc5dc2aceab

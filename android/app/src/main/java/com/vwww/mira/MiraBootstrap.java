@@ -87,7 +87,12 @@ public final class MiraBootstrap {
             "export PREFIX=" + prefix + "\n" +
             "export HOME=" + home + "\n" +
             "export TMPDIR=" + tmp + "\n" +
-            "export PATH=\"$PREFIX/bin:/system/bin:/system/xbin\"\n" +
+            "MIRA_BASE_PATH=\"$PREFIX/bin:/system/bin:/system/xbin\"\n" +
+            "if [ -n \"$MIRA_PATH_PREFIX\" ]; then\n" +
+            "  export PATH=\"$MIRA_PATH_PREFIX:$MIRA_BASE_PATH\"\n" +
+            "else\n" +
+            "  export PATH=\"$MIRA_BASE_PATH\"\n" +
+            "fi\n" +
             "export TERM=\"${TERM:-xterm-256color}\"\n" +
             "export COLORTERM=\"${COLORTERM:-truecolor}\"\n" +
             "export MIRA_SANDBOX=1\n" +
@@ -99,7 +104,12 @@ public final class MiraBootstrap {
 
     private String profileScript() {
         return "# Mira minimal profile\n" +
-            "export PATH=\"$PREFIX/bin:/system/bin:/system/xbin\"\n" +
+            "MIRA_BASE_PATH=\"$PREFIX/bin:/system/bin:/system/xbin\"\n" +
+            "if [ -n \"$MIRA_PATH_PREFIX\" ]; then\n" +
+            "  export PATH=\"$MIRA_PATH_PREFIX:$MIRA_BASE_PATH\"\n" +
+            "else\n" +
+            "  export PATH=\"$MIRA_BASE_PATH\"\n" +
+            "fi\n" +
             "export MIRA_SANDBOX=1\n";
     }
 

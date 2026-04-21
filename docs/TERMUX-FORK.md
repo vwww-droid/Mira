@@ -1,4 +1,6 @@
-# Termux Fork 路线
+# Termux Fork 备用路线
+
+> 当前主线说明: Mira 现在优先采用 APK(安卓安装包) 直接打包 BusyBox(单文件工具集) 的轻量工具箱方案, 不接 Termux package repository(包仓库), 不维护 apt(包管理器) 软件源索引。本文只保留为后续需要完整类 Termux 用户空间时的备用研究记录。
 
 ## 结论
 
