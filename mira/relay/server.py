@@ -44,6 +44,8 @@ class DeviceRecord:
     data: dict[str, Any]
     address: str
     last_seen: float
+    outline: dict[str, Any] | None = None
+    outline_last_seen: float | None = None
     control_writer: asyncio.StreamWriter | None = None
     control_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
@@ -243,6 +245,10 @@ async def broadcast_session(session: RelaySession, message: dict[str, Any]) -> N
 
 def device_payload(record: DeviceRecord) -> dict[str, Any]:
     data = dict(record.data)
+    if record.outline is not None:
+        data["outline"] = record.outline
+    if record.outline_last_seen is not None:
+        data["outlineLastSeen"] = record.outline_last_seen
     if record.address:
         data["address"] = record.address
     if data.get("transport") == "control" and (record.control_writer is None or record.control_writer.is_closing()):
@@ -489,6 +495,23 @@ async def handle_control_ws(state: RelayState, reader: asyncio.StreamReader, wri
                     if record := state.devices.get(install_id):
                         record.data["state"] = str(message.get("state") or record.data.get("state") or "idle")
                         record.last_seen = time.time()
+            elif message.get("type") == "device.outline":
+                message_install_id = str(message.get("installId") or "")
+                if message_install_id and message_install_id != install_id:
+                    await send_json(writer, lock, {"type": "error", "error": "installId mismatch"})
+                    continue
+                outline = message.get("outline")
+                if not isinstance(outline, dict):
+                    await send_json(writer, lock, {"type": "error", "error": "invalid device outline"})
+                    continue
+                now = time.time()
+                async with state.lock:
+                    if record := state.devices.get(install_id):
+                        record.outline = outline
+                        record.outline_last_seen = now
+                        record.data["outline"] = outline
+                        record.data["outlineLastSeen"] = now
+                        record.last_seen = now
     except (WebSocketClosed, asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError):
         pass
     finally:

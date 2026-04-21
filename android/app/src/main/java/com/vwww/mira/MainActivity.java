@@ -41,11 +41,15 @@ public final class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         identity = new MiraIdentity(this);
         showControlPage();
+        MiraOutlineCollector.getInstance().register(this);
+        requestOutlineUploadSoon();
     }
 
     @Override
     protected void onStart() {
         super.onStart();
+        MiraOutlineCollector.getInstance().register(this);
+        requestOutlineUploadSoon();
         if (!receiverRegistered) {
             registerReceiver(statusReceiver, new IntentFilter(MiraDiscoveryService.ACTION_STATUS));
             receiverRegistered = true;
@@ -58,6 +62,7 @@ public final class MainActivity extends Activity {
             unregisterReceiver(statusReceiver);
             receiverRegistered = false;
         }
+        MiraOutlineCollector.getInstance().unregister(this);
         super.onStop();
     }
 
@@ -130,6 +135,7 @@ public final class MainActivity extends Activity {
         root.addView(spacer());
 
         setContentView(scrollView);
+        MiraOutlineCollector.getInstance().register(this);
     }
 
     private View spacer() {
@@ -191,6 +197,7 @@ public final class MainActivity extends Activity {
         intent.putExtra(MiraDiscoveryService.EXTRA_RELAY_URL, relayUrl);
         startService(intent);
         setStatus("connecting relay");
+        requestOutlineUploadSoon();
     }
 
     private void disconnectRelay() {
@@ -198,6 +205,12 @@ public final class MainActivity extends Activity {
         intent.setAction(MiraDiscoveryService.ACTION_STOP);
         startService(intent);
         setStatus("disconnected");
+    }
+
+    private void requestOutlineUploadSoon() {
+        View decor = getWindow() == null ? null : getWindow().getDecorView();
+        if (decor == null) return;
+        decor.postDelayed(MiraDiscoveryService::requestOutlineUpload, 250);
     }
 
     private void setStatus(String status) {

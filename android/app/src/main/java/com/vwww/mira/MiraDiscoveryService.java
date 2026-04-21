@@ -42,6 +42,8 @@ public final class MiraDiscoveryService extends Service {
 
     private static final String TAG = "MiraDiscovery";
 
+    private static volatile MiraDiscoveryService activeService;
+
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicInteger lifecycleGeneration = new AtomicInteger(0);
     private final ExecutorService executor = Executors.newCachedThreadPool();
@@ -63,6 +65,7 @@ public final class MiraDiscoveryService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        activeService = this;
         identity = new MiraIdentity(this);
         bootstrap = new MiraBootstrap(this);
     }
@@ -94,6 +97,7 @@ public final class MiraDiscoveryService extends Service {
     public void onDestroy() {
         stopDiscovery();
         executor.shutdownNow();
+        if (activeService == this) activeService = null;
         super.onDestroy();
     }
 
@@ -141,6 +145,7 @@ public final class MiraDiscoveryService extends Service {
             deviceName,
             relayUrl,
             () -> state,
+            MiraOutlineCollector.getInstance()::currentOutline,
             new MiraControlClient.Callback() {
                 @Override
                 public void onControlMessage(JSONObject message) {
@@ -172,6 +177,16 @@ public final class MiraDiscoveryService extends Service {
         udpSocket = null;
         wakeServer = null;
         publishStatus("disconnected");
+    }
+
+    public static void requestOutlineUpload() {
+        MiraDiscoveryService service = activeService;
+        if (service != null) service.requestControlOutline();
+    }
+
+    private void requestControlOutline() {
+        MiraControlClient client = controlClient;
+        if (client != null) client.sendOutline();
     }
 
     private void publishStatus(String status) {
@@ -273,6 +288,7 @@ public final class MiraDiscoveryService extends Service {
         );
         relayClient.start();
         state = "active";
+        requestControlOutline();
         Log.i(TAG, "Relay session opening sessionId=" + sessionId);
         return true;
     }
@@ -284,6 +300,7 @@ public final class MiraDiscoveryService extends Service {
         }
         relayClient = null;
         state = "idle";
+        requestControlOutline();
         Log.i(TAG, "Relay session closed");
     }
 
@@ -293,6 +310,7 @@ public final class MiraDiscoveryService extends Service {
             relayClient = null;
         }
         state = "idle";
+        requestControlOutline();
     }
 
     private void acquireMulticastLock() {

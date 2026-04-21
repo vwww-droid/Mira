@@ -9,6 +9,10 @@ import java.io.Closeable;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class MiraControlClient implements Closeable {
@@ -21,15 +25,27 @@ public final class MiraControlClient implements Closeable {
         String currentState();
     }
 
+    public interface OutlineProvider {
+        JSONObject currentOutline();
+    }
+
     private static final String TAG = "MiraControlClient";
+    private static final long OUTLINE_PERIOD_SECONDS = 10;
 
     private final Context context;
     private final MiraIdentity identity;
     private final String deviceName;
     private final String relayUrl;
     private final StateProvider stateProvider;
+    private final OutlineProvider outlineProvider;
     private final Callback callback;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final AtomicBoolean controlReady = new AtomicBoolean(false);
+    private final ScheduledExecutorService outboundExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread thread = new Thread(r, "MiraControlSender");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private volatile MiraWebSocketConnection websocket;
     private Thread workerThread;
@@ -40,6 +56,7 @@ public final class MiraControlClient implements Closeable {
         String deviceName,
         String relayUrl,
         StateProvider stateProvider,
+        OutlineProvider outlineProvider,
         Callback callback
     ) {
         this.context = context.getApplicationContext();
@@ -47,11 +64,13 @@ public final class MiraControlClient implements Closeable {
         this.deviceName = deviceName;
         this.relayUrl = relayUrl;
         this.stateProvider = stateProvider;
+        this.outlineProvider = outlineProvider;
         this.callback = callback;
     }
 
     public void start() {
         if (!running.compareAndSet(false, true)) return;
+        outboundExecutor.scheduleWithFixedDelay(this::sendOutlineIfReady, OUTLINE_PERIOD_SECONDS, OUTLINE_PERIOD_SECONDS, TimeUnit.SECONDS);
         workerThread = new Thread(this::runLoop, "MiraControlClient");
         workerThread.start();
     }
@@ -66,6 +85,7 @@ public final class MiraControlClient implements Closeable {
                     break;
                 }
                 websocket = connected;
+                controlReady.set(false);
                 connected.sendJson(registerMessage());
                 notifyStatus("control connected");
                 readControlLoop();
@@ -95,10 +115,54 @@ public final class MiraControlClient implements Closeable {
             JSONObject message = new JSONObject(new String(frame.payload, StandardCharsets.UTF_8));
             String type = message.optString("type", "");
             if ("control.ready".equals(type)) {
+                controlReady.set(true);
                 notifyStatus("control ready");
+                sendOutline();
                 continue;
             }
             if (callback != null) callback.onControlMessage(message);
+        }
+    }
+
+    public void sendJson(JSONObject json) {
+        if (json == null || outboundExecutor.isShutdown()) return;
+        try {
+            outboundExecutor.execute(() -> {
+                try {
+                    MiraWebSocketConnection current = websocket;
+                    if (!running.get() || current == null) return;
+                    current.sendJson(json);
+                } catch (Throwable throwable) {
+                    Log.w(TAG, "Control send failed", throwable);
+                }
+            });
+        } catch (RejectedExecutionException ignored) {
+        }
+    }
+
+    public void sendOutline() {
+        if (outboundExecutor.isShutdown()) return;
+        try {
+            outboundExecutor.execute(this::sendOutlineIfReady);
+        } catch (RejectedExecutionException ignored) {
+        }
+    }
+
+    private void sendOutlineIfReady() {
+        if (!running.get() || !controlReady.get() || outlineProvider == null) return;
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "device.outline");
+            message.put("transport", "control");
+            message.put("installId", identity.getInstallId());
+            message.put("deviceName", deviceName);
+            message.put("state", stateProvider == null ? "idle" : stateProvider.currentState());
+            message.put("capturedAt", System.currentTimeMillis());
+            message.put("outline", outlineProvider.currentOutline());
+            MiraWebSocketConnection current = websocket;
+            if (current != null) current.sendJson(message);
+        } catch (Throwable throwable) {
+            Log.w(TAG, "Outline send failed", throwable);
         }
     }
 
@@ -148,6 +212,7 @@ public final class MiraControlClient implements Closeable {
     }
 
     private void closeSocketOnly() {
+        controlReady.set(false);
         MiraWebSocketConnection closing = websocket;
         websocket = null;
         if (closing != null) closing.close();
@@ -156,6 +221,8 @@ public final class MiraControlClient implements Closeable {
     @Override
     public void close() {
         running.set(false);
+        controlReady.set(false);
+        outboundExecutor.shutdownNow();
         closeSocketOnly();
     }
 }
