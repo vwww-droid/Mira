@@ -43,18 +43,72 @@ MIRA_BROADCAST_TARGET=255.255.255.255 \
 python3 -m mira.mcp.server
 ```
 
-## Codex 配置示例
+## Codex CLI 配置示例
 
-如果 Codex 使用 TOML(配置文件格式) 声明 MCP server, 可以按下面思路配置:
+如果 Codex CLI(命令行接口) 使用 TOML(配置文件格式) 声明 MCP server, 可以按下面思路配置:
 
 ```toml
 [mcp_servers.mira]
 command = "python3"
 args = ["-m", "mira.mcp.server", "--relay", "http://127.0.0.1:8765"]
 cwd = "/Users/vw2x/Projects/Reverses/Mira"
+default_tools_approval_mode = "approve"
+
+[mcp_servers.mira.tools.mira_discover_devices]
+approval_mode = "approve"
+
+[mcp_servers.mira.tools.mira_list_devices]
+approval_mode = "approve"
+
+[mcp_servers.mira.tools.mira_open_terminal]
+approval_mode = "approve"
+
+[mcp_servers.mira.tools.mira_run_command]
+approval_mode = "approve"
+
+[mcp_servers.mira.tools.mira_collect_snapshot]
+approval_mode = "approve"
+
+[mcp_servers.mira.tools.mira_send_input]
+approval_mode = "approve"
+
+[mcp_servers.mira.tools.mira_read_output]
+approval_mode = "approve"
+
+[mcp_servers.mira.tools.mira_close_terminal]
+approval_mode = "approve"
 ```
 
-实际字段名以当前 Codex 客户端支持为准。核心是让客户端以 stdio(标准输入输出) 方式启动 `python3 -m mira.mcp.server`。
+也可以不写入全局配置, 直接在单次命令里临时注入配置:
+
+```bash
+codex -a never exec --json \
+  -C /Users/vw2x/Projects/Reverses/Mira \
+  -c 'mcp_servers.mira.command="python3"' \
+  -c 'mcp_servers.mira.args=["-m","mira.mcp.server","--relay","http://127.0.0.1:8765","--broadcast-target","<设备IP或广播地址>"]' \
+  -c 'mcp_servers.mira.cwd="/Users/vw2x/Projects/Reverses/Mira"' \
+  -c 'mcp_servers.mira.default_tools_approval_mode="approve"' \
+  -c 'mcp_servers.mira.tools.mira_discover_devices.approval_mode="approve"' \
+  -c 'mcp_servers.mira.tools.mira_list_devices.approval_mode="approve"' \
+  -c 'mcp_servers.mira.tools.mira_open_terminal.approval_mode="approve"' \
+  -c 'mcp_servers.mira.tools.mira_run_command.approval_mode="approve"' \
+  -c 'mcp_servers.mira.tools.mira_collect_snapshot.approval_mode="approve"' \
+  -c 'mcp_servers.mira.tools.mira_send_input.approval_mode="approve"' \
+  -c 'mcp_servers.mira.tools.mira_read_output.approval_mode="approve"' \
+  -c 'mcp_servers.mira.tools.mira_close_terminal.approval_mode="approve"' \
+  '请使用 mira MCP 工具发现设备, 采集一次 Android 终端快照, 然后汇总结果。'
+```
+
+可以用下面命令确认 Codex 已加载 Mira MCP server:
+
+```bash
+codex mcp list \
+  -c 'mcp_servers.mira.command="python3"' \
+  -c 'mcp_servers.mira.args=["-m","mira.mcp.server","--relay","http://127.0.0.1:8765"]' \
+  -c 'mcp_servers.mira.cwd="/Users/vw2x/Projects/Reverses/Mira"'
+```
+
+如果只配置 `default_tools_approval_mode`, 某些 Codex CLI 版本可能仍会在非交互 `exec` 模式里把 MCP tool call(工具调用) 标记为 `user cancelled MCP tool call`。给每个 Mira tool 显式设置 `approval_mode = "approve"` 后, `codex exec` 可以直接完成 discovery(发现), open terminal(打开终端), snapshot(快照采集) 和 close session(关闭会话)。
 
 MCP stdio 消息使用单行 JSON-RPC(JSON 远程过程调用) 消息, stdout(标准输出) 只写协议响应, 日志应写 stderr(标准错误输出)。
 

@@ -324,6 +324,8 @@ python3 -m mira.mcp.server \
   --broadcast-target 255.255.255.255
 ```
 
+Codex CLI(命令行接口) 非交互执行时建议给每个 Mira MCP tool(工具) 显式配置 `approval_mode = "approve"`, 避免工具调用在本地审批层被取消。完整配置示例见 `docs/MCP.md`。
+
 核心工具包括:
 
 1. `mira_discover_devices`: 扫描设备。
