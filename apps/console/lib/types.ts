@@ -86,3 +86,47 @@ export type OpenSessionResponse = {
 };
 
 export type SessionStatus = 'idle' | 'opening' | 'active' | 'waiting for device' | 'device disconnected' | 'closed' | string;
+
+export type ScreenFrame = {
+  type?: 'device.screen.frame' | string;
+  protocol?: number;
+  installId: string;
+  deviceName?: string;
+  capturedAt?: number | string;
+  receivedAt?: number | string;
+  ageMs?: number;
+  seq: number;
+  format: 'jpeg' | string;
+  width: number;
+  height: number;
+  sourceWidth?: number;
+  sourceHeight?: number;
+  dataBase64: string;
+};
+
+export type ScreenFrameMetadata = Omit<ScreenFrame, 'dataBase64'> & {
+  dataBase64?: never;
+};
+
+export type ScreenInputKind = 'tap' | 'text' | 'paste' | 'key' | 'copy' | 'selectall' | 'clear';
+
+export type ScreenInputRequest = {
+  installId: string;
+  kind: ScreenInputKind;
+  requestId?: string;
+  clientId?: string;
+  x?: number;
+  y?: number;
+  text?: string;
+  key?: string;
+};
+
+export type ScreenInputResponse = {
+  ok: boolean;
+  kind?: ScreenInputKind | string;
+  requestId?: string;
+  clientId?: string;
+  message?: string;
+  error?: string;
+  text?: string;
+};

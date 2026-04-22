@@ -16,7 +16,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from mira.bridge.websocket import (
     WebSocketClosed,
@@ -30,6 +30,11 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 CONSOLE_OUT_DIR = ROOT_DIR / "apps" / "console" / "out"
 RING_LIMIT = 1024 * 1024
 PROTOCOL_VERSION = 1
+MAX_SCREEN_FRAME_BASE64 = 2_500_000
+MAX_SCREEN_FRAME_BYTES = 2_000_000
+MAX_SCREEN_FRAME_DIMENSION = 8192
+MAX_SCREEN_INPUT_TEXT = 20_000
+SCREEN_STREAM_BOUNDARY = "mira-screen-frame"
 
 
 @dataclass(eq=False)
@@ -46,6 +51,12 @@ class DeviceRecord:
     last_seen: float
     outline: dict[str, Any] | None = None
     outline_last_seen: float | None = None
+    screen_frame: dict[str, Any] | None = None
+    screen_last_seen: float | None = None
+    screen_info: dict[str, Any] | None = None
+    screen_device_writer: asyncio.StreamWriter | None = None
+    screen_device_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    screen_clients: set[BrowserClient] = field(default_factory=set)
     control_writer: asyncio.StreamWriter | None = None
     control_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
@@ -243,6 +254,80 @@ async def broadcast_session(session: RelaySession, message: dict[str, Any]) -> N
         session.browsers.discard(browser)
 
 
+async def broadcast_screen_clients(record: DeviceRecord, payload: dict[str, Any] | bytes, opcode: int = 0x1) -> None:
+    dead: list[BrowserClient] = []
+    if isinstance(payload, dict):
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    else:
+        data = payload
+    for browser in list(record.screen_clients):
+        try:
+            await send_frame(browser.writer, data, opcode=opcode, lock=browser.lock)
+        except Exception:
+            dead.append(browser)
+    for browser in dead:
+        record.screen_clients.discard(browser)
+
+
+def screen_input_payload(body: dict[str, Any], install_id: str) -> tuple[dict[str, Any] | None, str]:
+    kind = str(body.get("kind") or "").strip().lower()
+    if kind not in {"tap", "text", "paste", "key", "copy", "selectall", "clear"}:
+        return None, "unsupported input kind"
+
+    payload: dict[str, Any] = {
+        "type": "screen.input",
+        "protocol": PROTOCOL_VERSION,
+        "installId": install_id,
+        "kind": kind,
+    }
+    request_id = str(body.get("requestId") or "").strip()
+    if request_id:
+        payload["requestId"] = request_id[:128]
+    client_id = str(body.get("clientId") or "").strip()
+    if client_id:
+        payload["clientId"] = client_id[:128]
+
+    if kind == "tap":
+        x = float_field(body, "x")
+        y = float_field(body, "y")
+        if x is None or y is None or x < 0 or y < 0:
+            return None, "invalid tap coordinates"
+        payload["x"] = x
+        payload["y"] = y
+    elif kind in {"text", "paste"}:
+        text = body.get("text")
+        if not isinstance(text, str):
+            return None, "missing input text"
+        if len(text) > MAX_SCREEN_INPUT_TEXT:
+            return None, "input text too large"
+        payload["text"] = text
+    elif kind == "key":
+        key = str(body.get("key") or "").strip()
+        if not key:
+            return None, "missing key"
+        if len(key) > 64:
+            return None, "key too large"
+        payload["key"] = key
+
+    return payload, ""
+
+
+async def send_screen_input_to_device(state: RelayState, install_id: str, payload: dict[str, Any]) -> tuple[bool, str]:
+    async with state.lock:
+        record = state.devices.get(install_id)
+        if record is None:
+            return False, "device not found"
+        control_writer = record.control_writer
+        control_lock = record.control_lock
+    if control_writer is None or control_writer.is_closing():
+        return False, "device control channel is not connected"
+    try:
+        await send_json(control_writer, control_lock, payload)
+    except Exception as exc:  # noqa: BLE001
+        return False, f"screen input failed: {exc}"
+    return True, ""
+
+
 def device_payload(record: DeviceRecord) -> dict[str, Any]:
     data = dict(record.data)
     if record.outline is not None:
@@ -313,6 +398,194 @@ async def api_outline(state: RelayState, body: dict[str, Any]) -> bytes:
     node_count = len(nodes) if isinstance(nodes, list) else outline.get("nodeCount", "unknown")
     print(f"Received outline installId={install_id} nodes={node_count}", flush=True)
     return json_response("200 OK", {"ok": True, "outlineLastSeen": now})
+
+
+def int_field(body: dict[str, Any], name: str, minimum: int = 0, maximum: int | None = None) -> int | None:
+    try:
+        value = int(body.get(name))
+    except (TypeError, ValueError):
+        return None
+    if value < minimum:
+        return None
+    if maximum is not None and value > maximum:
+        return None
+    return value
+
+
+def float_field(body: dict[str, Any], name: str) -> float | None:
+    try:
+        value = float(body.get(name))
+    except (TypeError, ValueError):
+        return None
+    if not value == value or value in {float("inf"), float("-inf")}:
+        return None
+    return value
+
+
+async def api_screen_frame(state: RelayState, body: dict[str, Any]) -> bytes:
+    install_id = str(body.get("installId") or "").strip()
+    if not install_id:
+        return json_response("400 Bad Request", {"error": "missing installId"})
+    if str(body.get("type") or "") != "device.screen.frame":
+        return json_response("400 Bad Request", {"error": "invalid frame type"})
+    frame_format = str(body.get("format") or "").lower()
+    if frame_format != "jpeg":
+        return json_response("400 Bad Request", {"error": "unsupported frame format"})
+    width = int_field(body, "width", 1, MAX_SCREEN_FRAME_DIMENSION)
+    height = int_field(body, "height", 1, MAX_SCREEN_FRAME_DIMENSION)
+    seq = int_field(body, "seq", 0)
+    if width is None or height is None:
+        return json_response("400 Bad Request", {"error": "invalid frame dimensions"})
+    if seq is None:
+        return json_response("400 Bad Request", {"error": "invalid frame seq"})
+    captured_at = int_field(body, "capturedAt", 0)
+    source_width = int_field(body, "sourceWidth", 0, MAX_SCREEN_FRAME_DIMENSION)
+    source_height = int_field(body, "sourceHeight", 0, MAX_SCREEN_FRAME_DIMENSION)
+    data_base64 = str(body.get("dataBase64") or "")
+    if not data_base64:
+        return json_response("400 Bad Request", {"error": "missing frame data"})
+    if len(data_base64) > MAX_SCREEN_FRAME_BASE64:
+        return json_response("413 Payload Too Large", {"error": "frame data too large"})
+    try:
+        decoded = base64.b64decode(data_base64, validate=True)
+    except Exception:
+        return json_response("400 Bad Request", {"error": "invalid frame dataBase64"})
+    if len(decoded) > MAX_SCREEN_FRAME_BYTES:
+        return json_response("413 Payload Too Large", {"error": "frame jpeg too large"})
+    if not decoded.startswith(b"\xff\xd8"):
+        return json_response("400 Bad Request", {"error": "frame is not jpeg"})
+
+    now = time.time()
+    frame = {
+        "type": "device.screen.frame",
+        "protocol": PROTOCOL_VERSION,
+        "installId": install_id,
+        "deviceName": str(body.get("deviceName") or "Mira Device"),
+        "capturedAt": captured_at or int(now * 1000),
+        "seq": seq,
+        "format": "jpeg",
+        "width": width,
+        "height": height,
+        "sourceWidth": source_width or width,
+        "sourceHeight": source_height or height,
+        "dataBase64": data_base64,
+    }
+    async with state.lock:
+        record = state.devices.get(install_id)
+        if record is None:
+            data = {
+                "type": "mira.device",
+                "protocol": PROTOCOL_VERSION,
+                "installId": install_id,
+                "deviceName": frame["deviceName"],
+                "state": "idle",
+                "transport": "control",
+            }
+            record = DeviceRecord(install_id, data, "", now)
+            state.devices[install_id] = record
+        else:
+            if body.get("deviceName"):
+                record.data["deviceName"] = str(body.get("deviceName"))
+        record.screen_frame = frame
+        record.screen_last_seen = now
+        record.last_seen = now
+    print(f"Received screen frame installId={install_id} seq={seq} size={width}x{height}", flush=True)
+    return json_response("200 OK", {"ok": True, "screenLastSeen": now, "seq": seq})
+
+
+async def api_screen_latest(state: RelayState, query: dict[str, list[str]]) -> bytes:
+    install_id = str((query.get("installId") or [""])[0] or "").strip()
+    if not install_id:
+        return json_response("400 Bad Request", {"error": "missing installId"})
+    async with state.lock:
+        record = state.devices.get(install_id)
+        if record is None or record.screen_frame is None:
+            return json_response("404 Not Found", {"error": "no screen frame"})
+        frame = dict(record.screen_frame)
+        received_at = record.screen_last_seen
+    if received_at is not None:
+        frame["receivedAt"] = received_at
+        frame["ageMs"] = max(0, int((time.time() - received_at) * 1000))
+    metadata = str((query.get("metadata") or query.get("metadataOnly") or [""])[0] or "").lower()
+    if metadata in {"1", "true", "yes", "only"}:
+        frame.pop("dataBase64", None)
+    return json_response("200 OK", frame)
+
+
+async def api_screen_stream(state: RelayState, writer: asyncio.StreamWriter, query: dict[str, list[str]]) -> None:
+    install_id = str((query.get("installId") or [""])[0] or "").strip()
+    if not install_id:
+        writer.write(json_response("400 Bad Request", {"error": "missing installId"}))
+        await writer.drain()
+        return
+    async with state.lock:
+        record = state.devices.get(install_id)
+        has_frame = bool(record and record.screen_frame)
+    if not has_frame:
+        writer.write(json_response("404 Not Found", {"error": "no screen frame"}))
+        await writer.drain()
+        return
+
+    headers = (
+        "HTTP/1.1 200 OK\r\n"
+        f"Content-Type: multipart/x-mixed-replace; boundary={SCREEN_STREAM_BOUNDARY}\r\n"
+        "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n"
+        "Pragma: no-cache\r\n"
+        "X-Accel-Buffering: no\r\n"
+        "Connection: close\r\n\r\n"
+    )
+    writer.write(headers.encode("utf-8"))
+    await writer.drain()
+
+    last_seq: int | None = None
+    try:
+        while not writer.is_closing():
+            async with state.lock:
+                record = state.devices.get(install_id)
+                frame = dict(record.screen_frame) if record and record.screen_frame else None
+            if frame is None:
+                await asyncio.sleep(0.25)
+                continue
+            seq = int(frame.get("seq") or 0)
+            if last_seq == seq:
+                await asyncio.sleep(0.08)
+                continue
+            try:
+                jpeg = base64.b64decode(str(frame.get("dataBase64") or ""), validate=False)
+            except Exception:
+                await asyncio.sleep(0.25)
+                continue
+            if not jpeg:
+                await asyncio.sleep(0.25)
+                continue
+            part_headers = (
+                f"--{SCREEN_STREAM_BOUNDARY}\r\n"
+                "Content-Type: image/jpeg\r\n"
+                f"Content-Length: {len(jpeg)}\r\n"
+                f"X-Mira-Seq: {seq}\r\n"
+                f"X-Mira-Captured-At: {frame.get('capturedAt') or ''}\r\n\r\n"
+            )
+            writer.write(part_headers.encode("utf-8"))
+            writer.write(jpeg)
+            writer.write(b"\r\n")
+            await writer.drain()
+            last_seq = seq
+    except (asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError):
+        return
+
+
+async def api_screen_input(state: RelayState, body: dict[str, Any]) -> bytes:
+    install_id = str(body.get("installId") or "").strip()
+    if not install_id:
+        return json_response("400 Bad Request", {"error": "missing installId"})
+    payload, validation_error = screen_input_payload(body, install_id)
+    if payload is None:
+        return json_response("400 Bad Request", {"error": validation_error})
+    ok, error = await send_screen_input_to_device(state, install_id, payload)
+    if not ok:
+        status = "404 Not Found" if error == "device not found" else "409 Conflict" if "control channel" in error else "502 Bad Gateway"
+        return json_response(status, {"error": error})
+    return json_response("200 OK", {"ok": True, "requestId": payload.get("requestId", ""), "kind": payload.get("kind", "")})
 
 
 def post_json(url: str, payload: dict[str, Any], timeout: float = 5.0) -> dict[str, Any]:
@@ -551,6 +824,18 @@ async def handle_control_ws(state: RelayState, reader: asyncio.StreamReader, wri
                         record.data["outline"] = outline
                         record.data["outlineLastSeen"] = now
                         record.last_seen = now
+            elif message.get("type") == "screen.input.result":
+                message_install_id = str(message.get("installId") or install_id)
+                if message_install_id != install_id:
+                    await send_json(writer, lock, {"type": "error", "error": "installId mismatch"})
+                    continue
+                message["installId"] = install_id
+                async with state.lock:
+                    record = state.devices.get(install_id)
+                    if record is None:
+                        continue
+                    clients_record = record
+                await broadcast_screen_clients(clients_record, message)
     except (WebSocketClosed, asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError):
         pass
     finally:
@@ -626,11 +911,213 @@ async def handle_browser_ws(state: RelayState, reader: asyncio.StreamReader, wri
         await writer.wait_closed()
 
 
+async def handle_screen_device_ws(state: RelayState, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, headers: dict[str, str]) -> None:
+    peer = writer.get_extra_info("peername")
+    print(f"Screen device websocket from {peer}", flush=True)
+    writer.write(handshake_response(headers))
+    await writer.drain()
+    lock = asyncio.Lock()
+    install_id = ""
+    try:
+        frame = await read_frame(reader)
+        if not frame.is_text:
+            await send_json(writer, lock, {"type": "error", "error": "invalid screen attach"})
+            return
+        attach = json.loads(frame.payload.decode("utf-8"))
+        if attach.get("type") != "screen.video.info":
+            await send_json(writer, lock, {"type": "error", "error": "invalid screen attach"})
+            return
+        install_id = str(attach.get("installId") or "")
+        if not install_id:
+            await send_json(writer, lock, {"type": "error", "error": "missing installId"})
+            return
+        address = peer[0] if isinstance(peer, tuple) and peer else ""
+        info = dict(attach)
+        info["transport"] = "screen-ws"
+        info["receivedAt"] = time.time()
+        async with state.lock:
+            record = state.devices.get(install_id)
+            if record is None:
+                data = {
+                    "type": "mira.device",
+                    "protocol": PROTOCOL_VERSION,
+                    "installId": install_id,
+                    "deviceName": str(info.get("deviceName") or "Mira Device"),
+                    "state": "idle",
+                    "transport": "control",
+                    "address": address,
+                }
+                record = DeviceRecord(install_id, data, address, time.time())
+                state.devices[install_id] = record
+            record.screen_device_writer = writer
+            record.screen_device_lock = lock
+            record.screen_info = info
+            record.screen_last_seen = time.time()
+            record.last_seen = time.time()
+            clients_record = record
+        await broadcast_screen_clients(clients_record, info)
+        print(
+            f"Screen video attached installId={install_id} codec={info.get('codec')} size={info.get('width')}x{info.get('height')}",
+            flush=True,
+        )
+        while True:
+            frame = await read_frame(reader)
+            if frame.is_close:
+                break
+            if frame.is_ping:
+                await send_frame(writer, frame.payload, opcode=0xA, lock=lock)
+                continue
+            if frame.is_text:
+                try:
+                    message = json.loads(frame.payload.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    continue
+                if message.get("type") == "screen.video.info":
+                    message["transport"] = "screen-ws"
+                    message["receivedAt"] = time.time()
+                    async with state.lock:
+                        if record := state.devices.get(install_id):
+                            record.screen_info = message
+                            record.screen_last_seen = time.time()
+                            record.last_seen = time.time()
+                            clients_record = record
+                        else:
+                            continue
+                    await broadcast_screen_clients(clients_record, message)
+                continue
+            if not frame.is_binary:
+                continue
+            async with state.lock:
+                record = state.devices.get(install_id)
+                if record is None:
+                    continue
+                record.screen_last_seen = time.time()
+                record.last_seen = time.time()
+                clients_record = record
+            await broadcast_screen_clients(clients_record, frame.payload, opcode=0x2)
+    except (WebSocketClosed, asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError):
+        pass
+    finally:
+        async with state.lock:
+            if install_id and (record := state.devices.get(install_id)) and record.screen_device_writer is writer:
+                record.screen_device_writer = None
+                record.screen_last_seen = time.time()
+                close_notice = {"type": "screen.video.close", "installId": install_id}
+                clients_record = record
+            else:
+                clients_record = None
+                close_notice = None
+        if clients_record is not None and close_notice is not None:
+            await broadcast_screen_clients(clients_record, close_notice)
+        writer.close()
+        await writer.wait_closed()
+
+
+async def handle_screen_browser_ws(state: RelayState, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, headers: dict[str, str]) -> None:
+    writer.write(handshake_response(headers))
+    await writer.drain()
+    client = BrowserClient(writer=writer)
+    install_id = ""
+    try:
+        frame = await read_frame(reader)
+        if not frame.is_text:
+            await send_json(writer, client.lock, {"type": "error", "error": "invalid screen browser attach"})
+            return
+        attach = json.loads(frame.payload.decode("utf-8"))
+        if attach.get("type") != "screen.browser.attach":
+            await send_json(writer, client.lock, {"type": "error", "error": "invalid screen browser attach"})
+            return
+        install_id = str(attach.get("installId") or "")
+        if not install_id:
+            await send_json(writer, client.lock, {"type": "error", "error": "missing installId"})
+            return
+        async with state.lock:
+            record = state.devices.get(install_id)
+            if record is None:
+                record = DeviceRecord(
+                    install_id,
+                    {
+                        "type": "mira.device",
+                        "protocol": PROTOCOL_VERSION,
+                        "installId": install_id,
+                        "deviceName": "Mira Device",
+                        "state": "unknown",
+                        "transport": "control",
+                    },
+                    "",
+                    time.time(),
+                )
+                state.devices[install_id] = record
+            record.screen_clients.add(client)
+            info = dict(record.screen_info) if record.screen_info else None
+        if info is not None:
+            await send_json(writer, client.lock, info)
+        else:
+            await send_json(writer, client.lock, {"type": "screen.video.waiting", "installId": install_id})
+        while True:
+            frame = await read_frame(reader)
+            if frame.is_close:
+                break
+            if frame.is_ping:
+                await send_frame(writer, frame.payload, opcode=0xA, lock=client.lock)
+                continue
+            if not frame.is_text:
+                continue
+            try:
+                message = json.loads(frame.payload.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if message.get("type") == "screen.input":
+                message_install_id = str(message.get("installId") or install_id)
+                if message_install_id != install_id:
+                    await send_json(writer, client.lock, {"type": "error", "error": "installId mismatch"})
+                    continue
+                payload, validation_error = screen_input_payload(message, install_id)
+                if payload is None:
+                    await send_json(
+                        writer,
+                        client.lock,
+                        {
+                            "type": "screen.input.result",
+                            "installId": install_id,
+                            "requestId": str(message.get("requestId") or ""),
+                            "clientId": str(message.get("clientId") or ""),
+                            "kind": str(message.get("kind") or ""),
+                            "ok": False,
+                            "error": validation_error,
+                        },
+                    )
+                    continue
+                ok, error = await send_screen_input_to_device(state, install_id, payload)
+                await send_json(
+                    writer,
+                    client.lock,
+                    {
+                        "type": "screen.input.queued",
+                        "installId": install_id,
+                        "requestId": payload.get("requestId", ""),
+                        "clientId": payload.get("clientId", ""),
+                        "kind": payload.get("kind", ""),
+                        "ok": ok,
+                        "error": error,
+                    },
+                )
+    except (WebSocketClosed, asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError):
+        pass
+    finally:
+        async with state.lock:
+            if install_id and (record := state.devices.get(install_id)):
+                record.screen_clients.discard(client)
+        writer.close()
+        await writer.wait_closed()
+
+
 async def handle_client(state: RelayState, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     try:
         method, target, _version, headers, body = await read_http_request(reader)
         parsed = urlparse(target)
         path = parsed.path
+        query = parse_qs(parsed.query)
         if path == "/ws/device" and is_upgrade_request(method, headers):
             await handle_device_ws(state, reader, writer, headers)
             return
@@ -639,6 +1126,12 @@ async def handle_client(state: RelayState, reader: asyncio.StreamReader, writer:
             return
         if path == "/ws/browser" and is_upgrade_request(method, headers):
             await handle_browser_ws(state, reader, writer, headers)
+            return
+        if path == "/ws/screen/device" and is_upgrade_request(method, headers):
+            await handle_screen_device_ws(state, reader, writer, headers)
+            return
+        if path == "/ws/screen/browser" and is_upgrade_request(method, headers):
+            await handle_screen_browser_ws(state, reader, writer, headers)
             return
         response = static_response(path)
         if response is not None and method.upper() == "GET":
@@ -649,6 +1142,15 @@ async def handle_client(state: RelayState, reader: asyncio.StreamReader, writer:
             writer.write(await api_devices(state))
         elif path in {"/api/outline", "/api/device/outline"} and method.upper() == "POST":
             writer.write(await api_outline(state, parse_json_body(body)))
+        elif path == "/api/screen/frame" and method.upper() == "POST":
+            writer.write(await api_screen_frame(state, parse_json_body(body)))
+        elif path == "/api/screen/latest" and method.upper() == "GET":
+            writer.write(await api_screen_latest(state, query))
+        elif path == "/api/screen/stream" and method.upper() == "GET":
+            await api_screen_stream(state, writer, query)
+            return
+        elif path == "/api/screen/input" and method.upper() == "POST":
+            writer.write(await api_screen_input(state, parse_json_body(body)))
         elif path == "/api/discover" and method.upper() == "POST":
             writer.write(await api_discover(state, parse_json_body(body)))
         elif path == "/api/open" and method.upper() == "POST":

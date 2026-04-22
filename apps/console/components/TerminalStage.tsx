@@ -227,6 +227,12 @@ export function TerminalStage({
     onRefreshDevices();
   }, [onRefreshDevices, record]);
 
+  const focusTerminal = useCallback(() => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== terminalHost.current && !terminalHost.current?.contains(active)) active.blur();
+    terminalRef.current?.focus();
+  }, []);
+
   useEffect(() => {
     if (!device) {
       autoOpenDeviceRef.current = null;
@@ -240,11 +246,11 @@ export function TerminalStage({
     if (autoOpenDeviceRef.current === device.installId) return;
     autoOpenDeviceRef.current = device.installId;
     const timer = window.setTimeout(() => {
-      terminalRef.current?.focus();
+      focusTerminal();
       void handleOpen();
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [device, handleOpen, sessionId, sessionStatus, transportStatus]);
+  }, [device, focusTerminal, handleOpen, sessionId, sessionStatus, transportStatus]);
 
   useEffect(() => {
     return () => {
@@ -284,7 +290,7 @@ export function TerminalStage({
             Select a device.
           </div>
         )}
-        <div ref={terminalHost} className="h-full w-full" onMouseDown={() => terminalRef.current?.focus()} />
+        <div ref={terminalHost} className="h-full w-full" onMouseDownCapture={focusTerminal} />
       </div>
     </section>
   );

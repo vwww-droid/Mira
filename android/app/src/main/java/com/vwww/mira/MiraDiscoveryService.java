@@ -61,6 +61,7 @@ public final class MiraDiscoveryService extends Service {
     private volatile String state = "idle";
     private volatile MiraRelayClient relayClient;
     private volatile MiraControlClient controlClient;
+    private volatile MiraSelfScreenStreamer screenStreamer;
     private volatile MiraLocalCommandServer commandServer;
 
     @Override
@@ -163,7 +164,16 @@ public final class MiraDiscoveryService extends Service {
             }
         );
         controlClient.start();
+        startScreenStreamer();
         Log.i(TAG, "Control client starting relayUrl=" + relayUrl);
+    }
+
+    private synchronized void startScreenStreamer() {
+        closeScreenStreamer();
+        if (relayUrl == null || relayUrl.trim().isEmpty()) return;
+        MiraSelfScreenStreamer streamer = new MiraSelfScreenStreamer(this, identity, deviceName, relayUrl);
+        screenStreamer = streamer;
+        streamer.start();
     }
 
     private synchronized void startCommandServer() throws IOException {
@@ -176,6 +186,7 @@ public final class MiraDiscoveryService extends Service {
     private void stopDiscovery() {
         running.set(false);
         lifecycleGeneration.incrementAndGet();
+        closeScreenStreamer();
         closeRelay();
         closeCommandServer();
         if (controlClient != null) {
@@ -277,9 +288,66 @@ public final class MiraDiscoveryService extends Service {
                 openRelaySession(body);
             } else if ("session.close".equals(type)) {
                 closeRelay();
+            } else if ("screen.input".equals(type)) {
+                handleScreenInput(body);
             }
         } catch (Throwable throwable) {
             Log.w(TAG, "Control message failed", throwable);
+        }
+    }
+
+    private void handleScreenInput(JSONObject body) {
+        if (!identity.getInstallId().equals(body.optString("installId"))) {
+            Log.w(TAG, "Ignoring screen.input for wrong installId");
+            return;
+        }
+        String kind = body.optString("kind", "");
+        MiraSelfScreenCapture.InputResult result;
+        if ("tap".equals(kind)) {
+            double x = body.optDouble("x", Double.NaN);
+            double y = body.optDouble("y", Double.NaN);
+            if (Double.isNaN(x) || Double.isInfinite(x) || Double.isNaN(y) || Double.isInfinite(y)) {
+                result = MiraSelfScreenCapture.InputResult.error("invalid tap coordinates");
+            } else {
+                boolean accepted = MiraSelfScreenCapture.getInstance().dispatchTapFromFrame((float) x, (float) y);
+                result = accepted ? MiraSelfScreenCapture.InputResult.ok("tap dispatched") : MiraSelfScreenCapture.InputResult.error("tap not handled");
+                Log.i(TAG, "screen tap accepted=" + accepted + " x=" + x + " y=" + y);
+            }
+        } else if ("text".equals(kind)) {
+            result = MiraSelfScreenCapture.getInstance().dispatchTextInput(body.optString("text", ""));
+        } else if ("paste".equals(kind)) {
+            result = MiraSelfScreenCapture.getInstance().dispatchPaste(body.optString("text", ""));
+        } else if ("key".equals(kind)) {
+            result = MiraSelfScreenCapture.getInstance().dispatchKeyInput(body.optString("key", ""));
+        } else if ("copy".equals(kind)) {
+            result = MiraSelfScreenCapture.getInstance().copyFocusedText();
+        } else if ("selectall".equals(kind)) {
+            result = MiraSelfScreenCapture.getInstance().selectAllFocusedText();
+        } else if ("clear".equals(kind)) {
+            result = MiraSelfScreenCapture.getInstance().clearFocusedText();
+        } else {
+            result = MiraSelfScreenCapture.InputResult.error("unsupported screen input kind=" + kind);
+        }
+        sendScreenInputResult(body, kind, result);
+    }
+
+    private void sendScreenInputResult(JSONObject request, String kind, MiraSelfScreenCapture.InputResult result) {
+        try {
+            JSONObject response = new JSONObject();
+            response.put("type", "screen.input.result");
+            response.put("protocol", 1);
+            response.put("installId", identity.getInstallId());
+            response.put("requestId", request.optString("requestId", ""));
+            response.put("clientId", request.optString("clientId", ""));
+            response.put("kind", kind == null ? "" : kind);
+            response.put("ok", result != null && result.ok);
+            response.put("message", result == null ? "input failed" : result.message);
+            if (result == null || !result.ok) response.put("error", result == null ? "input failed" : result.message);
+            if (result != null && result.text != null && ("copy".equals(kind) || !result.text.isEmpty())) response.put("text", result.text);
+            MiraControlClient client = controlClient;
+            if (client != null) client.sendJson(response);
+        } catch (Throwable throwable) {
+            Log.w(TAG, "Unable to send screen input result", throwable);
         }
     }
 
@@ -330,6 +398,13 @@ public final class MiraDiscoveryService extends Service {
         if (commandServer != null) {
             commandServer.close();
             commandServer = null;
+        }
+    }
+
+    private synchronized void closeScreenStreamer() {
+        if (screenStreamer != null) {
+            screenStreamer.close();
+            screenStreamer = null;
         }
     }
 

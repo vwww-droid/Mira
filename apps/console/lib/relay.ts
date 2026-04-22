@@ -1,4 +1,4 @@
-import type { DevicesResponse, OpenSessionResponse } from './types';
+import type { DevicesResponse, OpenSessionResponse, ScreenFrame, ScreenFrameMetadata, ScreenInputRequest, ScreenInputResponse } from './types';
 
 const RELAY_ORIGIN = process.env.NEXT_PUBLIC_RELAY_ORIGIN?.replace(/\/$/, '') || '';
 const RELAY_WS = process.env.NEXT_PUBLIC_RELAY_WS?.replace(/\/$/, '') || '';
@@ -12,6 +12,13 @@ export function browserWsUrl(): string {
   if (typeof window === 'undefined') return '/ws/browser';
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}/ws/browser`;
+}
+
+export function screenVideoWsUrl(): string {
+  if (RELAY_WS) return `${RELAY_WS}/ws/screen/browser`;
+  if (typeof window === 'undefined') return '/ws/screen/browser';
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/ws/screen/browser`;
 }
 
 async function request<T>(path: string, body?: unknown, options?: { acceptActiveSessionConflict?: boolean }): Promise<T> {
@@ -55,6 +62,34 @@ export function openSession(installId: string, cols: number, rows: number, cellW
 
 export function closeSession(sessionId: string): Promise<{ ok: boolean }> {
   return request<{ ok: boolean }>('/api/close', { sessionId });
+}
+
+export function latestScreenFrame(installId: string): Promise<ScreenFrame> {
+  return request<ScreenFrame>(`/api/screen/latest?installId=${encodeURIComponent(installId)}`);
+}
+
+export function latestScreenFrameMetadata(installId: string): Promise<ScreenFrameMetadata> {
+  return request<ScreenFrameMetadata>(`/api/screen/latest?installId=${encodeURIComponent(installId)}&metadata=1`);
+}
+
+export function screenStreamUrl(installId: string, nonce = 0): string {
+  return apiUrl(`/api/screen/stream?installId=${encodeURIComponent(installId)}&t=${nonce}`);
+}
+
+export function sendScreenInput(input: ScreenInputRequest): Promise<ScreenInputResponse> {
+  const payload = { ...input };
+  if (typeof payload.x === 'number') payload.x = Math.round(payload.x);
+  if (typeof payload.y === 'number') payload.y = Math.round(payload.y);
+  return request<ScreenInputResponse>('/api/screen/input', payload);
+}
+
+export function sendScreenTap(installId: string, x: number, y: number): Promise<ScreenInputResponse> {
+  return sendScreenInput({
+    installId,
+    kind: 'tap',
+    x,
+    y,
+  });
 }
 
 export function bytesToBase64(value: string): string {

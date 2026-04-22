@@ -129,10 +129,33 @@ public final class MiraWebSocketConnection implements Closeable {
     }
 
     public WebSocketFrame readFrame() throws IOException {
+        WebSocketFrame firstFrame = readRawFrame();
+        if (firstFrame.isClose() || firstFrame.isPing() || firstFrame.fin) return firstFrame;
+        if (!firstFrame.isText() && !firstFrame.isBinary()) throw new IOException("Unexpected fragmented websocket frame");
+
+        int opcode = firstFrame.opcode;
+        ByteArrayOutputStream fragments = new ByteArrayOutputStream();
+        fragments.write(firstFrame.payload);
+        while (true) {
+            WebSocketFrame frame = readRawFrame();
+            if (frame.isClose()) return frame;
+            if (frame.isPing()) {
+                sendPong(frame.payload);
+                continue;
+            }
+            if (frame.opcode != 0x0) throw new IOException("Invalid websocket continuation");
+            fragments.write(frame.payload);
+            if (fragments.size() > MAX_FRAME_SIZE) throw new IOException("WebSocket message too large");
+            if (frame.fin) return new WebSocketFrame(opcode, fragments.toByteArray(), true);
+        }
+    }
+
+    private WebSocketFrame readRawFrame() throws IOException {
         InputStream frameInput = input;
         if (frameInput == null) throw new IOException("WebSocket closed");
         int first = readByte(frameInput);
         int second = readByte(frameInput);
+        boolean fin = (first & 0x80) != 0;
         int opcode = first & 0x0F;
         boolean masked = (second & 0x80) != 0;
         long length = second & 0x7F;
@@ -144,7 +167,7 @@ public final class MiraWebSocketConnection implements Closeable {
         if (masked && mask != null) {
             for (int i = 0; i < payload.length; i++) payload[i] = (byte) (payload[i] ^ mask[i % 4]);
         }
-        return new WebSocketFrame(opcode, payload);
+        return new WebSocketFrame(opcode, payload, fin);
     }
 
     private static String readHttpHeader(InputStream input) throws IOException {
@@ -216,10 +239,16 @@ public final class MiraWebSocketConnection implements Closeable {
     public static final class WebSocketFrame {
         public final int opcode;
         public final byte[] payload;
+        public final boolean fin;
 
         WebSocketFrame(int opcode, byte[] payload) {
+            this(opcode, payload, true);
+        }
+
+        WebSocketFrame(int opcode, byte[] payload, boolean fin) {
             this.opcode = opcode;
             this.payload = payload;
+            this.fin = fin;
         }
 
         public boolean isClose() {
@@ -232,6 +261,10 @@ public final class MiraWebSocketConnection implements Closeable {
 
         public boolean isText() {
             return opcode == 0x1;
+        }
+
+        public boolean isBinary() {
+            return opcode == 0x2;
         }
     }
 }

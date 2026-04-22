@@ -42,6 +42,7 @@ public final class MainActivity extends Activity {
         identity = new MiraIdentity(this);
         showControlPage();
         MiraOutlineCollector.getInstance().register(this);
+        MiraSelfScreenCapture.getInstance().register(this);
         requestOutlineUploadSoon();
     }
 
@@ -49,6 +50,7 @@ public final class MainActivity extends Activity {
     protected void onStart() {
         super.onStart();
         MiraOutlineCollector.getInstance().register(this);
+        MiraSelfScreenCapture.getInstance().register(this);
         requestOutlineUploadSoon();
         if (!receiverRegistered) {
             registerReceiver(statusReceiver, new IntentFilter(MiraDiscoveryService.ACTION_STATUS));
@@ -68,6 +70,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         MiraOutlineCollector.getInstance().unregister(this);
+        MiraSelfScreenCapture.getInstance().unregister(this);
         super.onDestroy();
     }
 
@@ -141,6 +144,7 @@ public final class MainActivity extends Activity {
 
         setContentView(scrollView);
         MiraOutlineCollector.getInstance().register(this);
+        MiraSelfScreenCapture.getInstance().register(this);
     }
 
     private View spacer() {
