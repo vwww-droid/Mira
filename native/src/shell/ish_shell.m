@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 
 #include "shell/ish_shell.h"
+#include "shell/ish_hostfs.h"
 
 #include <TargetConditionals.h>
 #include <errno.h>
@@ -305,6 +306,13 @@ static int mira_ish_boot_locked(void) {
     mira_ish_create_device_nodes();
     (void) do_mount(&procfs, "proc", "/proc", "", 0);
     (void) do_mount(&devptsfs, "devpts", "/dev/pts", "", 0);
+    err = mira_ish_hostfs_mount();
+    if (err < 0) {
+        mira_ish_set_error("iSH Mira hostfs mount failed: %s", strerror(-err));
+        g_ish_boot_errno = EIO;
+        errno = EIO;
+        return -1;
+    }
 
     tty_drivers[TTY_CONSOLE_MAJOR] = &mira_ish_console_driver;
     set_console_device(TTY_CONSOLE_MAJOR, 1);

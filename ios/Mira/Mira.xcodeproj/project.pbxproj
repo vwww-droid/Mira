@@ -20,6 +20,7 @@
 		A20000000000000000000006 /* pty_spawn_posix.c in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* pty_spawn_posix.c */; };
 		A20000000000000000000007 /* pty_pair_darwin.c in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* pty_pair_darwin.c */; };
 		A20000000000000000000008 /* ish_shell.m in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* ish_shell.m */; };
+		A20000000000000000000009 /* ish_hostfs.m in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001A /* ish_hostfs.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +40,8 @@
 		A20000000000000000000017 /* pty_pair_darwin.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "../../native/src/platform/darwin/pty_pair_darwin.c"; sourceTree = SOURCE_ROOT; };
 		A20000000000000000000018 /* ish_shell.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "../../native/src/shell/ish_shell.m"; sourceTree = SOURCE_ROOT; };
 		A20000000000000000000019 /* ish_shell.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "../../native/src/shell/ish_shell.h"; sourceTree = SOURCE_ROOT; };
+		A2000000000000000000001A /* ish_hostfs.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "../../native/src/shell/ish_hostfs.m"; sourceTree = SOURCE_ROOT; };
+		A2000000000000000000001B /* ish_hostfs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "../../native/src/shell/ish_hostfs.h"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -110,6 +113,8 @@
 				A20000000000000000000017 /* pty_pair_darwin.c */,
 				A20000000000000000000018 /* ish_shell.m */,
 				A20000000000000000000019 /* ish_shell.h */,
+				A2000000000000000000001A /* ish_hostfs.m */,
+				A2000000000000000000001B /* ish_hostfs.h */,
 			);
 			name = NativeCore;
 			sourceTree = "<group>";
@@ -218,6 +223,7 @@
 				A20000000000000000000006 /* pty_spawn_posix.c in Sources */,
 				A20000000000000000000007 /* pty_pair_darwin.c in Sources */,
 				A20000000000000000000008 /* ish_shell.m in Sources */,
+				A20000000000000000000009 /* ish_hostfs.m in Sources */,
 				A10000000000000000000001 /* MiraApp.swift in Sources */,
 				A10000000000000000000002 /* ContentView.swift in Sources */,
 				A10000000000000000000003 /* MiraControlViewModel.swift in Sources */,

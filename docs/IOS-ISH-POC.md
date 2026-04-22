@@ -325,3 +325,36 @@ env -u LIBRARY_PATH -u SDKROOT xcodebuild \
 2. 浏览器打开 relay terminal(远程终端) 后确认启动内容来自 `/bin/sh` 和 Alpine/BusyBox, 而不是 `Mira iOS builtin shell`。
 3. 验证 `ls -alith`, `cat -n`, `grep`, `sh -c 'echo hello-from-ish'`, `apk` 等命令。
 4. 多次关闭和重新打开 session, 观察 iSH global state(全局状态) 是否出现残留 task(任务) 或 zombie(僵尸进程) 堆积。
+
+## 2026-04-22 Mira host introspection 接入
+
+为避免把 iSH guest(客体系统) 的 `/proc/self/maps` 误认为 iOS host(宿主系统) 进程信息, 本次新增 Mira 专用 hostfs(宿主虚拟文件系统):
+
+```text
+/mira/host/summary
+/mira/host/paths
+/mira/host/bundle
+/mira/host/images
+/mira/host/maps
+/mira/host/task
+```
+
+实现要点:
+
+1. 新增 `native/src/shell/ish_hostfs.m` 和 `native/src/shell/ish_hostfs.h`, 直接实现 iSH `fs_ops` 与 `fd_ops`, 不改 iSH submodule(子模块) 源码。
+2. iSH boot(启动) 阶段自动创建 `/mira/host` 并调用 `do_mount(&mira_hostfs, "mira-host", "/mira/host", ...)`。
+3. `/mira/host/images` 使用 dyld(动态加载器) API 输出当前 Mira 进程真实 Mach-O(苹果可执行格式) image(镜像) 列表。
+4. `/mira/host/maps` 使用 `vm_region_recurse_64` 输出当前 Mira 进程真实 Mach VM(苹果虚拟内存) region(区域), 并尽量关联到 dyld image 与 segment(段)。
+5. `/mira/host/bundle` 和 `/mira/host/paths` 输出 app bundle(应用包), executable(可执行文件), sandbox(沙盒), iSH rootfs(根文件系统) 等路径。
+6. `/mira/host/task` 输出当前进程 `TASK_VM_INFO` 与 `TASK_BASIC_INFO_64` 计数。
+
+推荐验证命令:
+
+```sh
+ls -alith /mira/host
+cat /mira/host/summary
+cat /mira/host/images | head
+cat /mira/host/maps | head
+cat /mira/host/images | grep -i frida
+cat /mira/host/bundle | grep -i dylib
+```
