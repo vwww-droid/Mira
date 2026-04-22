@@ -45,6 +45,7 @@ int mira_shell_close(mira_shell_session_t *session);
 
 const char *mira_shell_backend_name(const mira_shell_session_t *session);
 int mira_shell_backend_available(mira_shell_backend_t backend);
+const char *mira_shell_last_error(void);
 
 #ifdef __cplusplus
 }

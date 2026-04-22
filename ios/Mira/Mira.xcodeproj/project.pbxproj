@@ -19,6 +19,7 @@
 		A20000000000000000000005 /* pty_core.c in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* pty_core.c */; };
 		A20000000000000000000006 /* pty_spawn_posix.c in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* pty_spawn_posix.c */; };
 		A20000000000000000000007 /* pty_pair_darwin.c in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* pty_pair_darwin.c */; };
+		A20000000000000000000008 /* ish_shell.m in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* ish_shell.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +37,8 @@
 		A20000000000000000000015 /* pty_core.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "../../native/src/pty/pty_core.c"; sourceTree = SOURCE_ROOT; };
 		A20000000000000000000016 /* pty_spawn_posix.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "../../native/src/posix/pty_spawn_posix.c"; sourceTree = SOURCE_ROOT; };
 		A20000000000000000000017 /* pty_pair_darwin.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "../../native/src/platform/darwin/pty_pair_darwin.c"; sourceTree = SOURCE_ROOT; };
+		A20000000000000000000018 /* ish_shell.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "../../native/src/shell/ish_shell.m"; sourceTree = SOURCE_ROOT; };
+		A20000000000000000000019 /* ish_shell.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "../../native/src/shell/ish_shell.h"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -105,6 +108,8 @@
 				A20000000000000000000015 /* pty_core.c */,
 				A20000000000000000000016 /* pty_spawn_posix.c */,
 				A20000000000000000000017 /* pty_pair_darwin.c */,
+				A20000000000000000000018 /* ish_shell.m */,
+				A20000000000000000000019 /* ish_shell.h */,
 			);
 			name = NativeCore;
 			sourceTree = "<group>";
@@ -119,6 +124,7 @@
 				A10000000000000000000050 /* Sources */,
 				A10000000000000000000020 /* Frameworks */,
 				A10000000000000000000051 /* Resources */,
+				A20000000000000000000080 /* Prepare iSH RootFS */,
 			);
 			buildRules = (
 			);
@@ -172,6 +178,32 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		A20000000000000000000080 /* Prepare iSH RootFS */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(PROJECT_DIR)/../../tools/ios/prepare-ish-rootfs.sh",
+				"$(PROJECT_DIR)/../../third_party/ish/app/iSH.xcconfig",
+				"$(PROJECT_DIR)/../../third_party/ish/LICENSE.md",
+				"$(PROJECT_DIR)/../../third_party/ish/LICENSE.IOS",
+			);
+			name = "Prepare iSH RootFS";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/MiraISHRoot.fakefs/.mira-ish-rootfs.stamp",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PROJECT_DIR}/../../tools/ios/prepare-ish-rootfs.sh\"";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		A10000000000000000000050 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -185,6 +217,7 @@
 				A20000000000000000000005 /* pty_core.c in Sources */,
 				A20000000000000000000006 /* pty_spawn_posix.c in Sources */,
 				A20000000000000000000007 /* pty_pair_darwin.c in Sources */,
+				A20000000000000000000008 /* ish_shell.m in Sources */,
 				A10000000000000000000001 /* MiraApp.swift in Sources */,
 				A10000000000000000000002 /* ContentView.swift in Sources */,
 				A10000000000000000000003 /* MiraControlViewModel.swift in Sources */,
@@ -318,10 +351,25 @@
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = RCK3A5ACX3;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"MIRA_HAS_ISH_BACKEND=1",
+					"$(inherited)",
+				);
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/../../native/include",
 					"$(PROJECT_DIR)/../../native/src",
 					"$(PROJECT_DIR)/../../native/bridge/ios",
+					"$(PROJECT_DIR)/../../third_party/ish",
+				);
+				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(PROJECT_DIR)/../../build/ios-ish-device-libs/Debug-ApplePleaseFixFB19282108-iphoneos/meson";
+				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(PROJECT_DIR)/../../build/ios-ish-libs/Debug-ApplePleaseFixFB19282108-iphonesimulator/meson";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lish",
+					"-lish_emu",
+					"-lfakefs",
+					"-lsqlite3",
 				);
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Mira uses local network access to connect to your relay server.";
 				SWIFT_OBJC_BRIDGING_HEADER = "Mira/NativeBridge/Mira-Bridging-Header.h";
@@ -354,10 +402,25 @@
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = RCK3A5ACX3;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"MIRA_HAS_ISH_BACKEND=1",
+					"$(inherited)",
+				);
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/../../native/include",
 					"$(PROJECT_DIR)/../../native/src",
 					"$(PROJECT_DIR)/../../native/bridge/ios",
+					"$(PROJECT_DIR)/../../third_party/ish",
+				);
+				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(PROJECT_DIR)/../../build/ios-ish-device-libs/Debug-ApplePleaseFixFB19282108-iphoneos/meson";
+				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(PROJECT_DIR)/../../build/ios-ish-libs/Debug-ApplePleaseFixFB19282108-iphonesimulator/meson";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lish",
+					"-lish_emu",
+					"-lfakefs",
+					"-lsqlite3",
 				);
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Mira uses local network access to connect to your relay server.";
 				SWIFT_OBJC_BRIDGING_HEADER = "Mira/NativeBridge/Mira-Bridging-Header.h";

@@ -269,3 +269,59 @@ terminal.output
 terminal.resize
 session.close
 ```
+
+## 2026-04-22 iSH headless backend 接入
+
+本次已把 `MIRA_SHELL_BACKEND_ISH` 从预留枚举接到真实 iSH NotLinux(非 Linux kernel 目标) 路线:
+
+1. 新增 `native/src/shell/ish_shell.m` 和 `native/src/shell/ish_shell.h`, 作为 Mira shell API 到 iSH kernel/task/TTY 的 headless adapter(无界面适配层)。
+2. `MIRA_SHELL_BACKEND_AUTO` 在 iOS 真机上固定解析为 `MIRA_SHELL_BACKEND_ISH`, iSH 不可用或初始化失败时直接返回错误, 不再落回 builtin shell(内置伪 shell)。
+3. `ios/Mira/Mira.xcodeproj/project.pbxproj` 现在链接 `libish.a`, `libish_emu.a`, `libfakefs.a` 和 `libsqlite3`, 并通过 `MIRA_HAS_ISH_BACKEND=1` 打开后端。
+4. 新增 `tools/ios/prepare-ish-rootfs.sh`, 构建时下载 iSH `appstore-apk.tar.gz`, 用 host fakefsify(宿主机 fakefs 转换工具) 生成 `MiraISHRoot.fakefs`, 并把 iSH `LICENSE.md` 与 `LICENSE.IOS` 一起复制进 app bundle(应用包)。
+5. iSH rootfs 首次运行时会从 bundle 复制到 app container(应用容器) 的 `Library/Application Support/Mira/iSH/default`, 后续在容器内读写, 不直接写 app bundle。
+6. 当前 headless backend 直接复用 iSH 的 `mount_root(&fakefs, ...)`, `become_first_process`, `become_new_init_child`, `pty_open_fake`, `create_stdio`, `do_execve`, `task_start`, `tty_input`, `tty_set_winsize` 等机制。
+
+验证过的构建命令:
+
+```bash
+env -u LIBRARY_PATH -u SDKROOT xcodebuild \
+  -project /Users/vw2x/Projects/Reverses/Mira/ios/Mira/Mira.xcodeproj \
+  -scheme Mira \
+  -configuration Debug \
+  -sdk iphoneos \
+  -destination 'id=b8b0fe95e9624225302276f374cb734e3dfeedaf' \
+  -derivedDataPath /Users/vw2x/Projects/Reverses/Mira/build/ios-mira-device-native-relay-derived \
+  -allowProvisioningUpdates \
+  -allowProvisioningDeviceRegistration \
+  ENABLE_DEBUG_DYLIB=NO \
+  ENABLE_PREVIEWS=NO \
+  build
+```
+
+结果:
+
+```text
+** BUILD SUCCEEDED **
+```
+
+安装命令:
+
+```bash
+/Users/vw2x/Projects/Reverses/Mira/build/ios-tools/node_modules/.bin/ios-deploy \
+  --id b8b0fe95e9624225302276f374cb734e3dfeedaf \
+  --bundle /Users/vw2x/Projects/Reverses/Mira/build/ios-mira-device-native-relay-derived/Build/Products/Debug-iphoneos/Mira.app \
+  --faster-path-search
+```
+
+结果:
+
+```text
+[100%] InstallComplete
+```
+
+剩余验证重点:
+
+1. 真机前台启动 Mira 后, 用 Relay URL 连接 `http://<Mac LAN IP>:8765`。
+2. 浏览器打开 relay terminal(远程终端) 后确认启动内容来自 `/bin/sh` 和 Alpine/BusyBox, 而不是 `Mira iOS builtin shell`。
+3. 验证 `ls -alith`, `cat -n`, `grep`, `sh -c 'echo hello-from-ish'`, `apk` 等命令。
+4. 多次关闭和重新打开 session, 观察 iSH global state(全局状态) 是否出现残留 task(任务) 或 zombie(僵尸进程) 堆积。

@@ -641,7 +641,8 @@ static void *mira_session_thread(void *arg) {
     options.cell_height = session->cell_height;
     session->shell = mira_shell_open(&options);
     if (session->shell == NULL) {
-        mira_status_set("session shell failed: %s", strerror(errno));
+        const char *detail = mira_shell_last_error();
+        mira_status_set("session shell failed: %s", detail != NULL && detail[0] != '\0' ? detail : strerror(errno));
         goto done;
     }
     session->ws = mira_ws_connect(session->server_ws, error, sizeof(error));
