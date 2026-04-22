@@ -40,7 +40,7 @@ native/
       jni/
         mira_pty_jni.c
 
-    apple/
+    ios/
       mira_pty_ios_shim.h
       mira_pty_ios_shim.c
 
