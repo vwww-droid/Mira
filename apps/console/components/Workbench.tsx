@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { DeviceFrame } from '@/components/DeviceFrame';
 import { ConsoleEvent, TerminalStage } from '@/components/TerminalStage';
 import { deviceTitle, shortId } from '@/lib/format';
@@ -21,7 +22,10 @@ export function Workbench({
 }) {
   const hostRef = useRef<HTMLElement | null>(null);
   const [hostSize, setHostSize] = useState({ width: 0, height: 0 });
-  const leftWidth = useMemo(() => adaptiveDevicePaneWidth(selectedDevice, hostSize), [hostSize, selectedDevice]);
+  const [manualLeftWidth, setManualLeftWidth] = useState<number | null>(null);
+  const [infoHeight, setInfoHeight] = useState(168);
+  const adaptiveLeftWidth = useMemo(() => adaptiveDevicePaneWidth(selectedDevice, hostSize), [hostSize, selectedDevice]);
+  const leftWidth = clampPaneSize(manualLeftWidth ?? adaptiveLeftWidth, minDevicePaneWidth(hostSize), maxDevicePaneWidth(hostSize));
 
   useEffect(() => {
     const host = hostRef.current;
@@ -33,15 +37,85 @@ export function Workbench({
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    setManualLeftWidth(null);
+  }, [selectedDevice.installId]);
+
+  useEffect(() => {
+    setInfoHeight((current) => clampPaneSize(current, minInfoPanelHeight(hostSize), maxInfoPanelHeight(hostSize)));
+  }, [hostSize]);
+
+  const startDeviceResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const pointerId = event.pointerId;
+      event.currentTarget.setPointerCapture(pointerId);
+      const startX = event.clientX;
+      const startWidth = leftWidth;
+      const minWidth = minDevicePaneWidth(hostSize);
+      const maxWidth = maxDevicePaneWidth(hostSize);
+
+      const onMove = (moveEvent: PointerEvent) => {
+        setManualLeftWidth(clampPaneSize(startWidth + moveEvent.clientX - startX, minWidth, maxWidth));
+      };
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+    },
+    [hostSize, leftWidth],
+  );
+
+  const startInfoResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const pointerId = event.pointerId;
+      event.currentTarget.setPointerCapture(pointerId);
+      const startY = event.clientY;
+      const startHeight = infoHeight;
+      const minHeight = minInfoPanelHeight(hostSize);
+      const maxHeight = maxInfoPanelHeight(hostSize);
+
+      const onMove = (moveEvent: PointerEvent) => {
+        setInfoHeight(clampPaneSize(startHeight + startY - moveEvent.clientY, minHeight, maxHeight));
+      };
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+    },
+    [hostSize, infoHeight],
+  );
+
   return (
     <section
       ref={hostRef}
       className="grid min-h-0 flex-1 overflow-hidden bg-[#f5f5f5] text-[#111]"
-      style={{ gridTemplateColumns: `${leftWidth}px minmax(0,1fr)` }}
+      style={{ gridTemplateColumns: `${leftWidth}px 6px minmax(0,1fr)` }}
     >
       <DeviceFrame device={selectedDevice} />
-      <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_168px]">
+      <div
+        role="separator"
+        aria-label="Resize screen pane"
+        className="relative z-20 cursor-col-resize border-r border-[#cfcfcf] bg-[#f5f5f5] hover:bg-[#dceaff]"
+        onPointerDown={startDeviceResize}
+      />
+      <div className="grid min-h-0" style={{ gridTemplateRows: `minmax(0,1fr) 6px ${infoHeight}px` }}>
         <TerminalStage device={selectedDevice} onEvent={onEvent} onRefreshDevices={onRefreshDevices} />
+        <div
+          role="separator"
+          aria-label="Resize info pane"
+          className="relative z-20 cursor-row-resize border-y border-[#cfcfcf] bg-[#f5f5f5] hover:bg-[#dceaff]"
+          onPointerDown={startInfoResize}
+        />
         <InfoPanel device={selectedDevice} />
       </div>
     </section>
@@ -58,6 +132,28 @@ function adaptiveDevicePaneWidth(device: MiraDevice, hostSize: { width: number; 
   const max = Math.max(240, Math.min(640, maxByWidth));
   const min = Math.min(300, max);
   return Math.round(Math.max(min, Math.min(target, max)));
+}
+
+function minDevicePaneWidth(hostSize: { width: number; height: number }) {
+  return Math.min(220, Math.max(160, hostSize.width - 360));
+}
+
+function maxDevicePaneWidth(hostSize: { width: number; height: number }) {
+  if (!hostSize.width) return 640;
+  return Math.max(minDevicePaneWidth(hostSize), Math.min(hostSize.width - 360, Math.round(hostSize.width * 0.72)));
+}
+
+function minInfoPanelHeight(hostSize: { width: number; height: number }) {
+  return Math.min(96, Math.max(72, hostSize.height - 260));
+}
+
+function maxInfoPanelHeight(hostSize: { width: number; height: number }) {
+  if (!hostSize.height) return 360;
+  return Math.max(minInfoPanelHeight(hostSize), hostSize.height - 220);
+}
+
+function clampPaneSize(value: number, min: number, max: number) {
+  return Math.round(Math.max(min, Math.min(value, max)));
 }
 
 function InfoPanel({ device }: { device: MiraDevice }) {
@@ -77,8 +173,8 @@ function InfoPanel({ device }: { device: MiraDevice }) {
   ];
 
   return (
-    <section className="relative border-t border-[#cfcfcf] bg-[#f5f5f5] text-[#111]">
-      <div className="h-full overflow-auto px-3 py-2 pr-[180px] font-mono text-[12px] leading-5">
+    <section className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_180px] border-t border-[#cfcfcf] bg-[#f5f5f5] text-[#111]">
+      <div className="h-full overflow-auto px-3 py-2 font-mono text-[12px] leading-5">
         <div className="mb-2 border-b border-[#d8d8d8] pb-1 text-[13px] font-semibold tracking-[0.12em] text-[#3f7fd3]">INFO</div>
         <div className="grid max-w-[920px] grid-cols-[132px_minmax(0,1fr)] gap-x-6">
           {rows.map(([key, value]) => (
@@ -116,7 +212,7 @@ function DeviceMetricsPanel({ device }: { device: MiraDevice }) {
       at: Number(metrics.sampledAt) || Date.now(),
       cpu: normalizedMetric(metrics.cpuPercent),
       mem: normalizedMetric(metrics.memoryPercent),
-      net: Math.min(100, Math.max(0, (Number(metrics.networkBps) || 0) / 2048)),
+      net: Math.max(0, Number(metrics.networkBps) || 0),
     };
     setHistory((current) => {
       const last = current[current.length - 1];
@@ -128,12 +224,13 @@ function DeviceMetricsPanel({ device }: { device: MiraDevice }) {
   const latest = history[history.length - 1];
   const stale = !latest || Date.now() - latest.at > 3000;
   const netBps = Number(device.metrics?.networkBps) || 0;
+  const netScale = Math.max(1024, ...history.map((point) => point.net)) * 1.25;
 
   return (
-    <div className="absolute bottom-2 right-2 w-[164px] border border-[#d8d8d8] bg-[#f5f5f5]/95 font-mono text-[10px] leading-3 text-[#555] shadow-sm">
-      <MetricChart label="CPU" value={latest?.cpu ?? -1} history={history.map((point) => point.cpu)} stale={stale} />
-      <MetricChart label="MEM" value={latest?.mem ?? -1} history={history.map((point) => point.mem)} stale={stale} />
-      <MetricChart label="NET" value={netBps} history={history.map((point) => point.net)} stale={stale} format={formatBytesPerSecond} />
+    <div className="grid h-full min-h-0 grid-rows-3 border-l border-[#d8d8d8] bg-[#f5f5f5] font-mono text-[10px] leading-3 text-[#555]">
+      <MetricChart label="CPU" value={latest?.cpu ?? -1} history={history.map((point) => point.cpu)} stale={stale} color="#59ca58" />
+      <MetricChart label="MEM" value={latest?.mem ?? -1} history={history.map((point) => point.mem)} stale={stale} color="#3f7fd3" />
+      <MetricChart label="NET" value={netBps} history={history.map((point) => point.net)} stale={stale} format={formatBytesPerSecond} scaleMax={netScale} color="#e29b3f" />
     </div>
   );
 }
@@ -144,20 +241,24 @@ function MetricChart({
   history,
   stale,
   format = formatPercent,
+  scaleMax = 100,
+  color,
 }: {
   label: string;
   value: number;
   history: number[];
   stale: boolean;
   format?: (value: number) => string;
+  scaleMax?: number;
+  color: string;
 }) {
   return (
-    <div className="grid grid-cols-[1fr_52px] items-end gap-1 border-b border-[#e2e2e2] px-1 py-0.5 last:border-b-0">
-      <svg viewBox="0 0 92 22" className="h-[22px] w-full overflow-visible">
-        <path d={sparkPath(history, 92, 22)} fill="none" stroke={stale ? '#bdbdbd' : '#59ca58'} strokeWidth="1.2" />
-        <line x1="0" y1="21" x2="92" y2="21" stroke="#d7d7d7" strokeWidth="0.8" />
+    <div className="grid min-h-0 grid-cols-[1fr_54px] items-stretch gap-1 border-b border-[#e1e1e1] px-1 py-1 last:border-b-0">
+      <svg viewBox="0 0 104 36" className="h-full w-full overflow-visible">
+        <path d={sparkPath(history, 104, 36, scaleMax)} fill="none" stroke={stale ? '#bdbdbd' : color} strokeWidth="1.3" />
+        <line x1="0" y1="35" x2="104" y2="35" stroke="#d7d7d7" strokeWidth="0.8" />
       </svg>
-      <div className="text-right">
+      <div className="flex flex-col justify-center text-right">
         <div className="text-[#333]">{format(value)}</div>
         <div className="text-[9px] text-[#777]">{label}</div>
       </div>
@@ -171,16 +272,17 @@ function normalizedMetric(value: unknown) {
   return Math.max(0, Math.min(100, numeric));
 }
 
-function sparkPath(values: number[], width: number, height: number) {
+function sparkPath(values: number[], width: number, height: number, maxValue = 100) {
   if (!values.length) return '';
+  const scale = Math.max(1, maxValue);
   if (values.length === 1) {
-    const y = height - (normalizedMetric(values[0]) / 100) * height;
+    const y = height - (Math.max(0, Math.min(scale, values[0])) / scale) * height;
     return `M 0 ${y.toFixed(1)} L ${width} ${y.toFixed(1)}`;
   }
   return values
     .map((value, index) => {
       const x = (index / Math.max(1, values.length - 1)) * width;
-      const y = height - (normalizedMetric(value) / 100) * height;
+      const y = height - (Math.max(0, Math.min(scale, value)) / scale) * height;
       return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
     })
     .join(' ');

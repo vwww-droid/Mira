@@ -77,7 +77,7 @@ export function LiveScreenViewer({ device, fallback, className }: { device: Mira
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
   const [showDebug, setShowDebug] = useState(false);
-  const [inputStatus, setInputStatus] = useState('input ready');
+  const [, setInputStatus] = useState('input ready');
   const [lastSeq, setLastSeq] = useState(0);
   const [now, setNow] = useState(() => Date.now());
 
@@ -587,18 +587,6 @@ export function LiveScreenViewer({ device, fallback, className }: { device: Mira
       />
       <div className={clsx('absolute inset-0', showCanvas && 'hidden')}>{fallback}</div>
       <canvas ref={canvasRef} className={clsx('absolute inset-0 h-full w-full object-contain', !showCanvas && 'opacity-0')} />
-      <div
-        className="absolute left-2 top-2 z-20 flex max-w-[calc(100%-16px)] items-center gap-1 overflow-hidden border border-[#2d2d2d] bg-[#111]/90 p-1 font-mono text-[11px] text-[#d8d8d8] shadow"
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => event.stopPropagation()}
-      >
-        <button type="button" className="h-6 border border-[#333] px-2 text-[#f1f1f1] hover:border-[#54d6bd]" onClick={() => void sendRemoteInput({ kind: 'selectall' })}>
-          all
-        </button>
-        <button type="button" className="h-6 border border-[#333] px-2 text-[#f1f1f1] hover:border-[#54d6bd]" onClick={() => void sendRemoteInput({ kind: 'key', key: 'Backspace' })}>
-          del
-        </button>
-      </div>
       {debugInfo ? (
         <button
           type="button"
@@ -644,7 +632,6 @@ export function LiveScreenViewer({ device, fallback, className }: { device: Mira
         {info?.fps ? <span> · {info.fps} fps</span> : null}
         {lastSeq ? <span> · seq {lastSeq}</span> : null}
         {lastFrameAtRef.current ? <span> · age {Math.round(lastFrameAge)} ms</span> : null}
-        <span> · {inputStatus}</span>
       </div>
       {error || stale ? (
         <div className="pointer-events-none absolute right-2 top-2 border border-[#6f5a24] bg-[#1f1a0d]/85 px-2 py-1 font-mono text-[11px] text-[#ffcf70]">
