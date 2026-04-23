@@ -1,8 +1,25 @@
 import type { MiraDevice } from '@/lib/types';
 import { deviceTitle, shortId } from '@/lib/format';
+import packageInfo from '@/package.json';
 
 export function BackgroundGlow() {
   return null;
+}
+
+export function MiraBrandBar() {
+  return (
+    <header className="relative flex h-9 shrink-0 items-center border-b border-[#d0d0d0] bg-[#efefef] px-3 font-mono text-[12px] text-[#222]">
+      <div className="flex items-center">
+        <div className="flex h-6 items-center overflow-hidden border border-[#2a2a2a] bg-[#2a2a2a]">
+          <span className="px-2 text-[12px] font-semibold tracking-[0.12em] text-white">MIRA</span>
+          <span className="grid h-6 w-6 place-items-center bg-[#d64a32] text-[18px] leading-none text-white">
+            ⌁
+          </span>
+        </div>
+        <span className="ml-2 text-[12px] text-[#555]">v{packageInfo.version}</span>
+      </div>
+    </header>
+  );
 }
 
 export function TopBar({

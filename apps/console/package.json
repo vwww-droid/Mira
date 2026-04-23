@@ -1,6 +1,6 @@
 {
   "name": "@mira/console",
-  "version": "0.2.0",
+  "version": "0.5.0",
   "private": true,
   "scripts": {
     "dev": "NEXT_PUBLIC_RELAY_ORIGIN=http://127.0.0.1:8765 NEXT_PUBLIC_RELAY_WS=ws://127.0.0.1:8765 next dev",

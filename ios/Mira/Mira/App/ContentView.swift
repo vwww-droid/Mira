@@ -14,7 +14,8 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, minHeight: UIScreen.main.bounds.height - 48)
             .padding(.horizontal, 36)
-            .padding(.vertical, 36)
+            .padding(.top, 64)
+            .padding(.bottom, 36)
         }
         .scrollDismissesKeyboard(.interactively)
         .background(Color(.systemBackground))

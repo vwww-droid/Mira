@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Mira Console',
-  description: 'Remote Android terminal workbench',
+  description: 'Remote device terminal workbench',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

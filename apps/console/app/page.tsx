@@ -1,29 +1,23 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackgroundGlow, Lobby, TopBar } from '@/components/ConsoleChrome';
+import { BackgroundGlow, Lobby, MiraBrandBar } from '@/components/ConsoleChrome';
 import type { ConsoleEvent } from '@/components/TerminalStage';
 import { Workbench } from '@/components/Workbench';
-import { copyText, shortId } from '@/lib/format';
+import { shortId } from '@/lib/format';
 import { listDevices } from '@/lib/relay';
 import type { MiraDevice } from '@/lib/types';
 
 export default function RelayConsolePage() {
   const [devices, setDevices] = useState<MiraDevice[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [relayUrl, setRelayUrl] = useState('');
   const [events, setEvents] = useState<ConsoleEvent[]>([]);
-  const [copied, setCopied] = useState(false);
   const devicesSnapshot = useRef('');
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.installId === selectedId) || null,
     [devices, selectedId],
   );
-  const onlineDevices = devices.filter((device) => device.state !== 'offline');
-
   const pushEvent = useCallback((event: ConsoleEvent) => {
     setEvents((current) => [event, ...current].slice(0, 80));
   }, []);
@@ -37,16 +31,12 @@ export default function RelayConsolePage() {
         devicesSnapshot.current = nextSnapshot;
         setDevices(nextDevices);
       }
-      setError(null);
-    } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : String(fetchError));
-    } finally {
-      setLoading(false);
+    } catch {
+      // Top chrome is intentionally hidden, so polling errors stay silent here.
     }
   }, []);
 
   useEffect(() => {
-    setRelayUrl(window.location.origin);
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const initialDevice = hash.get('device');
     if (initialDevice) setSelectedId(initialDevice);
@@ -77,26 +67,11 @@ export default function RelayConsolePage() {
     window.location.hash = '';
   }, []);
 
-  const handleCopyRelay = useCallback(async () => {
-    await copyText(relayUrl);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1200);
-  }, [relayUrl]);
-
   return (
     <main className="relative h-screen overflow-hidden bg-[#f5f5f5] text-[#111]">
       <BackgroundGlow />
       <div className="relative z-10 flex h-full flex-col">
-        <TopBar
-          relayUrl={relayUrl}
-          devices={devices}
-          onlineCount={onlineDevices.length}
-          loading={loading}
-          error={error}
-          copied={copied}
-          onCopyRelay={handleCopyRelay}
-          onRefresh={refreshDevices}
-        />
+        <MiraBrandBar />
         {selectedDevice ? (
           <Workbench
             devices={devices}

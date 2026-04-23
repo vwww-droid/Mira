@@ -3,7 +3,7 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { base64ToBytes, browserWsUrl, bytesToBase64, closeSession, openSession } from '@/lib/relay';
+import { base64ToBytes, browserWsUrl, bytesToBase64, openSession } from '@/lib/relay';
 import type { MiraDevice, SessionStatus } from '@/lib/types';
 import { shortId } from '@/lib/format';
 
@@ -111,7 +111,6 @@ export function TerminalStage({
     terminal.open(terminalHost.current);
     terminalRef.current = terminal;
     fitRef.current = fit;
-    terminal.writeln('\x1b[38;5;245mMira PTY. Open a session to attach Android shell.\x1b[0m');
     window.setTimeout(fitAndResize, 0);
 
     const inputDisposable = terminal.onData((data) => {
@@ -139,15 +138,16 @@ export function TerminalStage({
     setSessionStatus('opening');
     setTransportStatus('connecting');
     terminalRef.current?.clear();
-    terminalRef.current?.writeln('\x1b[38;5;245mMira relay session requested. Waiting for Android PTY attach...\x1b[0m');
     const socket = new WebSocket(browserWsUrl());
     socketRef.current = socket;
     socket.addEventListener('open', () => {
+      if (socketRef.current !== socket) return;
       setTransportStatus('connected');
       record('browser.attach', shortId(nextSessionId));
       send({ type: 'browser.attach', protocol: 1, installId: targetDevice.installId, sessionId: nextSessionId });
     });
     socket.addEventListener('message', (event) => {
+      if (socketRef.current !== socket) return;
       let message: RelayMessage;
       try {
         message = JSON.parse(event.data as string) as RelayMessage;
@@ -170,6 +170,7 @@ export function TerminalStage({
       } else if (message.type === 'session.close') {
         deviceAttachedRef.current = false;
         sessionIdRef.current = null;
+        autoOpenDeviceRef.current = null;
         setSessionId(null);
         setSessionStatus('closed');
         record('session.close', shortId(message.sessionId));
@@ -181,11 +182,18 @@ export function TerminalStage({
       }
     });
     socket.addEventListener('close', () => {
+      if (socketRef.current !== socket) return;
       setTransportStatus('closed');
       deviceAttachedRef.current = false;
+      sessionIdRef.current = null;
+      autoOpenDeviceRef.current = null;
+      setSessionId(null);
+      setSessionStatus('closed');
       record('ws.close', shortId(nextSessionId));
+      onRefreshDevices();
     });
     socket.addEventListener('error', () => {
+      if (socketRef.current !== socket) return;
       setTransportStatus('error');
       record('ws.error', shortId(nextSessionId));
     });
@@ -195,6 +203,7 @@ export function TerminalStage({
     if (!device) return;
     if (sessionIdRef.current || sessionStatus === 'opening' || transportStatus === 'connecting') return;
     fitAndResize();
+    terminalRef.current?.clear();
     setSessionStatus('opening');
     record('session.open', device.installId);
     try {
@@ -204,6 +213,7 @@ export function TerminalStage({
       connectBrowser(device, opened.sessionId);
       onRefreshDevices();
     } catch (error) {
+      autoOpenDeviceRef.current = null;
       setSessionStatus('error');
       setTransportStatus('error');
       const message = error instanceof Error ? error.message : String(error);
@@ -211,21 +221,6 @@ export function TerminalStage({
       terminalRef.current?.writeln(`\r\n\x1b[31m${message}\x1b[0m`);
     }
   }, [connectBrowser, device, fitAndResize, measureCellSize, onRefreshDevices, record, sessionStatus, size.cols, size.rows, transportStatus]);
-
-  const handleClose = useCallback(async () => {
-    const closingSession = sessionIdRef.current;
-    if (!closingSession) return;
-    record('session.close.request', shortId(closingSession));
-    await closeSession(closingSession).catch((error) => record('close.failed', error instanceof Error ? error.message : String(error)));
-    socketRef.current?.close();
-    socketRef.current = null;
-    sessionIdRef.current = null;
-    deviceAttachedRef.current = false;
-    setSessionId(null);
-    setSessionStatus('closed');
-    setTransportStatus('closed');
-    onRefreshDevices();
-  }, [onRefreshDevices, record]);
 
   const focusTerminal = useCallback(() => {
     const active = document.activeElement;
@@ -244,8 +239,9 @@ export function TerminalStage({
     }
     if (sessionId || sessionStatus === 'opening' || transportStatus === 'connecting') return;
     if (autoOpenDeviceRef.current === device.installId) return;
-    autoOpenDeviceRef.current = device.installId;
     const timer = window.setTimeout(() => {
+      if (autoOpenDeviceRef.current === device.installId || sessionIdRef.current) return;
+      autoOpenDeviceRef.current = device.installId;
       focusTerminal();
       void handleOpen();
     }, 180);
@@ -258,32 +254,8 @@ export function TerminalStage({
     };
   }, []);
 
-  const canOpen = Boolean(device && device.state !== 'offline' && !sessionId && sessionStatus !== 'opening' && transportStatus !== 'connecting');
-  const openButtonClass = canOpen
-    ? 'border-[#777] bg-[#f0f0f0] text-[#111] hover:bg-white'
-    : 'cursor-not-allowed border-[#444] bg-[#222] text-[#777]';
-
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden bg-[#111] text-[#e6e6e6]">
-      <header className="flex h-7 shrink-0 items-center justify-between border-b border-[#2a2a2a] bg-[#0d0d0d] px-2 font-mono text-[12px] text-[#cfcfcf]">
-        <div className="min-w-0 truncate">
-          <span className="text-white">λ</span> {sessionStatus} · {transportStatus} · {size.cols} x {size.rows}
-        </div>
-        <div className="flex h-full items-center">
-          <button type="button" onClick={fitAndResize} className="h-full border-l border-[#2a2a2a] px-2 text-[#cfcfcf] hover:bg-[#1b1b1b]">
-            fit
-          </button>
-          {sessionId ? (
-            <button type="button" onClick={handleClose} className="h-full border-l border-[#2a2a2a] px-2 text-[#f2b8b8] hover:bg-[#1b1b1b]">
-              close
-            </button>
-          ) : (
-            <button type="button" onClick={handleOpen} disabled={!canOpen} className={`ml-2 border px-2 py-0.5 ${openButtonClass}`}>
-              open
-            </button>
-          )}
-        </div>
-      </header>
       <div className="relative min-h-0 flex-1 overflow-hidden bg-[#111]">
         {!device && (
           <div className="absolute inset-0 z-10 grid place-items-center bg-[#111] font-mono text-[12px] text-[#aaa]">
