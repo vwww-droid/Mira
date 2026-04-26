@@ -1,0 +1,6 @@
+interface:
+  display_name: "Mira Mobile Risk Review"
+  short_description: "Analyze sandboxed mobile risk cases for Mira"
+  default_prompt: "Use $mira-mobile-risk-review to analyze a Mira MCP mobile risk case and write a local case report."
+policy:
+  allow_implicit_invocation: true

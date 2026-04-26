@@ -1,333 +1,140 @@
 # Mira
 
-> 面向移动风控场景的环境风险智能体。
+> 移动安全开发在 AI 时代的提效探索。
 
-Mira 把移动安全开发经验沉淀为可执行的 Probe(检测探针), Playbook(执行手册) 和 Report(风险报告), 让 Agent(智能体) 在受控 Android(安卓系统) 环境中完成采样, 关联, 解释和复查。
+Mira 是一个面向移动安全工程师的研究工具, 用来探索 AI(人工智能) 如何进入 Android(安卓系统) 和 iOS(苹果移动系统) App(应用) 沙盒视角, 观察运行时风险信号, 调用可复用的 Skill(技能), 并把每一次排查沉淀成可复查的 Case(案例)。
 
-它不是一个单纯跑命令的工具, 而是一套把风险环境排查经验转成自动化判断链的框架。
+它不是 SDK(软件开发工具包), 不是远控框架, 也不是黑盒检测器。Mira 关注的是一条更长期的链路: 如何把移动安全开发里的排查经验, 证据链判断和复盘方法, 转成 AI 可以反复调用和持续改进的知识资产。
 
-## 为什么做
+Mira 当前已经跑通 Android / iOS 双端 App 沙盒会话, Relay(中继服务), 浏览器工作台, PTY(伪终端), MCP(Model Context Protocol, 模型上下文协议), 风险 Skill 和本地 Case 的主闭环。接下来我会基于这个框架持续分析常见模拟器, 云手机, 改机, Root(提权环境), Hook(运行时劫持), 注入和自动化框架的运行时特征, 并把每次分析整理成文章, Skill 和 Case, 作为自己的移动安全学习记录。
 
-移动风控里的环境风险很少由单个特征决定。
+[MCP 接入](docs/MCP.md) | [Relay 说明](docs/REMOTE-RELAY.md) | [iOS 说明](docs/IOS-APP.md) | [原生 PTY 架构](docs/NATIVE-ARCHITECTURE.md) | [风险 Skill](skills/mira-mobile-risk-review/SKILL.md)
 
-模拟器, 改机, Root(提权环境), Hook(运行时劫持), Magisk(隐藏提权框架), Xposed(运行时注入框架) 和系统属性伪装往往会交叉出现。真正有价值的不是某条命令的输出, 而是多条信号之间的关系, 权重, 误报来源和下一步验证路径。
+## 演示预告
 
-Mira 的目标是把这些经验沉淀成可执行资产:
+<!--
+录制完成后把 GIF 放到 docs/assets/mira-ai-emulator-review.gif, 再取消下面这段注释。
 
-1. 采集设备和应用运行环境里的风险信号。
-2. 将零散信号归一化为结构化证据。
-3. 让 Agent 根据 Playbook 进行关联分析。
-4. 输出可复查的风险结论, 置信度和下一步验证建议。
-5. 把每次排查中有价值的判断沉淀回经验库。
+<p align="center">
+  <img src="docs/assets/mira-ai-emulator-review.gif" alt="Mira AI emulator review demo" width="860">
+</p>
+-->
 
-## 核心思路
+第一段演示会尽量保持简单: 手动连接 Mira App, 在浏览器工作台打开 App 沙盒终端和实时画面, 然后让 Codex 读取 `skills/mira-mobile-risk-review`, 分析一个模拟器环境, 最后输出结构化风险发现。
+
+```text
+打开 Mira App -> 主动连接 Relay -> 打开沙盒会话 -> 让 AI 分析模拟器环境 -> 沉淀 Case
+```
+
+这段演示想证明的不是“跑了几条命令”, 而是 AI 能不能顺着移动 App 沙盒里能看到的线索, 把异常信号解释成一条可复查的证据链。
+
+## 核心能力
+
+### AI 驱动运行时风险发现
+
+Mira 让 AI 进入已经主动连接的 App 沙盒会话, 从当前进程, 沙盒文件视图, PTY 输出, 运行态指标和 App 自身画面中观察可疑信号。
+
+真正有价值的不是某个单点检测结果, 而是 AI 能不能解释:
+
+1. 哪些现象看起来异常。
+2. 这些现象来自哪个可见边界。
+3. 为什么它们可能和模拟器, 云手机, 改机, Root, Hook 或注入有关。
+4. 哪些地方可能误报。
+5. 下一步应该用什么路径交叉验证。
+
+### Android / iOS 双端沙盒工作台
+
+Mira 在 Android 和 iOS 上提供一致的浏览器工作台体验: 设备列表, App 实时画面, 沙盒 PTY, 运行态指标, 会话控制和 MCP 工具调用。
+
+这不是系统级远控桌面。Android 侧进入的是 Mira 自身 App 沙盒和 `/proc/self/*` 当前进程视角。iOS 侧提供 `/mira` App 视图根目录和 `/mira/proc` 模拟进程视图, 用来帮助 AI 理解当前 App 运行态, 而不是假装拥有整台设备。
+
+### 从异常信号到证据链
+
+移动风险环境很少由单个特征决定。模拟器痕迹, 云手机特征, Root 文件, Hook 框架, 注入库, 可疑挂载, 文件描述符异常和系统属性伪装经常交叉出现。
+
+Mira 不追求把这些现象压成一个黑盒分数。它更关心把一次排查摊开:
+
+1. 看到了什么。
+2. 来自哪里。
+3. 为什么可疑。
+4. 有什么正常解释。
+5. 还需要看什么。
+6. 是否值得沉淀为 Skill 规则或 Case 样例。
+
+### 持续沉淀的 Skill 和 Case
+
+Mira 不只是一个能打开 shell(命令解释器) 的 demo(演示)。它更像一个持续更新的移动安全运行时观察笔记本。
+
+后续每分析一个常见环境或框架, 我都会尽量沉淀三类资产:
+
+1. 文章: 解释一次分析过程, 信号来源, 判断路径和踩坑点。
+2. Skill: 把可复用的观察方法整理成 AI 可以调用的检查流程。
+3. Case: 保留一次具体环境里的证据链, 不确定性和后续验证方向。
+
+长期目标不是维护一套神奇检测代码, 而是沉淀一套可以复查, 可以迁移, 可以被 AI 反复调用的移动安全分析方法。
+
+## 研究计划
+
+Mira 也是我在 AI 时代重新学习移动安全开发的公开记录。
+
+后续计划围绕这些方向持续更新文章, Skill 和 Case:
+
+1. 模拟器环境运行时特征分析。
+2. 云手机和远程设备环境特征分析。
+3. Root, Magisk(模块化 Root 框架) 和改机痕迹分析。
+4. Hook, Frida(动态插桩工具), Xposed(运行时注入框架) 和注入痕迹分析。
+5. Android `/proc/self/maps`, `/proc/self/status`, `/proc/self/mountinfo` 观察方法。
+6. iOS `/mira` 和 `/mira/proc` 沙盒视角建模。
+7. 如何把一次排查沉淀成 AI 可复用的 Skill 和 Case。
+
+如果你也关注 AI 如何提升移动安全开发效率, 可以 star(收藏) 或 watch(关注) 这个项目。后面我会把更多具体环境的分析过程持续补进来。
+
+## 授权研究边界
+
+Mira 只面向授权研究和自有 App 分析。
+
+1. 只观察和交互 Mira 宿主 App 自身沙盒。
+2. 不控制其他 App。
+3. 不提供系统级远控能力。
+4. 不提供 root, jailbreak(越狱) 绕过或系统沙盒绕过能力。
+5. 不提供生产 SDK 或静默后台控制能力。
+6. 所有会话都必须从 Mira App 内主动连接 Relay 后才存在。
+
+## 工作原理
 
 ```mermaid
 flowchart LR
-  A["Web Terminal(网页终端)"] --> B["Bridge(连接层)"]
-  B --> C["Termux(安卓终端环境)"]
-  C --> D["Probe Runner(探针运行器)"]
-  D --> E["Android Signals(安卓系统信号)"]
-  D --> F["App Signals(应用上下文信号)"]
-  D --> G["Report JSON(结构化风险报告)"]
-  G --> H["Mira Agent(风险分析智能体)"]
-  H --> I["Playbook(经验沉淀)"]
+  A["Android / iOS Mira App"] --> B["App Sandbox Runtime"]
+  B --> C["PTY / App View / Metrics"]
+  C --> D["Relay Server"]
+  D --> E["Browser Workbench"]
+  D --> F["MCP Server"]
+  F --> G["Codex"]
+  G --> H["Risk Skill"]
+  G --> I["Case Report"]
 ```
 
-Mira 将检测流程拆成四层:
+Mira 的主线由四层组成:
 
-1. Bridge(连接层): 负责 Web Terminal 和 Termux 之间的长连接, 命令分发和输出回传。
-2. Probe(检测探针): 负责采集模拟器, 改机, 注入, 系统属性和应用上下文信号。
-3. Analyzer(分析器): 负责把 Probe 输出转成风险评分, 证据链和复查建议。
-4. Playbook(执行手册): 负责沉淀经验, 包括信号含义, 误报来源, 组合判断和验证路径。
+1. Mobile App(移动端应用): Android 和 iOS 都提供受系统沙盒限制的端侧运行环境。
+2. Relay: 移动端主动连接自托管 Relay, 浏览器按需打开终端, 画面和指标。
+3. MCP: AI client(客户端) 通过标准工具读取设备运行时状态, 打开 PTY, 执行授权分析步骤。
+4. Skill + Case: Agent(智能体) 读取风险观察方法, 把可疑行为整理成本地 Case。
 
-## 首周目标
+## 平台视角和边界
 
-一周内先做出 MVP(最小可行产品):
+1. Android 侧进入的是 Mira 第三方 App sandbox 内的真实 PTY, 不是 adb shell, 不是 root shell。
+2. Android 风险观察优先看当前进程和 shell 可见范围, 例如 `/proc/self/maps`, `/proc/self/status`, `/proc/self/mountinfo`, `/proc/self/fd` 和系统公开接口。
+3. iOS 侧 `/mira` 是 Mira 提供的 app-view root(应用视图根目录), 表达 App 沙盒内可见文件视图, 不是系统真实 `/`。
+4. iOS 侧 `/mira/proc` 是 Mira 利用 iOS 系统接口模拟的 process view(进程视图), 用来让 AI 理解当前 App 进程状态, 不是 iOS 内核原生 procfs。
+5. App 画面只来自 Mira App 自己的 key window(主窗口), 不采集系统全屏, 不采集其他 App 画面, 不采集输入法画面。
+6. Mira 默认不提供黑盒检测代码。可疑行为有就是有, 先说出来, 再标注来源, 边界, 解释和下一步观察方向。
 
-> 在 Termux 中运行 Mira, 通过 Web Terminal 触发环境检测, 自动生成一份模拟器和改机风险报告。
+## 快速开始
 
-### Day 1: 项目骨架
+### 1. 启动 Relay 和浏览器工作台
 
-1. 初始化仓库结构。
-2. 定义风险报告 JSON Schema(结构化数据约束)。
-3. 定义 Probe 输出格式。
-4. 写出第一版 Playbook 文档结构。
-
-### Day 2: Termux 执行桥
-
-1. 实现本地命令执行器。
-2. 实现 WebSocket(网页长连接协议) 输出流。
-3. 支持命令超时, 输出截断和错误码记录。
-4. 预留命令暴露策略能力。
-
-### Day 3: 模拟器风险探针
-
-1. 采集系统属性。
-2. 采集硬件和设备标识。
-3. 采集传感器和文件路径特征。
-4. 输出 emulator category(模拟器类别) 的结构化信号。
-
-### Day 4: 改机风险探针
-
-1. 采集 su(提权命令) 和常见 Root 路径。
-2. 采集 Magisk 和 KernelSU(内核级提权框架) 痕迹。
-3. 采集 Xposed, LSPosed(运行时注入框架) 和常见注入特征。
-4. 输出 tamper category(改机类别) 的结构化信号。
-
-### Day 5: Agent 分析链
-
-1. 将 Probe 输出聚合为统一 Report。
-2. 根据 Playbook 解释信号意义。
-3. 输出风险等级, 置信度, 证据链和误报说明。
-4. 给出下一轮验证命令或验证方向。
-
-### Day 6: Web Terminal 原型
-
-1. 浏览器侧展示实时命令输出。
-2. 支持一键运行检测任务。
-3. 支持下载或复制报告。
-4. 保留一次完整检测会话记录。
-
-### Day 7: 打磨和验收
-
-1. 跑通一台真实设备和一个模拟器环境。
-2. 对比两类环境的输出差异。
-3. 补齐 README 和首批 Playbook。
-4. 固化第一版验收用例。
-
-## 风险报告格式
-
-Mira 的报告优先机器可读, 再由 Agent 转成人可读解释。
-
-```json
-{
-  "target": {
-    "platform": "android",
-    "runtime": "termux",
-    "session_id": "local-session"
-  },
-  "summary": {
-    "risk_level": "high",
-    "confidence": "medium",
-    "score": 78
-  },
-  "findings": [
-    {
-      "category": "emulator",
-      "signal": "qemu_property",
-      "risk": "high",
-      "evidence": "ro.kernel.qemu=1",
-      "reason": "该属性常见于模拟器环境",
-      "false_positive": "部分云真机或定制系统可能出现相似属性"
-    }
-  ],
-  "next_steps": [
-    "继续检查硬件标识和传感器数量",
-    "对比真实设备基线"
-  ]
-}
-```
-
-## 初始目录规划
-
-```text
-mira/
-  agent/
-    prompts/
-    analyzers/
-  bridge/
-    termux/
-    websocket/
-  probes/
-    emulator/
-    tamper/
-    hook/
-    system/
-  playbooks/
-    emulator.md
-    tamper.md
-    hook.md
-  schemas/
-    finding.schema.json
-    report.schema.json
-  reports/
-  docs/
-```
-
-## 第一版验收标准
-
-1. 可以在 Termux 中启动 Mira。
-2. 可以从浏览器打开 Web Terminal 并看到实时输出。
-3. 可以一键运行模拟器和改机风险检测。
-4. 每个 Probe 都输出统一 JSON(结构化数据格式)。
-5. Agent 可以基于报告生成风险结论, 证据链和复查建议。
-6. 至少完成 2 个 Playbook: 模拟器检测和改机检测。
-7. 至少保留 2 份样例报告: 真实设备和模拟器环境。
-
-## 技术边界
-
-Mira 默认运行在 Termux 环境中, 看到的是 Termux 权限和系统可见范围。
-
-如果需要分析 App(应用程序) 内部运行态, 需要额外接入:
-
-1. SDK(软件开发工具包) 采集应用内信号。
-2. Debug Bridge(调试桥) 连接测试包。
-3. Frida(动态插桩工具) 等授权测试链路。
-4. 服务端会话记录和策略配置。
-
-因此第一版优先做外部环境风险检测, 不把 App 内部检测和线上风控策略混在一起。
-
-## 后续方向
-
-1. 建立真实设备基线库。
-2. 建立模拟器和云手机特征库。
-3. 增加 Hook 和注入风险检测。
-4. 增加报告对比能力。
-5. 增加 Playbook 自动沉淀能力。
-6. 增加服务端任务编排和历史检索。
-
-## Android APK MVP
-
-Mira 当前主线已经切到 Android APK(安卓安装包) 形态, 目标是在 Mira 自己的第三方应用沙盒里持有真实 PTY(伪终端), 再通过 Web Terminal(网页终端) 操作 shell(命令解释器)。
-
-当前闭环复用 Termux app(安卓终端应用) 的 `terminal-emulator` 模块作为 submodule(代码子模块), 并通过 JNI(本地接口) 创建 PTY 子进程。Mira 还会创建最小 bootstrap(启动用户空间), 让 shell 从 `/data/user/0/com.vwww.mira/files/usr/bin/sh` 进入。
-
-### 构建 APK
-
-```bash
-./gradlew :mira-app:assembleDebug
-```
-
-产物位置:
-
-```text
-android/app/build/outputs/apk/debug/mira-app-debug.apk
-```
-
-原生 PTY(伪终端) 层已经整理为 Android(安卓系统) 和 iOS(苹果移动系统) 可共享的 POSIX(可移植操作系统接口) 架构, 详细边界见 `docs/NATIVE-ARCHITECTURE.md`。
-
-### 安装并启动
-
-```bash
-adb install -r android/app/build/outputs/apk/debug/mira-app-debug.apk
-adb shell am start -n com.vwww.mira/.MainActivity
-```
-
-Mira APK 首页只暴露远程 Relay(中继) 连接入口。Local Terminal(本地终端) 调试入口不再展示在手机首页。
-
-当前手机侧只需要填写 Relay URL(中继地址), 点击 Connect Relay(连接中继), 然后由浏览器在 Relay 页面按需打开真实 PTY。远程运行方式见下方 `Remote On-Demand Terminal 运行说明`。
-
-当前 shell 路径和工作目录是:
-
-```text
-/data/user/0/com.vwww.mira/files/usr/bin/sh
-/data/user/0/com.vwww.mira/files/home
-```
-
-### Termux fork 备用路线
-
-仓库保留 Termux fork(分叉)作为备用研究路线, 但当前主线已经改为 APK(安卓安装包) 直接打包 BusyBox(单文件工具集), 不接 Termux package repository(包仓库), 不维护 apt(包管理器) 软件源索引。
-
-备用路线包含:
-
-1. `third_party/termux-app`: 复用 Termux APK 和终端能力源码。
-2. `third_party/termux-packages`: 用新 package(包名) 重编 bootstrap。
-3. `tools/termux/prepare-mira-termux-packages.sh`: 生成 Mira bootstrap 构建工作区。
-4. `tools/termux/prepare-mira-termux-app.sh`: 生成改名后的 Termux app 工作区。
-
-完整说明见 `docs/TERMUX-FORK.md`。
-
-## Remote On-Demand Terminal 运行说明
-
-Mira 现在的远程主路径是 Android 主动连接 Relay Server(中继服务端), 浏览器再按需打开 Android PTY。它不再要求 Scan LAN(局域网扫描), 也不做二维码扫码。
-
-本阶段远程 Relay 不使用 Pairing Token(配对令牌)。企业自托管场景默认由自己的服务端边界控制访问, 协议里只使用 installId(安装标识) 识别设备和 sessionId(会话标识) 绑定会话。
-
-远程 session 会自动释放内置 BusyBox(单文件工具集) 到临时工具目录, 并把该目录放到 PATH(命令搜索路径) 前面。当前已打包 arm64-v8a, armeabi-v7a, x86 和 x86_64 四个 ABI(应用二进制接口), 每个二进制约 978 KiB 到 1.5 MiB, 会话关闭后删除释放副本。
-
-### 一键公网启动
-
-先安装并认证 cpolar(国内内网穿透服务):
-
-```bash
-# 任选其一: 使用官网下载的 cpolar 可执行文件, 或使用 Homebrew 安装.
-brew tap probezy/core && brew install cpolar
-
-# token 在 https://dashboard.cpolar.com/get-started 获取, 不要提交到仓库.
-cpolar authtoken <YOUR_AUTH_TOKEN>
-```
-
-```bash
-./mira-web
-```
-
-脚本会先启动 Mira Relay, 再自动启动 cpolar HTTP(网页协议) 隧道, 并打印:
-
-```text
-Browser URL: https://xxxx.r36.cpolar.top
-Android Relay URL: https://xxxx.r36.cpolar.top
-```
-
-电脑浏览器打开 Browser URL。手机打开 Mira APK, 填写 Android Relay URL, 点击 `Connect Relay`。
-
-如果 cpolar 已经在另一个终端里手动运行, 也可以直接复用它输出的公网地址:
-
-```bash
-MIRA_PUBLIC_URL=https://xxxx.r36.cpolar.top ./mira-web
-```
-
-默认 `./mira-web` 会自己管理 cpolar 进程。如果你已经手动运行了 `cpolar http 8765`, 推荐使用上面的 `MIRA_PUBLIC_URL` 方式, 避免重复启动 cpolar。
-
-该脚本会自动构建 `apps/console`。如果要跳过前端构建, 可以设置:
-
-```bash
-MIRA_SKIP_CONSOLE_BUILD=1 ./tools/relay/start-public-relay.sh
-```
-
-也可以直接运行底层脚本:
-
-```bash
-./tools/relay/start-public-relay.sh
-```
-
-如果仍然想使用 Cloudflare Quick Tunnel(Cloudflare 临时隧道), 可以显式指定:
-
-```bash
-MIRA_TUNNEL_PROVIDER=cloudflare ./mira-web
-```
-
-Relay 只加载 `apps/console` 的 Next.js(前端应用框架) 构建产物, 展示设备大厅和三栏式设备工作台。不再保留旧版内联 Web Terminal(网页终端) 页面。如果没有构建产物, 首页会提示先构建控制台。
-
-构建新版浏览器控制台:
-
-```bash
-cd apps/console
-npm install
-npm run build
-cd ../..
-```
-
-随后重新启动 Relay 即可看到新版 UI(用户界面)。
-
-### 命令行入口
-
-```bash
-./mira-cli devices
-./mira-cli run 'pwd'
-./mira-cli shell
-```
-
-`mira-cli` 直接使用 Relay HTTP(超文本传输协议) 和 WebSocket(网页长连接协议), 不经过 MCP(Model Context Protocol, 模型上下文协议)。默认连接 `http://127.0.0.1:8765`, 也可以指定:
-
-```bash
-./mira-cli --relay https://example.trycloudflare.com devices
-./mira-cli run 'echo hello' --relay https://example.trycloudflare.com
-```
-
-`shell` 会进入交互式远程 PTY(伪终端), 按 `Ctrl-]` 退出本地 CLI(命令行接口) 会话并关闭远程 session(会话)。
-
-### 局域网启动
+局域网演示优先使用:
 
 ```bash
 ./mira-local-web
@@ -339,29 +146,64 @@ cd ../..
 http://localhost:8765
 ```
 
-Android 手机端填写:
+Android 或 iOS 端填写:
 
 ```text
-http://<电脑局域网IP>:8765
+http://<电脑局域网 IP>:8765
 ```
 
-局域网模式下电脑浏览器使用 localhost(本机地址), 手机使用电脑局域网 IP(网络地址)。这样浏览器侧 WebCodecs(网页编解码接口) 可以正常解 H.264(视频编码格式), 同时 Android APK(安卓安装包) 仍然能从手机访问 Relay(中继服务)。
+如果需要公网临时演示, 可以使用:
 
-### Android 端
+```bash
+./mira-web
+```
 
-1. 打开 Mira APK 首页。
-2. 填写 Relay URL(中继地址)。
+`./mira-web` 会启动 Mira Relay, 构建 `apps/console`, 并通过 cpolar 输出可访问的 Browser URL(浏览器地址) 和移动端 Relay URL(中继地址)。详细说明见 `docs/REMOTE-RELAY.md`。
+
+### 2. 构建并启动 Android App
+
+```bash
+./gradlew :mira-app:assembleDebug
+adb install -r android/app/build/outputs/apk/debug/mira-app-debug.apk
+adb shell am start -n com.vwww.mira/.MainActivity
+```
+
+Android shell 的默认路径和工作目录是:
+
+```text
+/data/user/0/com.vwww.mira/files/usr/bin/sh
+/data/user/0/com.vwww.mira/files/home
+```
+
+原生 PTY 层已经整理为 Android 和 iOS 可共享的 POSIX(可移植操作系统接口) 架构, 详细边界见 `docs/NATIVE-ARCHITECTURE.md`。
+
+### 3. 构建并启动 iOS App
+
+命令行构建并启动 iOS Simulator(模拟器):
+
+```bash
+./mira-ios
+```
+
+也可以直接用 Xcode 打开:
+
+```bash
+open ios/Mira/Mira.xcodeproj
+```
+
+iOS 侧已经接入 Relay, PTY, Mira App 自身 key window 画面上传, 设备指标采样, `/mira` app-view root 和 `/mira/proc` simulated process view(模拟进程视图)。详细说明见 `docs/IOS-APP.md`。
+
+### 4. 连接移动端
+
+1. 打开 Android 或 iOS 端 Mira App 首页。
+2. 填写 Relay URL。
 3. 点击 `Connect Relay`。
 4. 回到浏览器等待设备列表出现。
-5. 点击 `Open Terminal`。
+5. 点击 `Open Terminal` 打开 App 沙盒会话。
 
-服务端通过 control WebSocket(控制长连接) 向设备发送 session.open(打开会话) 请求, 设备收到后才创建 PTY 并主动连接服务端。详细说明见 `docs/REMOTE-RELAY.md`。
+服务端通过 control WebSocket(控制通道) 向设备发送 `session.open` 请求, 设备收到后才创建 PTY 并主动连接服务端。
 
-内置工具箱说明见 `docs/TOOLBOX.md`。
-
-## MCP 接入说明
-
-Mira 现在提供 MCP(Model Context Protocol, 模型上下文协议) server(服务端), 让外部 Codex 这类 AI client(智能客户端) 可以通过标准 tools(工具), resources(资源) 和 prompts(提示模板) 操作 Relay Terminal(中继终端)。
+## MCP 接入
 
 启动 Relay Server 后, MCP client 以 stdio(标准输入输出) 方式启动:
 
@@ -370,103 +212,57 @@ python3 -m mira.mcp.server \
   --relay http://127.0.0.1:8765
 ```
 
-Codex CLI(命令行接口) 非交互执行时建议给每个 Mira MCP tool(工具) 显式配置 `approval_mode = "approve"`, 避免工具调用在本地审批层被取消。完整配置示例见 `docs/MCP.md`。
-
-如果要让 Codex 自主做 Magisk(安卓 root 管理框架) 手机风险发现, 使用 `mira_magisk_risk_review` prompt(提示模板)。该 prompt 只提供环境上下文: 目标是 Magisk 手机, 当前 shell 位于第三方 app 权限内, 真实 PTY 可操作, 会话里可以使用 BusyBox(单文件工具集)。
-
 核心工具包括:
 
 1. `mira_list_devices`: 读取已连接 Relay 的设备。
-2. `mira_open_terminal`: 打开远程 PTY(伪终端) session(会话)。
+2. `mira_open_terminal`: 打开远程 PTY session(会话)。
 3. `mira_run_command`: 在同一个 PTY 中执行命令并读取输出。
-4. `mira_collect_snapshot`: 采集第一轮 Android(安卓系统) 分析快照。
+4. `mira_collect_snapshot`: 采集第一轮 Android 分析快照。
 5. `mira_close_terminal`: 关闭会话并清理设备侧临时状态。
 
-完整说明见 `docs/MCP.md`。
+如果要让 Codex 做移动风险分析, 可以让它读取 `skills/mira-mobile-risk-review`, 再针对当前授权会话生成观察步骤和 Case。完整配置见 `docs/MCP.md`。
 
-## iOS App
-
-iOS(苹果移动系统) 当前已经有第一阶段 App shell(应用壳), 用来承载和 Android 首页一致的 Relay(中继) 控制界面。本阶段只做界面和工程骨架, fork(派生进程), exec(替换进程镜像) 和 PTY(伪终端) 接入放到下一阶段。
-
-命令行构建并启动 iOS Simulator(iOS 模拟器):
+## CLI
 
 ```bash
-./mira-ios
+./mira-cli devices
+./mira-cli run 'pwd'
+./mira-cli shell
 ```
 
-也可以直接用 Xcode(苹果开发环境) 打开:
+`mira-cli` 直接使用 Relay HTTP 和 WebSocket, 不经过 MCP。默认连接 `http://127.0.0.1:8765`, 也可以指定 Relay:
 
 ```bash
-open ios/Mira/Mira.xcodeproj
+./mira-cli --relay https://example.invalid devices
+./mira-cli run 'echo hello' --relay https://example.invalid
 ```
 
-详细说明见 `docs/IOS-APP.md`, 仓库分层见 `docs/REPO-ARCHITECTURE.md`。
+`shell` 会进入交互式远程 PTY, 按 `Ctrl-]` 退出本地 CLI 会话并关闭远程 session。
 
-## Web Terminal MVP 运行说明
+## 使用须知
 
-本轮 MVP(最小可行产品) 只实现 Web Terminal(网页终端) 到 PTY(伪终端) 的实时连接, 不实现 Probe(检测探针), Report(风险报告), Agent(智能体) 分析或多设备管理。
+使用 Mira 即表示你确认:
 
-### 启动服务端
+1. 只在自己拥有或已获得明确授权的 App, 设备和运行环境中使用 Mira。
+2. 不使用 Mira 控制其他 App, 绕过平台保护, 访问未授权数据, 或执行系统级远程控制。
+3. Mira 不提供生产 SDK, 静默后台控制, root, jailbreak 绕过, 或跨 App 自动化能力。
+4. 所有会话都必须从 Mira App 内主动发起, 且仅限 Mira 自身 App 沙盒和普通第三方 App 权限范围。
+5. 使用者需自行遵守适用法律, 平台规则和内部安全规范。
 
-```bash
-python3 -m mira.bridge.server --host 127.0.0.1 --port 8765
-```
+## 文档
 
-启动后打开:
+更多细节下沉到文档中:
 
-```text
-http://127.0.0.1:8765/
-```
+1. `docs/REMOTE-RELAY.md`: Relay 和远程按需终端说明。
+2. `docs/MCP.md`: MCP server 配置和工具说明。
+3. `docs/IOS-APP.md`: iOS App 架构和运行说明。
+4. `docs/NATIVE-ARCHITECTURE.md`: Android 和 iOS 共享原生 PTY 架构。
+5. `docs/TOOLBOX.md`: Android 内置工具箱说明。
+6. `docs/TERMUX-FORK.md`: Termux fork 备用研究路线。
+7. `docs/REPO-ARCHITECTURE.md`: 仓库分层说明。
 
-浏览器页面会通过 WebSocket(网页长连接协议) 连接 `/ws/terminal`, 服务端创建一个真实 shell(命令解释器) 并挂到 PTY 上。前端 xterm.js(浏览器终端组件) 已随仓库放在 `web/vendor/xterm/`, 不依赖外部 CDN(内容分发网络)。
+## 当前状态
 
-### 验收命令
+Mira 当前处于 v1.0.0 演示和文章准备阶段。移动端沙盒会话, Relay, 浏览器工作台, MCP, Skill 和 Case 的主闭环已经跑通。
 
-在网页终端中输入:
-
-```bash
-pwd
-ls
-echo hello
-```
-
-预期结果:
-
-1. 命令输出实时显示在浏览器里。
-2. 多条命令运行在同一个持久 PTY session(终端会话) 中, 不是一次性 exec(命令执行) stdout(标准输出)。
-3. 调整浏览器窗口后, 前端会把 cols/rows(列数/行数) 同步给服务端 PTY。
-
-### 数据流
-
-```mermaid
-sequenceDiagram
-  participant Browser as Browser(浏览器)
-  participant Xterm as xterm.js(浏览器终端组件)
-  participant WS as WebSocket(网页长连接协议)
-  participant Server as Mira Bridge(连接层服务端)
-  participant PTY as PTY master(伪终端主端)
-  participant Shell as shell(命令解释器)
-
-  Browser->>Xterm: 用户输入键盘内容
-  Xterm->>WS: 发送 input(输入) 消息
-  WS->>Server: 转发输入字节
-  Server->>PTY: 写入 PTY master
-  PTY->>Shell: shell 从 PTY slave(伪终端从端) 读取
-  Shell->>PTY: 输出写回 PTY slave
-  PTY->>Server: 服务端读取 PTY master
-  Server->>WS: 发送二进制输出帧
-  WS->>Xterm: 写入终端显示
-  Browser->>Xterm: 窗口尺寸变化
-  Xterm->>Server: 发送 resize(尺寸变更) cols/rows
-  Server->>PTY: ioctl(输入输出控制调用) 同步终端尺寸
-```
-
-### 后续能力记录
-
-后续方向只记录在 `docs/TODO.md`, 本轮不实现 Live UI(实时界面) 上传, 设备指标, logcat(Android 系统日志), 自动化任务, Probe 报告, Agent 分析和多设备管理。
-
-## 项目状态
-
-Mira 现在处于首周 MVP 阶段。
-
-当前优先级是跑通闭环, 而不是堆检测项。第一周只追求一件事: 让移动安全经验第一次以 Agent 化流程跑起来。
+接下来会先补一段 GIF(动图), 展示 AI 如何在模拟器环境里从 App 沙盒视角拉出风险证据链。后续每做一个常见环境或框架的分析, 都会尽量同步沉淀文章, Skill 和 Case。
