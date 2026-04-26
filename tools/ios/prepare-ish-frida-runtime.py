@@ -17,7 +17,7 @@ from pathlib import Path
 
 FRIDA_VERSION = "16.0.7"
 FRIDA_TOOLS_VERSION = "12.1.0"
-RUNTIME_VERSION = "official-frida-tools-12.1.0-frida-16.0.7-v3"
+RUNTIME_VERSION = "official-frida-tools-12.1.0-frida-16.0.7-v4"
 ALPINE_VERSION = "v3.19"
 ALPINE_ARCH = "x86"
 ALPINE_REPOS = (
@@ -35,6 +35,10 @@ PURE_PYTHON_SPECS = (
 SCRIPT_PATH = Path(__file__).resolve()
 ROOT_DIR = SCRIPT_PATH.parents[2]
 FRIDA_TOOLS_DIR = ROOT_DIR / "third_party" / "frida-tools"
+LLVM_CLANG_CANDIDATES = (
+    Path("/opt/homebrew/opt/llvm/bin/clang"),
+    Path("/usr/local/opt/llvm/bin/clang"),
+)
 
 
 @dataclass(frozen=True)
@@ -302,6 +306,83 @@ def write_executable(path: Path, content: str) -> None:
     path.chmod(current | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
+def resolve_host_clang() -> Path:
+    for candidate in LLVM_CLANG_CANDIDATES:
+        if candidate.exists():
+            return candidate
+    clang_path = shutil.which("clang")
+    if clang_path:
+        return Path(clang_path)
+    raise FileNotFoundError("缺少可用的 clang, 无法构建 frida glibc shim")
+
+
+def build_frida_glibc_shim(cache_dir: Path) -> Path:
+    output_path = cache_dir / "libfrida-glibc-compat.so"
+    if output_path.exists():
+        return output_path
+
+    source_path = cache_dir / "frida_glibc_compat.c"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(
+        "\n".join(
+            [
+                "typedef unsigned int uint32_t;",
+                "typedef unsigned short uint16_t;",
+                "",
+                "typedef union { double d; struct { uint32_t lo; uint32_t hi; } w; } mira_ieee_double;",
+                "typedef union { long double ld; struct { uint32_t lo; uint32_t mid; uint16_t hi; uint16_t pad[3]; } w; } mira_ieee_long_double;",
+                "",
+                "int __isnan(double x) {",
+                "    mira_ieee_double u;",
+                "    u.d = x;",
+                "    uint32_t exp = (u.w.hi >> 20) & 0x7ffu;",
+                "    uint32_t frac_hi = u.w.hi & 0xfffffu;",
+                "    return exp == 0x7ffu && ((frac_hi | u.w.lo) != 0);",
+                "}",
+                "",
+                "int __signbit(double x) {",
+                "    mira_ieee_double u;",
+                "    u.d = x;",
+                "    return (int) (u.w.hi >> 31);",
+                "}",
+                "",
+                "int __signbitl(long double x) {",
+                "    mira_ieee_long_double u;",
+                "    u.ld = x;",
+                "    return (int) (u.w.hi >> 15);",
+                "}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    clang = resolve_host_clang()
+    run(
+        [
+            str(clang),
+            "-target",
+            "i386-linux-musl",
+            "-shared",
+            "-fPIC",
+            "-nostdlib",
+            "-fuse-ld=lld",
+            str(source_path),
+            "-Wl,-soname,libfrida-glibc-compat.so",
+            "-o",
+            str(output_path),
+        ]
+    )
+    return output_path
+
+
+def install_frida_glibc_shim(data_root: Path, cache_dir: Path) -> None:
+    shim_path = build_frida_glibc_shim(cache_dir)
+    target_path = data_root / "opt" / "mira" / "frida-python" / "lib" / shim_path.name
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(shim_path, target_path)
+
+
 def write_runtime_scripts(data_root: Path) -> None:
     state_dir = data_root / "opt" / "mira" / "frida-state"
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -327,6 +408,7 @@ set -eu
 
 export PYTHONUNBUFFERED=1
 export PYTHONPATH="/opt/mira/frida-python/site-packages${PYTHONPATH:+:$PYTHONPATH}"
+export LD_PRELOAD="/opt/mira/frida-python/lib/libfrida-glibc-compat.so${LD_PRELOAD:+:$LD_PRELOAD}"
 
 if [ "${1:-}" = "--status" ]; then
     shift
@@ -384,6 +466,7 @@ def validate_layout(data_root: Path) -> None:
         data_root / "opt" / "mira" / "frida-python" / "site-packages" / "frida" / "__init__.py",
         data_root / "opt" / "mira" / "frida-python" / "site-packages" / "frida_tools" / "__init__.py",
         data_root / "opt" / "mira" / "frida-python" / "site-packages" / "_frida.abi3.so",
+        data_root / "opt" / "mira" / "frida-python" / "lib" / "libfrida-glibc-compat.so",
         data_root / "opt" / "mira" / "frida-state" / RUNTIME_VERSION,
         data_root / "lib" / "ld-linux.so.2",
         data_root / "lib" / "libc.so.6",
@@ -413,6 +496,7 @@ def main() -> int:
     pure_wheels = install_pure_python_dependencies(site_packages, cache_dir / "wheels")
     install_vendored_frida_tools(site_packages)
     frida_wheel = install_frida_wheel(site_packages, cache_dir / "frida-wheel")
+    install_frida_glibc_shim(data_root, cache_dir / "shim")
     write_runtime_scripts(data_root)
     write_source_manifest(data_root, python_version, pure_wheels, frida_wheel)
     validate_layout(data_root)
