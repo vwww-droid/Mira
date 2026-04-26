@@ -7,7 +7,7 @@ CACHE_DIR="${MIRA_ISH_ROOTFS_CACHE_DIR:-$ROOT_DIR/build/ios-ish-rootfs}"
 HOST_TOOLS_DIR="${MIRA_ISH_HOST_TOOLS_DIR:-$ROOT_DIR/build/ios-ish-host-tools}"
 ROOTFS_NAME="MiraISHRoot.fakefs"
 FRIDA_RUNTIME_HELPER="$ROOT_DIR/tools/ios/prepare-ish-frida-runtime.py"
-EXPECTED_FRIDA_RUNTIME_STAMP="frida_runtime=official-frida-tools-12.1.0-frida-16.0.7-v1"
+EXPECTED_FRIDA_RUNTIME_STAMP="frida_runtime=official-frida-tools-12.1.0-frida-16.0.7-v2"
 
 if [[ -n "${MIRA_ISH_ROOTFS_OUTPUT:-}" ]]; then
     OUTPUT_DIR="$MIRA_ISH_ROOTFS_OUTPUT"
@@ -63,14 +63,21 @@ if [[ ! -x "$FAKEFSIFY" ]]; then
 fi
 
 TMP_DIR="$CACHE_DIR/$ROOTFS_NAME.tmp"
-rm -rf "$TMP_DIR"
-"$FAKEFSIFY" "$ARCHIVE" "$TMP_DIR"
+STAGING_ROOT="$CACHE_DIR/$ROOTFS_NAME.rootfs"
+PATCHED_ARCHIVE="$CACHE_DIR/$ROOTFS_NAME.patched.tar.gz"
+STAGING_STAMP="$CACHE_DIR/$ROOTFS_NAME.stamp"
+rm -rf "$TMP_DIR" "$STAGING_ROOT"
+mkdir -p "$STAGING_ROOT"
+tar -xzf "$ARCHIVE" -C "$STAGING_ROOT"
+python3 "$FRIDA_RUNTIME_HELPER" --rootfs "$STAGING_ROOT" --cache-dir "$CACHE_DIR/frida-runtime" --stamp-path "$STAGING_STAMP"
+tar -C "$STAGING_ROOT" -czf "$PATCHED_ARCHIVE" .
+"$FAKEFSIFY" "$PATCHED_ARCHIVE" "$TMP_DIR"
 rm -rf "$OUTPUT_DIR"
 ditto "$TMP_DIR" "$OUTPUT_DIR"
-rm -rf "$TMP_DIR"
+rm -rf "$TMP_DIR" "$STAGING_ROOT"
 cp "$ISH_DIR/LICENSE.md" "$OUTPUT_DIR/iSH-LICENSE.md"
 cp "$ISH_DIR/LICENSE.IOS" "$OUTPUT_DIR/iSH-LICENSE.IOS"
-python3 "$FRIDA_RUNTIME_HELPER" --rootfs "$OUTPUT_DIR" --cache-dir "$CACHE_DIR/frida-runtime"
+cp "$STAGING_STAMP" "$STAMP"
 
 if [[ ! -f "$STAMP" ]]; then
     echo "prepare-ish-frida-runtime.py did not write stamp: $STAMP" >&2

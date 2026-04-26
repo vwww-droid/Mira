@@ -11,7 +11,7 @@ from pathlib import Path
 
 FRIDA_VERSION = "16.0.7"
 FRIDA_TOOLS_VERSION = "12.1.0"
-RUNTIME_VERSION = "official-frida-tools-12.1.0-frida-16.0.7-v1"
+RUNTIME_VERSION = "official-frida-tools-12.1.0-frida-16.0.7-v2"
 DEVKIT_URL = (
     "https://github.com/frida/frida/releases/download/"
     f"{FRIDA_VERSION}/frida-core-devkit-{FRIDA_VERSION}-linux-x86.tar.xz"
@@ -53,12 +53,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--rootfs", required=True, help="Path to MiraISHRoot.fakefs directory")
     parser.add_argument("--cache-dir", required=True, help="Cache directory for downloaded artifacts")
+    parser.add_argument("--stamp-path", help="Optional explicit path for the rootfs stamp file")
     args = parser.parse_args()
 
     rootfs = Path(args.rootfs)
-    data_root = rootfs / "data"
+    data_root = rootfs / "data" if (rootfs / "data").is_dir() else rootfs
     if not data_root.is_dir():
-        raise SystemExit(f"rootfs data directory not found: {data_root}")
+        raise SystemExit(f"rootfs directory not found: {data_root}")
+    stamp_path = Path(args.stamp_path) if args.stamp_path else rootfs / ".mira-ish-rootfs.stamp"
 
     cache_dir = Path(args.cache_dir)
     devkit_archive = ensure_devkit(cache_dir)
@@ -131,7 +133,8 @@ exec python3 -m frida_tools.repl "$@"
 
     write_executable(data_root / "usr" / "bin" / "frida-setup", frida_setup)
     write_executable(data_root / "usr" / "bin" / "frida", frida_wrapper)
-    (rootfs / ".mira-ish-rootfs.stamp").write_text(
+    stamp_path.parent.mkdir(parents=True, exist_ok=True)
+    stamp_path.write_text(
         "\n".join(
             [
                 "rootfs=appstore-apk",
