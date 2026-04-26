@@ -3,6 +3,7 @@ package com.vwww.mira;
 import android.content.Context;
 import android.content.res.AssetManager;
 import android.os.Build;
+import android.os.SystemClock;
 import android.util.Log;
 
 import java.io.File;
@@ -12,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Mira 最小 bootstrap, 用于创建 APK 私有沙盒里的类 Termux 用户空间骨架。
@@ -22,11 +24,16 @@ public final class MiraBootstrap {
     private static final String TAG = "MiraBootstrap";
     private static final String MANAGED_MARKER = "# Managed by MiraBootstrap";
     private static final String BOOTSTRAP_PREFIX_ASSET_ROOT = "bootstrap/prefix";
+    private static final String INSTALL_STATE_FILE_NAME = ".mira-bootstrap-state";
+    private static final int INSTALL_STATE_VERSION = 3;
+    private static final AtomicBoolean INSTALL_COMPLETED = new AtomicBoolean(false);
+    private static final Object INSTALL_LOCK = new Object();
 
     private final File filesDir;
     private final File prefixDir;
     private final File homeDir;
     private final File tmpDir;
+    private final File installStateFile;
     private final AssetManager assets;
 
     public MiraBootstrap(Context context) {
@@ -36,27 +43,52 @@ public final class MiraBootstrap {
         prefixDir = new File(filesDir, "usr");
         homeDir = new File(filesDir, "home");
         tmpDir = new File(appContext.getCacheDir(), "tmp");
+        installStateFile = new File(filesDir, INSTALL_STATE_FILE_NAME);
     }
 
     public void installIfNeeded() throws IOException {
-        mkdir(prefixDir);
-        mkdir(homeDir);
-        mkdir(tmpDir);
-        installBootstrapPrefixIfAvailable();
-        mkdir(new File(prefixDir, "bin"));
-        mkdir(new File(prefixDir, "etc"));
-        mkdir(new File(prefixDir, "etc/profile.d"));
-        mkdir(new File(prefixDir, "tmp"));
-        mkdir(new File(prefixDir, "var"));
-        mkdir(new File(prefixDir, "share"));
+        if (INSTALL_COMPLETED.get()) {
+            ensureRuntimeDirectories();
+            return;
+        }
+        synchronized (INSTALL_LOCK) {
+            if (INSTALL_COMPLETED.get()) {
+                ensureRuntimeDirectories();
+                return;
+            }
+            if (isBootstrapCurrent()) {
+                ensureRuntimeDirectories();
+                INSTALL_COMPLETED.set(true);
+                Log.i(TAG, "Bootstrap already installed, skip reinstall");
+                return;
+            }
+            long startedAt = SystemClock.elapsedRealtime();
+            Log.i(TAG, "Bootstrap install begin prefix=" + prefixDir.getAbsolutePath());
+            try {
+                ensureRuntimeDirectories();
+                installBootstrapPrefixIfAvailable();
+                mkdir(new File(prefixDir, "bin"));
+                mkdir(new File(prefixDir, "etc"));
+                mkdir(new File(prefixDir, "etc/profile.d"));
+                mkdir(new File(prefixDir, "tmp"));
+                mkdir(new File(prefixDir, "var"));
+                mkdir(new File(prefixDir, "share"));
 
-        writeManagedExecutable(new File(prefixDir, "bin/sh"), shellWrapper(), "export MIRA_SANDBOX=1", "export ENV=\"$HOME/.profile\"");
-        writeManagedExecutable(new File(prefixDir, "bin/mira-info"), miraInfoScript(), "echo \"Mira sandbox\"");
-        writeManagedExecutable(new File(prefixDir, "bin/frida"), fridaWrapperScript());
-        writeMiraCommandWrappers();
-        writeManagedText(new File(prefixDir, "etc/profile.d/mira-env.sh"), profileHookScript());
-        writeManagedText(new File(prefixDir, "etc/profile"), profileScript(), "# Mira minimal profile");
-        writeManagedText(new File(homeDir, ".profile"), homeProfileScript(), "# Mira shell profile");
+                writeManagedExecutable(new File(prefixDir, "bin/sh"), shellWrapper(), "export MIRA_SANDBOX=1", "export ENV=\"$HOME/.profile\"");
+                writeManagedExecutable(new File(prefixDir, "bin/mira-info"), miraInfoScript(), "echo \"Mira sandbox\"");
+                writeManagedExecutable(new File(prefixDir, "bin/frida"), fridaWrapperScript());
+                writeMiraCommandWrappers();
+                writeManagedText(new File(prefixDir, "etc/profile.d/mira-env.sh"), profileHookScript());
+                writeManagedText(new File(prefixDir, "etc/profile"), profileScript(), "# Mira minimal profile");
+                writeManagedText(new File(homeDir, ".profile"), homeProfileScript(), "# Mira shell profile");
+                writeInstallState();
+                INSTALL_COMPLETED.set(true);
+                Log.i(TAG, "Bootstrap install complete in " + (SystemClock.elapsedRealtime() - startedAt) + "ms");
+            } catch (IOException | RuntimeException e) {
+                Log.w(TAG, "Bootstrap install failed after " + (SystemClock.elapsedRealtime() - startedAt) + "ms: " + e.getMessage(), e);
+                throw e;
+            }
+        }
     }
 
     public File getPrefixDir() {
@@ -80,6 +112,30 @@ public final class MiraBootstrap {
         if (!directory.mkdirs() && !directory.isDirectory()) {
             throw new IOException("无法创建目录: " + directory.getAbsolutePath());
         }
+    }
+
+    private void ensureRuntimeDirectories() throws IOException {
+        mkdir(prefixDir);
+        mkdir(homeDir);
+        mkdir(tmpDir);
+    }
+
+    private boolean isBootstrapCurrent() throws IOException {
+        if (!installStateFile.isFile()) return false;
+        String state = readText(installStateFile);
+        if (!state.contains("version=" + INSTALL_STATE_VERSION)) return false;
+        return prefixDir.isDirectory()
+            && homeDir.isDirectory()
+            && new File(prefixDir, "bin/sh").isFile()
+            && new File(prefixDir, "bin/frida").isFile()
+            && new File(prefixDir, "bin/python3").isFile()
+            && new File(prefixDir, "bin/frida-official").isFile()
+            && new File(prefixDir, "etc/profile").isFile()
+            && new File(homeDir, ".profile").isFile();
+    }
+
+    private void writeInstallState() throws IOException {
+        writeText(installStateFile, MANAGED_MARKER + "\nversion=" + INSTALL_STATE_VERSION + "\n");
     }
 
     private void writeExecutable(File file, String content) throws IOException {
@@ -144,6 +200,7 @@ public final class MiraBootstrap {
             "export HOME=" + home + "\n" +
             "export TERMUX_HOME=\"$HOME\"\n" +
             "export TMPDIR=" + tmp + "\n" +
+            "export LD_LIBRARY_PATH=\"$PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"\n" +
             "MIRA_BASE_PATH=\"$PREFIX/bin:/system/bin:/system/xbin\"\n" +
             "if [ -n \"$MIRA_PATH_PREFIX\" ]; then\n" +
             "  export PATH=\"$MIRA_PATH_PREFIX:$MIRA_BASE_PATH\"\n" +
@@ -179,6 +236,7 @@ public final class MiraBootstrap {
             "fi\n" +
             "export TERMUX_PREFIX=\"$PREFIX\"\n" +
             "export TERMUX_HOME=\"$HOME\"\n" +
+            "export LD_LIBRARY_PATH=\"$PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"\n" +
             "export MIRA_SANDBOX=1\n";
     }
 
@@ -203,6 +261,27 @@ public final class MiraBootstrap {
     private String fridaWrapperScript() {
         return "#!/system/bin/sh\n" +
             MANAGED_MARKER + "\n" +
+            "if [ -n \"$PREFIX\" ] && [ -x \"$PREFIX/bin/frida-official\" ] && [ -x \"$PREFIX/bin/python3\" ]; then\n" +
+            "  export LD_LIBRARY_PATH=\"$PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"\n" +
+            "  mira_needs_default_target=1\n" +
+            "  for mira_arg in \"$@\"; do\n" +
+            "    case \"$mira_arg\" in\n" +
+            "      --status)\n" +
+            "        exec \"$PREFIX/bin/python3\" -c \"import frida, json; dev=frida.get_device_manager().add_remote_device('127.0.0.1:27042'); ps=dev.enumerate_processes(); first=ps[0] if ps else None; print(json.dumps({'frida': frida.__version__, 'connected': True, 'processCount': len(ps), 'pid': getattr(first, 'pid', None), 'target': getattr(first, 'name', None)}, separators=(',', ':')))\"\n" +
+            "        ;;\n" +
+            "      -h|--help|--version)\n" +
+            "        mira_needs_default_target=0\n" +
+            "        ;;\n" +
+            "      -D|--device|-U|--usb|-R|--remote|-H|--host|-f|--file|-F|--attach-frontmost|-n|--attach-name|-N|--attach-identifier|-p|--attach-pid|-W|--await)\n" +
+            "        mira_needs_default_target=0\n" +
+            "        ;;\n" +
+            "    esac\n" +
+            "  done\n" +
+            "  if [ \"$mira_needs_default_target\" = \"1\" ]; then\n" +
+            "    exec \"$PREFIX/bin/frida-official\" -H 127.0.0.1 -n Gadget \"$@\"\n" +
+            "  fi\n" +
+            "  exec \"$PREFIX/bin/frida-official\" \"$@\"\n" +
+            "fi\n" +
             "if [ -n \"$MIRA_FRIDA_NATIVE\" ] && [ -x \"$MIRA_FRIDA_NATIVE\" ]; then\n" +
             "  exec \"$MIRA_FRIDA_NATIVE\" \"$@\"\n" +
             "fi\n" +

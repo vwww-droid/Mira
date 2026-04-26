@@ -19,6 +19,8 @@ TERMUX_REPO = os.environ.get("MIRA_TERMUX_REPO", "https://packages-cf.termux.dev
 TARGET_ABI = "arm64-v8a"
 TERMUX_PREFIX_PATH = "/data/data/com.termux/files/usr"
 MIRA_PREFIX_PATH = "/data/data/com.vwww.mira/files/usr"
+FRIDA_VERSION = os.environ.get("MIRA_FRIDA_VERSION", "16.0.7")
+ANDROID_API = os.environ.get("MIRA_ANDROID_API", "23")
 ROOT_PACKAGES = ("python", "python-pip")
 PURE_PYTHON_SPECS = (
     "colorama<1.0.0,>=0.2.7",
@@ -35,7 +37,18 @@ DEFAULT_OUT_ROOT = ROOT_DIR / "android" / "app" / "build" / "generated" / "mira-
 BUILD_ROOT = ROOT_DIR / "build" / "termux-prefix"
 DEB_CACHE_DIR = BUILD_ROOT / "debs"
 WHEEL_CACHE_DIR = BUILD_ROOT / "wheels"
+SDIST_CACHE_DIR = BUILD_ROOT / "sdists"
 INDEX_CACHE_PATH = BUILD_ROOT / "Packages.aarch64"
+ANDROID_SDK_ROOT = Path(os.environ.get("ANDROID_SDK_ROOT", str(Path.home() / "Library" / "Android" / "sdk"))).expanduser()
+ANDROID_NDK_ROOT = Path(
+    os.environ.get("ANDROID_NDK_ROOT", str(ANDROID_SDK_ROOT / "ndk" / os.environ.get("MIRA_NDK_VERSION", "29.0.14206865")))
+).expanduser()
+TOOLCHAIN_DIR = ANDROID_NDK_ROOT / "toolchains" / "llvm" / "prebuilt" / "darwin-x86_64" / "bin"
+FRIDA_DEVKIT_DIR = ROOT_DIR / "build" / "frida" / "devkit" / FRIDA_VERSION / "android-arm64"
+FRIDA_DEVKIT_TAR = FRIDA_DEVKIT_DIR / f"frida-core-devkit-{FRIDA_VERSION}-android-arm64.tar.xz"
+FRIDA_DEVKIT_URL = (
+    f"https://github.com/frida/frida/releases/download/{FRIDA_VERSION}/frida-core-devkit-{FRIDA_VERSION}-android-arm64.tar.xz"
+)
 
 
 @dataclass(frozen=True)
@@ -61,6 +74,9 @@ def run(cmd: list[str], **kwargs) -> None:
 
 def fetch(url: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if os.environ.get("MIRA_FORCE_FETCH") != "1" and destination.is_file() and destination.stat().st_size > 0:
+        log(f"reuse cached file: {destination}")
+        return
     run(
         [
             "curl",
@@ -286,6 +302,42 @@ def download_wheels(destination: Path) -> list[Path]:
     return list(after)
 
 
+def download_source_distribution(destination: Path, package_spec: str) -> Path:
+    destination.mkdir(parents=True, exist_ok=True)
+    before = {path.resolve() for path in destination.glob("*")}
+    run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "download",
+            "--disable-pip-version-check",
+            "--no-binary=:all:",
+            "--no-deps",
+            "--dest",
+            str(destination),
+            package_spec,
+        ]
+    )
+    after = sorted({path.resolve() for path in destination.glob("*")} - before)
+    if not after:
+        prefix = package_spec.split("==", 1)[0].replace("-", "_")
+        after = sorted(path.resolve() for path in destination.glob(f"{prefix}-*"))
+    if not after:
+        raise FileNotFoundError(f"未下载到源码包: {package_spec}")
+    return after[-1]
+
+
+def extract_tarball(archive_path: Path, destination: Path) -> Path:
+    reset_directory(destination)
+    with tarfile.open(archive_path, "r:*") as archive:
+        archive.extractall(destination)
+    directories = [path for path in destination.iterdir() if path.is_dir()]
+    if len(directories) == 1:
+        return directories[0]
+    return destination
+
+
 def install_wheel(wheel_path: Path, site_packages: Path) -> None:
     with zipfile.ZipFile(wheel_path) as archive:
         for entry in archive.infolist():
@@ -329,10 +381,94 @@ def install_vendored_frida_tools(site_packages: Path) -> None:
     copytree_replace(FRIDA_TOOLS_DIR / "frida_tools.egg-info", site_packages / "frida_tools.egg-info")
 
 
+def ensure_frida_devkit() -> Path:
+    FRIDA_DEVKIT_DIR.mkdir(parents=True, exist_ok=True)
+    if not (FRIDA_DEVKIT_DIR / "frida-core.h").exists() or not (FRIDA_DEVKIT_DIR / "libfrida-core.a").exists():
+        fetch(FRIDA_DEVKIT_URL, FRIDA_DEVKIT_TAR)
+        run(["tar", "-xJf", str(FRIDA_DEVKIT_TAR), "-C", str(FRIDA_DEVKIT_DIR)])
+    return FRIDA_DEVKIT_DIR
+
+
+def build_frida_extension(prefix_root: Path, python_version: str, source_root: Path, output_path: Path) -> None:
+    devkit_dir = ensure_frida_devkit()
+    build_root = BUILD_ROOT / "frida-python" / TARGET_ABI
+    build_root.mkdir(parents=True, exist_ok=True)
+    version_script = build_root / "_frida.version"
+    version_script.write_text(
+        "\n".join(
+            [
+                "{",
+                "  global:",
+                "    PyInit__frida;",
+                "",
+                "  local:",
+                "    *;",
+                "};",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    clang = TOOLCHAIN_DIR / f"aarch64-linux-android{ANDROID_API}-clang"
+    strip = TOOLCHAIN_DIR / "llvm-strip"
+    if not clang.exists():
+        raise FileNotFoundError(f"缺少 Android clang: {clang}")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    run(
+        [
+            str(clang),
+            "-shared",
+            "-fPIC",
+            "-DANDROID",
+            "-ffunction-sections",
+            "-fdata-sections",
+            f"-I{devkit_dir}",
+            f"-I{prefix_root / 'include' / f'python{python_version}'}",
+            str(source_root / "src" / "_frida.c"),
+            "-o",
+            str(output_path),
+            f"-L{devkit_dir}",
+            "-lfrida-core",
+            f"-L{prefix_root / 'lib'}",
+            f"-lpython{python_version}",
+            "-llog",
+            "-ldl",
+            "-lm",
+            "-pthread",
+            "-Wl,--gc-sections",
+            f"-Wl,--version-script,{version_script}",
+        ]
+    )
+    if strip.exists():
+        run([str(strip), str(output_path)])
+
+
+def install_frida_python_binding(prefix_root: Path, python_version: str, site_packages: Path) -> str:
+    sdist_path = download_source_distribution(SDIST_CACHE_DIR, f"frida=={FRIDA_VERSION}")
+    source_root = extract_tarball(sdist_path, BUILD_ROOT / "frida-python-src")
+    copytree_replace(source_root / "frida", site_packages / "frida")
+    copytree_replace(source_root / "_frida", site_packages / "_frida")
+    build_frida_extension(prefix_root, python_version, source_root, site_packages / "_frida.abi3.so")
+    return sdist_path.name
+
+
 def write_text_executable(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     path.chmod(0o755)
+
+
+def python_launcher_script(binary_name: str) -> str:
+    return textwrap.dedent(
+        f"""\
+        #!/system/bin/sh
+        SELF_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+        PREFIX_DIR="$(dirname -- "$SELF_DIR")"
+        export LD_LIBRARY_PATH="$PREFIX_DIR/lib${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}"
+        exec /system/bin/linker64 "$SELF_DIR/{binary_name}" "$@"
+        """
+    )
 
 
 def ensure_python_entrypoints(prefix_root: Path, python_version: str) -> None:
@@ -341,15 +477,17 @@ def ensure_python_entrypoints(prefix_root: Path, python_version: str) -> None:
     if not versioned_python.exists():
         raise FileNotFoundError(f"缺少 Python 可执行文件: {versioned_python}")
 
-    python3 = bin_dir / "python3"
-    if not python3.exists():
-        shutil.copy2(versioned_python, python3, follow_symlinks=True)
-        python3.chmod(0o755)
+    runtime_binary = bin_dir / f"python{python_version}.bin"
+    if not runtime_binary.exists():
+        versioned_python.replace(runtime_binary)
+    runtime_binary.chmod(0o755)
 
-    python_generic = bin_dir / "python"
-    if not python_generic.exists():
-        shutil.copy2(python3, python_generic, follow_symlinks=True)
-        python_generic.chmod(0o755)
+    launcher = python_launcher_script(runtime_binary.name)
+    for name in (f"python{python_version}", "python3", "python"):
+        target = bin_dir / name
+        if target.exists():
+            target.unlink()
+        write_text_executable(target, launcher)
 
     pip_wrapper = textwrap.dedent(
         """\
@@ -363,11 +501,31 @@ def ensure_python_entrypoints(prefix_root: Path, python_version: str) -> None:
         write_text_executable(bin_dir / name, pip_wrapper)
 
 
-def write_source_manifest(asset_root: Path, packages: list[PackageInfo], wheels: list[str], python_version: str) -> None:
+def ensure_frida_entrypoint(prefix_root: Path) -> None:
+    bin_dir = prefix_root / "bin"
+    frida_wrapper = textwrap.dedent(
+        """\
+        #!/system/bin/sh
+        SELF_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+        PYTHON_BIN="$SELF_DIR/python3"
+        exec "$PYTHON_BIN" -m frida_tools.repl "$@"
+        """
+    )
+    write_text_executable(bin_dir / "frida-official", frida_wrapper)
+
+
+def write_source_manifest(
+    asset_root: Path,
+    packages: list[PackageInfo],
+    wheels: list[str],
+    python_version: str,
+    frida_sdist_name: str,
+) -> None:
     lines = [
         f"termux-repo: {TERMUX_REPO}",
         f"target-abi: {TARGET_ABI}",
         f"python-version: {python_version}",
+        f"frida-version: {FRIDA_VERSION}",
         f"relocated-prefix: {TERMUX_PREFIX_PATH} -> {MIRA_PREFIX_PATH}",
         "packages:",
     ]
@@ -377,6 +535,8 @@ def write_source_manifest(asset_root: Path, packages: list[PackageInfo], wheels:
     for wheel in wheels:
         lines.append(f"  - {wheel}")
     lines.append(f"vendored-frida-tools: {FRIDA_TOOLS_DIR}")
+    lines.append(f"frida-sdist: {frida_sdist_name}")
+    lines.append(f"frida-devkit: {FRIDA_DEVKIT_URL}")
     (asset_root / "SOURCE.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -385,8 +545,11 @@ def validate_layout(prefix_root: Path, python_version: str) -> None:
     required_paths = (
         prefix_root / "bin" / "python3",
         prefix_root / "bin" / "pip",
+        prefix_root / "bin" / "frida-official",
+        site_packages / "frida" / "__init__.py",
         site_packages / "frida_tools" / "__init__.py",
         site_packages / "pip" / "__init__.py",
+        site_packages / "_frida.abi3.so",
     )
     for path in required_paths:
         if not path.exists():
@@ -454,10 +617,12 @@ def build(out_root: Path) -> Path:
 
     wheels = install_pure_python_dependencies(site_packages)
     install_vendored_frida_tools(site_packages)
+    frida_sdist_name = install_frida_python_binding(asset_root, python_version, site_packages)
     ensure_python_entrypoints(asset_root, python_version)
+    ensure_frida_entrypoint(asset_root)
     relocated_files = relocate_text_prefixes(asset_root)
     log(f"relocated text files: {relocated_files}")
-    write_source_manifest(asset_root, packages, wheels, python_version)
+    write_source_manifest(asset_root, packages, wheels, python_version, frida_sdist_name)
     validate_layout(asset_root, python_version)
 
     return asset_root
