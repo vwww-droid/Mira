@@ -7,7 +7,7 @@ CACHE_DIR="${MIRA_ISH_ROOTFS_CACHE_DIR:-$ROOT_DIR/build/ios-ish-rootfs}"
 HOST_TOOLS_DIR="${MIRA_ISH_HOST_TOOLS_DIR:-$ROOT_DIR/build/ios-ish-host-tools}"
 ROOTFS_NAME="MiraISHRoot.fakefs"
 FRIDA_RUNTIME_HELPER="$ROOT_DIR/tools/ios/prepare-ish-frida-runtime.py"
-EXPECTED_FRIDA_RUNTIME_STAMP="frida_runtime=official-frida-tools-12.1.0-frida-16.0.7-v4"
+EXPECTED_FRIDA_RUNTIME_STAMP="frida_runtime=official-frida-tools-12.1.0-frida-16.0.7-v5"
 
 if [[ -n "${MIRA_ISH_ROOTFS_OUTPUT:-}" ]]; then
     OUTPUT_DIR="$MIRA_ISH_ROOTFS_OUTPUT"

@@ -17,7 +17,7 @@ from pathlib import Path
 
 FRIDA_VERSION = "16.0.7"
 FRIDA_TOOLS_VERSION = "12.1.0"
-RUNTIME_VERSION = "official-frida-tools-12.1.0-frida-16.0.7-v4"
+RUNTIME_VERSION = "official-frida-tools-12.1.0-frida-16.0.7-v5"
 ALPINE_VERSION = "v3.19"
 ALPINE_ARCH = "x86"
 ALPINE_REPOS = (
@@ -317,20 +317,38 @@ def resolve_host_clang() -> Path:
 
 
 def build_frida_glibc_shim(cache_dir: Path) -> Path:
-    output_path = cache_dir / "libfrida-glibc-compat.so"
-    if output_path.exists():
-        return output_path
+    output_path = cache_dir / f"libfrida-glibc-compat-{RUNTIME_VERSION}.so"
 
     source_path = cache_dir / "frida_glibc_compat.c"
     source_path.parent.mkdir(parents=True, exist_ok=True)
     source_path.write_text(
         "\n".join(
             [
+                "#include <stdarg.h>",
+                "",
                 "typedef unsigned int uint32_t;",
                 "typedef unsigned short uint16_t;",
+                "typedef unsigned long size_t;",
+                "typedef long ssize_t;",
+                "",
+                "extern int stat(const char *path, void *buf);",
+                "extern int lstat(const char *path, void *buf);",
+                "extern int fstat(int fd, void *buf);",
+                "extern int fstatat(int dirfd, const char *path, void *buf, int flags);",
+                "extern int statfs(const char *path, void *buf);",
+                "extern int open(const char *path, int flags, ...);",
+                "extern int openat(int dirfd, const char *path, int flags, ...);",
+                "extern void *fopen(const char *path, const char *mode);",
+                "extern long long lseek(int fd, long long offset, int whence);",
+                "extern int ftruncate(int fd, long long length);",
+                "extern void *mmap(void *addr, size_t length, int prot, int flags, int fd, long long offset);",
+                "extern ssize_t pread(int fd, void *buf, size_t count, long long offset);",
+                "extern void *readdir(void *dirp);",
                 "",
                 "typedef union { double d; struct { uint32_t lo; uint32_t hi; } w; } mira_ieee_double;",
                 "typedef union { long double ld; struct { uint32_t lo; uint32_t mid; uint16_t hi; uint16_t pad[3]; } w; } mira_ieee_long_double;",
+                "",
+                "static int mira_h_errno_storage = 0;",
                 "",
                 "int __isnan(double x) {",
                 "    mira_ieee_double u;",
@@ -350,6 +368,86 @@ def build_frida_glibc_shim(cache_dir: Path) -> Path:
                 "    mira_ieee_long_double u;",
                 "    u.ld = x;",
                 "    return (int) (u.w.hi >> 15);",
+                "}",
+                "",
+                "int *__h_errno_location(void) {",
+                "    return &mira_h_errno_storage;",
+                "}",
+                "",
+                "int __res_ninit(void *state) {",
+                "    (void) state;",
+                "    return 0;",
+                "}",
+                "",
+                "void __res_nclose(void *state) {",
+                "    (void) state;",
+                "}",
+                "",
+                "int __xstat64(int ver, const char *path, void *buf) {",
+                "    (void) ver;",
+                "    return stat(path, buf);",
+                "}",
+                "",
+                "int __lxstat64(int ver, const char *path, void *buf) {",
+                "    (void) ver;",
+                "    return lstat(path, buf);",
+                "}",
+                "",
+                "int __fxstat64(int ver, int fd, void *buf) {",
+                "    (void) ver;",
+                "    return fstat(fd, buf);",
+                "}",
+                "",
+                "int __fxstatat64(int ver, int dirfd, const char *path, void *buf, int flags) {",
+                "    (void) ver;",
+                "    return fstatat(dirfd, path, buf, flags);",
+                "}",
+                "",
+                "void *fopen64(const char *path, const char *mode) {",
+                "    return fopen(path, mode);",
+                "}",
+                "",
+                "int open64(const char *path, int flags, ...) {",
+                "    va_list args;",
+                "    int mode = 0;",
+                "    va_start(args, flags);",
+                "    mode = va_arg(args, int);",
+                "    va_end(args);",
+                "    return open(path, flags, mode);",
+                "}",
+                "",
+                "int openat64(int dirfd, const char *path, int flags, ...) {",
+                "    va_list args;",
+                "    int mode = 0;",
+                "    va_start(args, flags);",
+                "    mode = va_arg(args, int);",
+                "    va_end(args);",
+                "    return openat(dirfd, path, flags, mode);",
+                "}",
+                "",
+                "long long lseek64(int fd, long long offset, int whence) {",
+                "    return lseek(fd, offset, whence);",
+                "}",
+                "",
+                "int ftruncate64(int fd, long long length) {",
+                "    return ftruncate(fd, length);",
+                "}",
+                "",
+                "void *mmap64(void *addr, size_t length, int prot, int flags, int fd, long long offset) {",
+                "    return mmap(addr, length, prot, flags, fd, offset);",
+                "}",
+                "",
+                "ssize_t pread64(int fd, void *buf, size_t count, long long offset) {",
+                "    return pread(fd, buf, count, offset);",
+                "}",
+                "",
+                "void *readdir64(void *dirp) {",
+                "    return readdir(dirp);",
+                "}",
+                "",
+                "int statfs64(const char *path, unsigned long size, void *buf) {",
+                "    (void) size;",
+                "    return statfs(path, buf);",
                 "}",
                 "",
             ]
@@ -378,7 +476,7 @@ def build_frida_glibc_shim(cache_dir: Path) -> Path:
 
 def install_frida_glibc_shim(data_root: Path, cache_dir: Path) -> None:
     shim_path = build_frida_glibc_shim(cache_dir)
-    target_path = data_root / "opt" / "mira" / "frida-python" / "lib" / shim_path.name
+    target_path = data_root / "opt" / "mira" / "frida-python" / "lib" / "libfrida-glibc-compat.so"
     target_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(shim_path, target_path)
 
