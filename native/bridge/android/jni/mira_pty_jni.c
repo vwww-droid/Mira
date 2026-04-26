@@ -6,6 +6,29 @@
 #include <string.h>
 
 #include "mira/pty.h"
+#include "pty/pty_trace.h"
+
+JNIEXPORT jlong JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeOpen(JNIEnv *env, jobject thiz, jstring shell_path, jstring cwd, jobjectArray args, jobjectArray env_vars, jint rows, jint columns, jint cell_width, jint cell_height);
+JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeResize(JNIEnv *env, jobject thiz, jlong handle, jint columns, jint rows, jint cell_width, jint cell_height);
+JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeSetUtf8Mode(JNIEnv *env, jobject thiz, jlong handle);
+JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeRead(JNIEnv *env, jobject thiz, jlong handle, jbyteArray buffer, jint length);
+JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWrite(JNIEnv *env, jobject thiz, jlong handle, jbyteArray data, jint length);
+JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWaitFor(JNIEnv *env, jobject thiz, jlong handle);
+JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativePid(JNIEnv *env, jobject thiz, jlong handle);
+JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeKill(JNIEnv *env, jobject thiz, jlong handle, jint signal_number);
+JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeClose(JNIEnv *env, jobject thiz, jlong handle);
+
+static JNINativeMethod g_mira_pty_methods[] = {
+    { "nativeOpen", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;IIII)J", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeOpen },
+    { "nativeRead", "(J[BI)I", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeRead },
+    { "nativeWrite", "(J[BI)V", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeWrite },
+    { "nativeResize", "(JIIII)V", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeResize },
+    { "nativeSetUtf8Mode", "(J)V", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeSetUtf8Mode },
+    { "nativeWaitFor", "(J)I", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeWaitFor },
+    { "nativePid", "(J)I", (void *) Java_com_vwww_mira_MiraPtyProcess_nativePid },
+    { "nativeKill", "(JI)V", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeKill },
+    { "nativeClose", "(J)V", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeClose },
+};
 
 static void mira_jni_throw_runtime_exception(JNIEnv *env, const char *message) {
     jclass exception_class = (*env)->FindClass(env, "java/lang/RuntimeException");
@@ -113,6 +136,33 @@ static mira_pty_process_t *mira_jni_handle_to_pty(jlong handle) {
     return (mira_pty_process_t *) (uintptr_t) handle;
 }
 
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
+    (void) reserved;
+
+    JNIEnv *env = NULL;
+    if ((*vm)->GetEnv(vm, (void **) &env, JNI_VERSION_1_6) != JNI_OK || env == NULL) {
+        return JNI_ERR;
+    }
+
+    jclass klass = (*env)->FindClass(env, "com/vwww/mira/MiraPtyProcess");
+    if (klass == NULL) {
+        return JNI_ERR;
+    }
+
+    if ((*env)->RegisterNatives(
+            env,
+            klass,
+            g_mira_pty_methods,
+            (jint) (sizeof(g_mira_pty_methods) / sizeof(g_mira_pty_methods[0]))
+        ) != JNI_OK) {
+        (*env)->DeleteLocalRef(env, klass);
+        return JNI_ERR;
+    }
+
+    (*env)->DeleteLocalRef(env, klass);
+    return JNI_VERSION_1_6;
+}
+
 JNIEXPORT jlong JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeOpen(JNIEnv *env,
                                                                            jobject thiz,
                                                                            jstring shell_path,
@@ -124,6 +174,7 @@ JNIEXPORT jlong JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeOpen(JNIEnv *env
                                                                            jint cell_width,
                                                                            jint cell_height) {
     (void) thiz;
+    MIRA_PTY_LOGI("jni nativeOpen enter rows=%d cols=%d cell=%dx%d", (int) rows, (int) columns, (int) cell_width, (int) cell_height);
 
     char *shell_path_copy = mira_jni_copy_string(env, shell_path);
     char *cwd_copy = mira_jni_copy_string(env, cwd);
@@ -138,9 +189,11 @@ JNIEXPORT jlong JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeOpen(JNIEnv *env
         mira_jni_free_string_array(env_copy);
         free(shell_path_copy);
         free(cwd_copy);
+        MIRA_PTY_LOGE("jni nativeOpen alloc failed");
         mira_jni_throw_runtime_exception(env, "Failed to allocate PTY arguments");
         return 0;
     }
+    MIRA_PTY_LOGI("jni nativeOpen args ready shell=%s cwd=%s argv0=%s", shell_path_copy, cwd_copy == NULL ? "(null)" : cwd_copy, (args_copy != NULL && args_copy[0] != NULL) ? args_copy[0] : "(null)");
 
     mira_pty_process_t *pty = mira_pty_open(shell_path_copy,
                                             cwd_copy,
@@ -158,10 +211,12 @@ JNIEXPORT jlong JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeOpen(JNIEnv *env
     free(cwd_copy);
 
     if (pty == NULL) {
+        MIRA_PTY_PERROR("jni mira_pty_open");
         mira_jni_throw_runtime_errno(env, "Failed to create PTY subprocess", saved_errno);
         return 0;
     }
 
+    MIRA_PTY_LOGI("jni nativeOpen ok handle=%p", (void *) pty);
     return (jlong) (uintptr_t) pty;
 }
 

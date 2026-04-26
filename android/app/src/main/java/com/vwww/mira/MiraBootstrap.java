@@ -137,7 +137,14 @@ public final class MiraBootstrap {
             "mira-settings",
             "mira-getprop",
             "mira-dumpsys",
-            "mira-logcat"
+            "mira-logcat",
+            "frida-status",
+            "frida-exec",
+            "frida-load",
+            "frida-hook",
+            "frida-call",
+            "frida-native-hook",
+            "frida-detach"
         };
         File binDir = new File(prefixDir, "bin");
         for (String command : commands) {

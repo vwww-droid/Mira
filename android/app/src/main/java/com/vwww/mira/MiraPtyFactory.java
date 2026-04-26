@@ -31,6 +31,7 @@ public final class MiraPtyFactory {
 
     public static MiraPtySession create(MiraPtyLaunchSpec spec) {
         try {
+            Log.i(TAG, "Opening native PTY shell=" + spec.getShellPath() + " cwd=" + spec.getCwd() + " rows=" + spec.getRows() + " cols=" + spec.getColumns() + " args=" + spec.getArgs().length);
             MiraPtySession nativeSession = new MiraPtyProcess(spec);
             Log.i(TAG, "Selected backend=" + nativeSession.getBackendName());
             return nativeSession;

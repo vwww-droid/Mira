@@ -35,6 +35,13 @@ else()
     )
 endif()
 
+if(ANDROID)
+    target_link_libraries(mira_pty
+        PRIVATE
+            log
+    )
+endif()
+
 target_include_directories(mira_pty
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include

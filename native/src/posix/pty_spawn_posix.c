@@ -8,6 +8,7 @@
 #include "mira/pty.h"
 #include "posix/pty_posix_platform.h"
 #include "pty/pty_platform.h"
+#include "pty/pty_trace.h"
 
 #include <errno.h>
 #include <signal.h>
@@ -150,17 +151,29 @@ int mira_pty_platform_spawn(const char *shell_path,
                             int cell_height,
                             int *master_fd,
                             pid_t *pid) {
+    MIRA_PTY_LOGI("spawn enter shell=%s cwd=%s rows=%d cols=%d cell=%dx%d argv0=%s",
+                  shell_path == NULL ? "(null)" : shell_path,
+                  cwd == NULL ? "(null)" : cwd,
+                  rows,
+                  columns,
+                  cell_width,
+                  cell_height,
+                  (argv != NULL && argv[0] != NULL) ? argv[0] : "(null)");
     if (master_fd == NULL || pid == NULL || shell_path == NULL || shell_path[0] == '\0') {
         errno = EINVAL;
+        MIRA_PTY_PERROR("spawn invalid args");
         return -1;
     }
 
     mira_pty_platform_pair_t pair;
     if (mira_pty_platform_open_pair(&pair) != 0) {
+        MIRA_PTY_PERROR("open_pair");
         return -1;
     }
+    MIRA_PTY_LOGI("open_pair returned master_fd=%d slave_name=%s", pair.master_fd, pair.slave_name);
 
     mira_pty_configure_termios(pair.master_fd);
+    MIRA_PTY_LOGI("configure_termios done master_fd=%d", pair.master_fd);
 
     if (mira_pty_set_window_size(pair.master_fd, rows, columns, cell_width, cell_height) != 0) {
         int saved_errno = errno;
@@ -169,9 +182,12 @@ int mira_pty_platform_spawn(const char *shell_path,
         }
         close(pair.master_fd);
         errno = saved_errno;
+        MIRA_PTY_PERROR("set_window_size");
         return -1;
     }
+    MIRA_PTY_LOGI("set_window_size done master_fd=%d", pair.master_fd);
 
+    MIRA_PTY_LOGI("fork begin");
     pid_t child = fork();
     if (child < 0) {
         int saved_errno = errno;
@@ -180,6 +196,7 @@ int mira_pty_platform_spawn(const char *shell_path,
         }
         close(pair.master_fd);
         errno = saved_errno;
+        MIRA_PTY_PERROR("fork");
         return -1;
     }
 
@@ -189,48 +206,65 @@ int mira_pty_platform_spawn(const char *shell_path,
         if (pair.slave_fd >= 0) {
             close(pair.slave_fd);
         }
+        MIRA_PTY_LOGI("fork parent return child_pid=%d master_fd=%d", child, pair.master_fd);
         return 0;
     }
 
+    MIRA_PTY_LOGI("fork child enter");
     sigset_t signals_to_unblock;
     sigfillset(&signals_to_unblock);
     sigprocmask(SIG_UNBLOCK, &signals_to_unblock, NULL);
+    MIRA_PTY_LOGI("child signals unblocked");
 
     close(pair.master_fd);
+    MIRA_PTY_LOGI("child closed master fd");
     if (setsid() < 0) {
+        MIRA_PTY_PERROR("setsid");
         _exit(1);
     }
+    MIRA_PTY_LOGI("setsid ok");
     int pts = mira_pty_platform_open_slave(&pair);
     if (pts < 0) {
+        MIRA_PTY_PERROR("open_slave");
         _exit(1);
     }
     mira_pty_make_controlling_terminal(pts);
+    MIRA_PTY_LOGI("controlling terminal ok slave_fd=%d", pts);
 
     if (dup2(pts, STDIN_FILENO) < 0 || dup2(pts, STDOUT_FILENO) < 0 || dup2(pts, STDERR_FILENO) < 0) {
+        MIRA_PTY_PERROR("dup2");
         _exit(1);
     }
     if (pts > STDERR_FILENO) {
         close(pts);
     }
+    MIRA_PTY_LOGI("stdio wired");
 
     mira_pty_platform_close_extra_fds();
+    MIRA_PTY_LOGI("child extra fds closed");
     mira_pty_apply_environment(envp);
+    MIRA_PTY_LOGI("child environment applied");
 
     if (cwd != NULL && cwd[0] != '\0' && chdir(cwd) != 0) {
         perror("chdir");
         fflush(stderr);
+        MIRA_PTY_PERROR("chdir");
     }
+    MIRA_PTY_LOGI("child cwd ready cwd=%s", cwd == NULL ? "(null)" : cwd);
 
     char *const *exec_argv = argv;
     if (exec_argv == NULL || exec_argv[0] == NULL) {
         char *default_argv[] = { (char *) shell_path, NULL };
+        MIRA_PTY_LOGI("execvp default shell=%s", shell_path);
         execvp(shell_path, default_argv);
     } else {
+        MIRA_PTY_LOGI("execvp argv0=%s shell=%s", exec_argv[0], shell_path);
         execvp(shell_path, exec_argv);
     }
 
     perror("execvp");
     fflush(stderr);
+    MIRA_PTY_PERROR("execvp");
     _exit(1);
 }
 

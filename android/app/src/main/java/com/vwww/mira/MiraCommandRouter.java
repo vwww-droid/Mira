@@ -22,6 +22,7 @@ final class MiraCommandRouter {
     private static final long DUMPSYS_TIMEOUT_MS = 10_000L;
     private static final long LOGCAT_TIMEOUT_MS = 8_000L;
     private static final long GETPROP_TIMEOUT_MS = 5_000L;
+    private static final long FRIDA_DEFAULT_TIMEOUT_MS = 30_000L;
     private static final Set<String> DUMPSYS_ALLOWLIST = new HashSet<>(Arrays.asList(
         "activity",
         "battery",
@@ -51,6 +52,20 @@ final class MiraCommandRouter {
                     return runDumpsys(argv);
                 case "mira-logcat":
                     return runLogcat(argv);
+                case "frida-exec":
+                    return runFridaExec(context, argv);
+                case "frida-load":
+                    return runFridaLoad(context, argv);
+                case "frida-hook":
+                    return runFridaHook(context, argv);
+                case "frida-call":
+                    return runFridaCall(context, argv);
+                case "frida-native-hook":
+                    return runFridaNativeHook(context, argv);
+                case "frida-status":
+                    return runFridaStatus(context);
+                case "frida-detach":
+                    return runFridaDetach(context);
                 default:
                     return MiraCommandResult.error("unsupported Mira command: " + tool + "\n");
             }
@@ -253,5 +268,112 @@ final class MiraCommandRouter {
             return (int) Long.parseLong(value.substring(2), 16);
         }
         return Integer.parseInt(value);
+    }
+
+    // ---- Frida commands ----
+
+    private static MiraCommandResult runFridaExec(Context context, List<String> argv) {
+        if (argv.isEmpty() || "help".equals(argv.get(0)) || "--help".equals(argv.get(0))) {
+            return MiraCommandResult.ok(
+                "usage: frida-exec <js_code> [--timeout <ms>]\n" +
+                "  Execute Frida JavaScript code and return results.\n" +
+                "  The code can use send() to return data and Java.perform() for Java hooks.\n"
+            );
+        }
+        long timeout = FRIDA_DEFAULT_TIMEOUT_MS;
+        StringBuilder code = new StringBuilder();
+        for (int i = 0; i < argv.size(); i++) {
+            if ("--timeout".equals(argv.get(i)) && i + 1 < argv.size()) {
+                try {
+                    timeout = Long.parseLong(argv.get(++i));
+                } catch (NumberFormatException e) {
+                    return MiraCommandResult.error("frida-exec: invalid timeout value\n");
+                }
+            } else {
+                if (code.length() > 0) code.append(" ");
+                code.append(argv.get(i));
+            }
+        }
+        return MiraFridaBridge.getInstance(context).exec(code.toString(), timeout);
+    }
+
+    private static MiraCommandResult runFridaLoad(Context context, List<String> argv) {
+        if (argv.isEmpty() || "help".equals(argv.get(0)) || "--help".equals(argv.get(0))) {
+            return MiraCommandResult.ok(
+                "usage: frida-load <script_path> [--timeout <ms>]\n" +
+                "  Load and execute a Frida JS script file from the device.\n"
+            );
+        }
+        long timeout = FRIDA_DEFAULT_TIMEOUT_MS;
+        String path = null;
+        for (int i = 0; i < argv.size(); i++) {
+            if ("--timeout".equals(argv.get(i)) && i + 1 < argv.size()) {
+                try {
+                    timeout = Long.parseLong(argv.get(++i));
+                } catch (NumberFormatException e) {
+                    return MiraCommandResult.error("frida-load: invalid timeout value\n");
+                }
+            } else if (path == null) {
+                path = argv.get(i);
+            }
+        }
+        if (path == null || path.isEmpty()) {
+            return MiraCommandResult.error("frida-load: script path required\n");
+        }
+        try {
+            java.io.File file = new java.io.File(path);
+            if (!file.exists()) return MiraCommandResult.error("frida-load: file not found: " + path + "\n");
+            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(file));
+            StringBuilder sb = new StringBuilder();
+            char[] buf = new char[8192];
+            int read;
+            while ((read = reader.read(buf)) != -1) sb.append(buf, 0, read);
+            reader.close();
+            return MiraFridaBridge.getInstance(context).exec(sb.toString(), timeout);
+        } catch (java.io.IOException e) {
+            return MiraCommandResult.error("frida-load: " + e.getMessage() + "\n");
+        }
+    }
+
+    private static MiraCommandResult runFridaHook(Context context, List<String> argv) {
+        if (argv.isEmpty() || "help".equals(argv.get(0)) || "--help".equals(argv.get(0))) {
+            return MiraCommandResult.ok(
+                "usage: frida-hook <fully.qualified.Class.methodName>\n" +
+                "  Install a persistent hook on a Java method.\n" +
+                "  Prints arguments and return value for every call.\n"
+            );
+        }
+        return MiraFridaBridge.getInstance(context).hookJavaMethod(argv.get(0));
+    }
+
+    private static MiraCommandResult runFridaCall(Context context, List<String> argv) {
+        if (argv.isEmpty() || "help".equals(argv.get(0)) || "--help".equals(argv.get(0))) {
+            return MiraCommandResult.ok(
+                "usage: frida-call <fully.qualified.Class.method> [arg1 arg2 ...]\n" +
+                "  Actively call a static Java method with optional arguments.\n"
+            );
+        }
+        String classMethod = argv.get(0);
+        List<String> args = argv.size() > 1 ? argv.subList(1, argv.size()) : new ArrayList<>();
+        return MiraFridaBridge.getInstance(context).callJavaMethod(classMethod, args);
+    }
+
+    private static MiraCommandResult runFridaNativeHook(Context context, List<String> argv) {
+        if (argv.size() < 2 || "help".equals(argv.get(0)) || "--help".equals(argv.get(0))) {
+            return MiraCommandResult.ok(
+                "usage: frida-native-hook <libname.so> <function_name>\n" +
+                "  Install a persistent hook on a native function export.\n" +
+                "  Prints first 3 arguments and return value for every call.\n"
+            );
+        }
+        return MiraFridaBridge.getInstance(context).hookNativeFunction(argv.get(0), argv.get(1));
+    }
+
+    private static MiraCommandResult runFridaStatus(Context context) {
+        return MiraFridaBridge.getInstance(context).status();
+    }
+
+    private static MiraCommandResult runFridaDetach(Context context) {
+        return MiraFridaBridge.getInstance(context).detachAll();
     }
 }

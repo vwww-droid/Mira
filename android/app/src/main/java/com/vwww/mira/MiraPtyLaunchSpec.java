@@ -65,7 +65,7 @@ public final class MiraPtyLaunchSpec {
         String path = toolbox == null ? basePath : toolboxPath + ":" + basePath;
         String commandSocket = MiraLocalCommandServer.socketFile(context).getAbsolutePath();
 
-        String[] args = new String[] {"sh"};
+        String[] args = new String[0];
         String[] env = new String[] {
             "PREFIX=" + prefix,
             "HOME=" + home,

@@ -2,6 +2,8 @@ plugins {
     id "com.android.application"
 }
 
+def generatedToolboxAssetsDir = file("${buildDir}/generated/mira-toolbox-assets")
+
 android {
     namespace "com.vwww.mira"
     compileSdkVersion project.properties.compileSdkVersion.toInteger()
@@ -15,7 +17,7 @@ android {
         versionName "0.4.0"
 
         ndk {
-            abiFilters "arm64-v8a", "armeabi-v7a", "x86", "x86_64"
+            abiFilters "arm64-v8a", "armeabi-v7a"
         }
     }
 
@@ -33,6 +35,12 @@ android {
             path file("${rootDir}/native/CMakeLists.txt")
         }
     }
+
+    sourceSets {
+        main {
+            assets.srcDirs += [generatedToolboxAssetsDir]
+        }
+    }
 }
 
 dependencies {
@@ -44,4 +52,9 @@ tasks.register("syncWebAssets", Copy) {
     into "$projectDir/src/main/assets/web"
 }
 
+tasks.register("buildFridaCliAssets", Exec) {
+    commandLine "bash", "${rootDir}/tools/frida/build-android-cli.sh", generatedToolboxAssetsDir.absolutePath
+}
+
 preBuild.dependsOn("syncWebAssets")
+preBuild.dependsOn("buildFridaCliAssets")

@@ -193,7 +193,7 @@ public final class MainActivity extends Activity {
         String relayUrl = relayUrlInput.getText().toString().trim();
         if (relayUrl.isEmpty()) return;
         if (isPhoneLocalhostUrl(relayUrl)) {
-            setStatus("Do not use localhost on phone. Paste the Cloudflare Android Relay URL.");
+            setStatus("Do not use localhost on phone. Paste the Android Relay URL, for example http://192.168.x.x:8765.");
             return;
         }
         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()

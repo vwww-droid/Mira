@@ -70,19 +70,25 @@ public final class MiraRelayClient implements Closeable {
 
     private void runRelay() {
         try {
+            Log.i(TAG, "Relay starting sessionId=" + sessionId + " ws=" + serverWs);
             bootstrap.installIfNeeded();
+            Log.i(TAG, "Bootstrap ready sessionId=" + sessionId);
             if (!running.get()) return;
             toolbox = MiraToolbox.prepare(context, sessionId);
+            Log.i(TAG, "Toolbox ready sessionId=" + sessionId + " bin=" + toolbox.binDirPath());
             if (!running.get()) return;
+            Log.i(TAG, "Creating PTY sessionId=" + sessionId);
             pty = MiraPtyFactory.create(context, bootstrap, initialRows, initialColumns, initialCellWidth, initialCellHeight, toolbox);
             Log.i(TAG, "PTY started backend=" + pty.getBackendName() + " pid=" + pty.getPid() + " cols=" + initialColumns + " rows=" + initialRows + " cellWidth=" + initialCellWidth + " cellHeight=" + initialCellHeight);
             if (!running.get()) return;
+            Log.i(TAG, "Connecting relay websocket sessionId=" + sessionId + " url=" + serverWs);
             MiraWebSocketConnection connected = MiraWebSocketConnection.connect(serverWs);
             if (!running.get()) {
                 connected.close();
                 return;
             }
             websocket = connected;
+            Log.i(TAG, "Relay websocket connected sessionId=" + sessionId);
             connected.sendJson(attachMessage());
             Log.i(TAG, "Device attached sessionId=" + sessionId + " installId=" + identity.getInstallId());
             ptyReaderThread = new Thread(this::pumpPtyToServer, "MiraRelayPtyReader-" + pty.getPid());

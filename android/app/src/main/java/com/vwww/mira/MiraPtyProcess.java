@@ -3,12 +3,15 @@ package com.vwww.mira;
 import android.util.Log;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class MiraPtyProcess implements MiraPtySession {
     private static final String TAG = "MiraPtyProcess";
+    private static final AtomicBoolean NATIVE_LIBRARY_LOADED = new AtomicBoolean(false);
+    private static final Object NATIVE_LIBRARY_LOCK = new Object();
 
     static {
-        System.loadLibrary("mira_pty");
+        ensureNativeLibraryLoaded();
     }
 
     private final long handle;
@@ -16,6 +19,17 @@ public final class MiraPtyProcess implements MiraPtySession {
     private final int cellWidth;
     private final int cellHeight;
     private volatile boolean closed;
+
+    static void ensureNativeLibraryLoaded() {
+        if (NATIVE_LIBRARY_LOADED.get()) return;
+        synchronized (NATIVE_LIBRARY_LOCK) {
+            if (NATIVE_LIBRARY_LOADED.get()) return;
+            Log.i(TAG, "Loading native library mira_pty");
+            System.loadLibrary("mira_pty");
+            NATIVE_LIBRARY_LOADED.set(true);
+            Log.i(TAG, "Loaded native library mira_pty");
+        }
+    }
 
     public MiraPtyProcess(MiraPtyLaunchSpec spec) {
         this(
@@ -37,14 +51,18 @@ public final class MiraPtyProcess implements MiraPtySession {
     public MiraPtyProcess(String shellPath, String cwd, String[] args, String[] env, int rows, int columns, int cellWidth, int cellHeight) {
         this.cellWidth = Math.max(cellWidth, 0);
         this.cellHeight = Math.max(cellHeight, 0);
+        Log.i(TAG, "nativeOpen shell=" + shellPath + " cwd=" + cwd + " rows=" + rows + " cols=" + columns + " args=" + (args == null ? 0 : args.length));
         handle = nativeOpen(shellPath, cwd, args, env, rows, columns, this.cellWidth, this.cellHeight);
         if (handle == 0) throw new IllegalStateException("native PTY open returned null handle");
+        Log.i(TAG, "nativeOpen returned handle=" + handle);
         pid = nativePid(handle);
         if (pid <= 0) {
             nativeClose(handle);
             throw new IllegalStateException("native PTY open returned invalid pid");
         }
+        Log.i(TAG, "nativePid returned pid=" + pid);
         applyUtf8ModeBestEffort();
+        Log.i(TAG, "PTY UTF-8 mode applied pid=" + pid);
     }
 
     @Override
