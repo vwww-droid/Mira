@@ -2,6 +2,7 @@
 
 #include "shell/ish_shell.h"
 #include "shell/ish_hostfs.h"
+#include "mira_pty_ios_shim.h"
 
 #include <TargetConditionals.h>
 #include <errno.h>
@@ -61,94 +62,6 @@ static int g_ish_boot_errno = 0;
 static char g_ish_root_path[PATH_MAX] = {0};
 static char g_ish_last_error[512] = {0};
 static mira_ish_shell_t *g_creating_shell = NULL;
-static const char g_mira_frida_wrapper[] =
-    "#!/bin/sh\n"
-    "PORT=\"${MIRA_FRIDA_PORT:-27043}\"\n"
-    "\n"
-    "mira_frida_abs_path() {\n"
-    "    path=\"$1\"\n"
-    "    if [ \"$path\" = \"-\" ]; then\n"
-    "        printf '%s\\n' \"-\"\n"
-    "        return 0\n"
-    "    fi\n"
-    "    if command -v readlink >/dev/null 2>&1; then\n"
-    "        resolved=\"$(readlink -f -- \"$path\" 2>/dev/null || true)\"\n"
-    "        if [ -n \"$resolved\" ]; then\n"
-    "            printf '%s\\n' \"$resolved\"\n"
-    "            return 0\n"
-    "        fi\n"
-    "    fi\n"
-    "    case \"$path\" in\n"
-    "        /*) printf '%s\\n' \"$path\" ;;\n"
-    "        *) printf '%s/%s\\n' \"$(pwd)\" \"$path\" ;;\n"
-    "    esac\n"
-    "}\n"
-    "\n"
-    "tmp=\"${TMPDIR:-/tmp}/mira-frida-$$.args\"\n"
-    "cleanup() {\n"
-    "    rm -f \"$tmp\"\n"
-    "}\n"
-    "trap cleanup EXIT INT TERM\n"
-    ": >\"$tmp\"\n"
-    "append_arg() {\n"
-    "    printf '%s\\0' \"$1\" >>\"$tmp\"\n"
-    "}\n"
-    "\n"
-    "keep_stdin=0\n"
-    "has_load=0\n"
-    "batch=0\n"
-    "\n"
-    "if [ \"$#\" -eq 0 ]; then\n"
-    "    if [ -t 0 ]; then\n"
-    "        append_arg \"--repl\"\n"
-    "    fi\n"
-    "    keep_stdin=1\n"
-    "else\n"
-    "    while [ \"$#\" -gt 0 ]; do\n"
-    "        case \"$1\" in\n"
-    "            --batch)\n"
-    "                batch=1\n"
-    "                append_arg \"$1\"\n"
-    "                ;;\n"
-    "            -l)\n"
-    "                shift\n"
-    "                if [ \"$#\" -eq 0 ]; then\n"
-    "                    echo 'frida: -l requires a script path or -' >&2\n"
-    "                    exit 2\n"
-    "                fi\n"
-    "                script=\"$1\"\n"
-    "                if [ \"$script\" != \"-\" ]; then\n"
-    "                    script=\"$(mira_frida_abs_path \"$script\")\"\n"
-    "                fi\n"
-    "                append_arg \"-l\"\n"
-    "                append_arg \"$script\"\n"
-    "                has_load=1\n"
-    "                ;;\n"
-    "            *)\n"
-    "                append_arg \"$1\"\n"
-    "                ;;\n"
-    "        esac\n"
-    "        shift\n"
-    "    done\n"
-    "    if [ \"$has_load\" -eq 1 ] && [ \"$batch\" -eq 0 ]; then\n"
-    "        keep_stdin=1\n"
-    "    fi\n"
-    "fi\n"
-    "\n"
-    "if [ \"$keep_stdin\" -eq 1 ]; then\n"
-    "    {\n"
-    "        printf 'frida\\0'\n"
-    "        cat \"$tmp\"\n"
-    "        printf '\\0'\n"
-    "        cat\n"
-    "    } | nc 127.0.0.1 \"$PORT\"\n"
-    "else\n"
-    "    {\n"
-    "        printf 'frida\\0'\n"
-    "        cat \"$tmp\"\n"
-    "        printf '\\0'\n"
-    "    } | nc 127.0.0.1 \"$PORT\"\n"
-    "fi\n";
 
 static void mira_ish_set_error(const char *format, ...) {
     va_list args;
@@ -278,68 +191,26 @@ static void mira_ish_die_handler(const char *message) {
     mira_ish_set_error("iSH fatal error: %s", message == NULL ? "unknown" : message);
 }
 
-static ssize_t mira_ish_read_file(const char *path, char *buf, size_t size) {
-    struct fd *fd = generic_open(path, O_RDONLY_, 0);
-    if (IS_ERR(fd)) {
-        return PTR_ERR(fd);
-    }
-    ssize_t n = fd->ops->read(fd, buf, size);
-    fd_close(fd);
-    return n;
-}
-
-static int mira_ish_write_file(const char *path, const char *buf, size_t size, mode_t_ mode) {
-    struct fd *fd = generic_open(path, O_WRONLY_ | O_CREAT_ | O_TRUNC_, mode);
-    if (IS_ERR(fd)) {
-        return PTR_ERR(fd);
-    }
-    ssize_t n = fd->ops->write(fd, buf, size);
-    fd_close(fd);
-    if (n < 0) {
-        return (int) n;
-    }
-    if ((size_t) n != size) {
-        return _EIO;
-    }
-    return generic_setattrat(AT_PWD, path, (struct attr) {.type = attr_mode, .mode = mode}, false);
-}
-
-static void mira_ish_install_frida_wrapper_if_needed(void) {
-    static const char *wrapper_path = "/usr/bin/frida";
-    char existing[sizeof(g_mira_frida_wrapper) + 16U];
-    ssize_t existing_size = mira_ish_read_file(wrapper_path, existing, sizeof(existing));
-    size_t wrapper_size = sizeof(g_mira_frida_wrapper) - 1U;
-
-    if (existing_size == (ssize_t) wrapper_size &&
-        memcmp(existing, g_mira_frida_wrapper, wrapper_size) == 0) {
-        (void) generic_setattrat(AT_PWD, wrapper_path,
-                                 (struct attr) {.type = attr_mode, .mode = 0755},
-                                 false);
-        return;
-    }
-
-    (void) generic_mkdirat(AT_PWD, "/usr", 0755);
-    (void) generic_mkdirat(AT_PWD, "/usr/bin", 0755);
-    int err = mira_ish_write_file(wrapper_path, g_mira_frida_wrapper, wrapper_size, 0755);
-    if (err < 0) {
-        fprintf(stderr, "Mira iSH: failed to install frida wrapper: %s\n", strerror(-err));
-    }
-}
-
 static int mira_ish_copy_bundle_root_if_needed(NSString *rootPath) {
     NSFileManager *manager = NSFileManager.defaultManager;
     NSString *dataPath = [rootPath stringByAppendingPathComponent:@"data"];
     NSString *metaPath = [rootPath stringByAppendingPathComponent:@"meta.db"];
-
-    if ([manager fileExistsAtPath:dataPath] && [manager fileExistsAtPath:metaPath]) {
-        return 0;
-    }
+    NSString *installedStampPath = [rootPath stringByAppendingPathComponent:@".mira-ish-rootfs.stamp"];
 
     NSURL *bundleRoot = [NSBundle.mainBundle URLForResource:@"MiraISHRoot" withExtension:@"fakefs"];
     if (bundleRoot == nil) {
         mira_ish_set_error("iSH rootfs missing: bundle resource MiraISHRoot.fakefs not found. Run tools/ios/prepare-ish-rootfs.sh during the iOS build");
         errno = ENOENT;
         return -1;
+    }
+    NSString *bundleStampPath = [bundleRoot.path stringByAppendingPathComponent:@".mira-ish-rootfs.stamp"];
+
+    if ([manager fileExistsAtPath:dataPath] && [manager fileExistsAtPath:metaPath]) {
+        NSString *bundleStamp = [NSString stringWithContentsOfFile:bundleStampPath encoding:NSUTF8StringEncoding error:nil];
+        NSString *installedStamp = [NSString stringWithContentsOfFile:installedStampPath encoding:NSUTF8StringEncoding error:nil];
+        if (bundleStamp != nil && installedStamp != nil && [bundleStamp isEqualToString:installedStamp]) {
+            return 0;
+        }
     }
 
     NSError *error = nil;
@@ -449,7 +320,7 @@ static int mira_ish_boot_locked(void) {
         errno = EIO;
         return -1;
     }
-    mira_ish_install_frida_wrapper_if_needed();
+    (void) mira_ios_frida_loader_ensure_loaded();
 
     tty_drivers[TTY_CONSOLE_MAJOR] = &mira_ish_console_driver;
     set_console_device(TTY_CONSOLE_MAJOR, 1);

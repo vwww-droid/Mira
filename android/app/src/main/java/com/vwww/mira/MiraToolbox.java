@@ -22,8 +22,6 @@ import java.util.Set;
 public final class MiraToolbox implements Closeable {
     private static final String TAG = "MiraToolbox";
     private static final String ASSET_ROOT = "toolbox/busybox";
-    private static final String FRIDA_ASSET_ROOT = "toolbox/frida";
-    private static final String FRIDA_NATIVE_COMMAND = "frida-native";
     private static final String MANIFEST_ASSET = "toolbox/manifest.json";
 
     private final File sessionDir;
@@ -63,7 +61,6 @@ public final class MiraToolbox implements Closeable {
         chmodExecutable(busyboxFile);
         Set<String> supportedApplets = queryBusyBoxApplets(busyboxFile);
         installApplets(busyboxFile, binDir, supportedApplets);
-        installFridaCliIfAvailable(appContext.getAssets(), binDir);
         installMiraCommandWrappers(binDir);
 
         File manifestFile = new File(sessionRoot, "toolbox-manifest.json");
@@ -136,18 +133,6 @@ public final class MiraToolbox implements Closeable {
         }
     }
 
-    private static void installFridaCliIfAvailable(AssetManager assets, File binDir) throws IOException {
-        String assetPath = selectFridaCliAsset(assets);
-        if (assetPath == null) {
-            Log.i(TAG, "No packaged frida CLI for current ABI, skipping");
-            return;
-        }
-        File fridaFile = new File(binDir, FRIDA_NATIVE_COMMAND);
-        copyAsset(assets, assetPath, fridaFile);
-        chmodExecutable(fridaFile);
-        Log.i(TAG, "Installed native frida fallback from asset " + assetPath + " as " + FRIDA_NATIVE_COMMAND);
-    }
-
     private static Set<String> queryBusyBoxApplets(File busyboxFile) throws IOException {
         Process process = new ProcessBuilder(busyboxFile.getAbsolutePath(), "--list")
             .redirectErrorStream(true)
@@ -186,15 +171,6 @@ public final class MiraToolbox implements Closeable {
         throw new IOException("未找到适配当前 ABI 的 busybox 资产");
     }
 
-    private static String selectFridaCliAsset(AssetManager assets) {
-        String[] abis = Build.SUPPORTED_ABIS == null ? new String[0] : Build.SUPPORTED_ABIS;
-        for (String abi : abis) {
-            String asset = fridaAssetForAbi(abi);
-            if (asset != null && assetExists(assets, asset)) return asset;
-        }
-        return null;
-    }
-
     private static String assetForAbi(String abi) {
         if (abi == null) return null;
         String normalized = abi.toLowerCase(Locale.ROOT);
@@ -202,14 +178,6 @@ public final class MiraToolbox implements Closeable {
         if ("armeabi-v7a".equals(normalized) || "armeabi".equals(normalized)) return ASSET_ROOT + "/armeabi-v7a/busybox";
         if ("x86_64".equals(normalized)) return ASSET_ROOT + "/x86_64/busybox";
         if ("x86".equals(normalized)) return ASSET_ROOT + "/x86/busybox";
-        return null;
-    }
-
-    private static String fridaAssetForAbi(String abi) {
-        if (abi == null) return null;
-        String normalized = abi.toLowerCase(Locale.ROOT);
-        if ("arm64-v8a".equals(normalized)) return FRIDA_ASSET_ROOT + "/arm64-v8a/frida";
-        if ("armeabi-v7a".equals(normalized) || "armeabi".equals(normalized)) return FRIDA_ASSET_ROOT + "/armeabi-v7a/frida";
         return null;
     }
 

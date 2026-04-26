@@ -36,10 +36,6 @@ int mira_ios_frida_loader_ensure_loaded(void);
 const char *mira_ios_frida_loader_status(void);
 int mira_ios_frida_loader_is_loaded(void);
 
-int mira_ios_frida_service_start(const char *home_dir);
-void mira_ios_frida_service_stop(void);
-const char *mira_ios_frida_service_status(void);
-
 #ifdef __cplusplus
 }
 #endif

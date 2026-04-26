@@ -6,6 +6,8 @@ ISH_DIR="$ROOT_DIR/third_party/ish"
 CACHE_DIR="${MIRA_ISH_ROOTFS_CACHE_DIR:-$ROOT_DIR/build/ios-ish-rootfs}"
 HOST_TOOLS_DIR="${MIRA_ISH_HOST_TOOLS_DIR:-$ROOT_DIR/build/ios-ish-host-tools}"
 ROOTFS_NAME="MiraISHRoot.fakefs"
+FRIDA_RUNTIME_HELPER="$ROOT_DIR/tools/ios/prepare-ish-frida-runtime.py"
+EXPECTED_FRIDA_RUNTIME_STAMP="frida_runtime=official-frida-tools-12.1.0-frida-16.0.7-v1"
 
 if [[ -n "${MIRA_ISH_ROOTFS_OUTPUT:-}" ]]; then
     OUTPUT_DIR="$MIRA_ISH_ROOTFS_OUTPUT"
@@ -27,7 +29,7 @@ ARCHIVE="$CACHE_DIR/appstore-apk.tar.gz"
 FAKEFSIFY="$HOST_TOOLS_DIR/tools/fakefsify"
 STAMP="$OUTPUT_DIR/.mira-ish-rootfs.stamp"
 
-if [[ -d "$OUTPUT_DIR/data" && -f "$OUTPUT_DIR/meta.db" && -f "$STAMP" ]]; then
+if [[ -d "$OUTPUT_DIR/data" && -f "$OUTPUT_DIR/meta.db" && -f "$STAMP" ]] && grep -q "$EXPECTED_FRIDA_RUNTIME_STAMP" "$STAMP"; then
     echo "iSH rootfs already prepared: $OUTPUT_DIR"
     exit 0
 fi
@@ -68,6 +70,11 @@ ditto "$TMP_DIR" "$OUTPUT_DIR"
 rm -rf "$TMP_DIR"
 cp "$ISH_DIR/LICENSE.md" "$OUTPUT_DIR/iSH-LICENSE.md"
 cp "$ISH_DIR/LICENSE.IOS" "$OUTPUT_DIR/iSH-LICENSE.IOS"
-date -u +%Y-%m-%dT%H:%M:%SZ > "$STAMP"
+python3 "$FRIDA_RUNTIME_HELPER" --rootfs "$OUTPUT_DIR" --cache-dir "$CACHE_DIR/frida-runtime"
+
+if [[ ! -f "$STAMP" ]]; then
+    echo "prepare-ish-frida-runtime.py did not write stamp: $STAMP" >&2
+    exit 1
+fi
 
 echo "Prepared iSH rootfs at $OUTPUT_DIR"

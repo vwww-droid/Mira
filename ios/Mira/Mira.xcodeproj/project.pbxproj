@@ -24,8 +24,6 @@
 		A20000000000000000000008 /* ish_shell.m in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* ish_shell.m */; };
 		A20000000000000000000009 /* ish_hostfs.m in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001A /* ish_hostfs.m */; };
 		A40000000000000000000001 /* mira_ios_frida_loader.m in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000011 /* mira_ios_frida_loader.m */; };
-		A40000000000000000000002 /* mira_ios_frida_service.c in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000012 /* mira_ios_frida_service.c */; };
-		A40000000000000000000003 /* frida_cli.c in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000013 /* frida_cli.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -50,8 +48,6 @@
 		A2000000000000000000001A /* ish_hostfs.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "../../native/src/shell/ish_hostfs.m"; sourceTree = SOURCE_ROOT; };
 		A2000000000000000000001B /* ish_hostfs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "../../native/src/shell/ish_hostfs.h"; sourceTree = SOURCE_ROOT; };
 		A40000000000000000000011 /* mira_ios_frida_loader.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "../../native/bridge/ios/mira_ios_frida_loader.m"; sourceTree = SOURCE_ROOT; };
-		A40000000000000000000012 /* mira_ios_frida_service.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "../../native/bridge/ios/mira_ios_frida_service.c"; sourceTree = SOURCE_ROOT; };
-		A40000000000000000000013 /* frida_cli.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "../../native/src/frida/frida_cli.c"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -119,10 +115,8 @@
 				A20000000000000000000011 /* mira_pty_ios_shim.c */,
 				A20000000000000000000012 /* mira_ios_relay.c */,
 				A40000000000000000000011 /* mira_ios_frida_loader.m */,
-				A40000000000000000000012 /* mira_ios_frida_service.c */,
 				A20000000000000000000013 /* shell_core.c */,
 				A20000000000000000000014 /* builtin_shell.c */,
-				A40000000000000000000013 /* frida_cli.c */,
 				A20000000000000000000015 /* pty_core.c */,
 				A20000000000000000000016 /* pty_spawn_posix.c */,
 				A20000000000000000000017 /* pty_pair_darwin.c */,
@@ -141,7 +135,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = A10000000000000000000070 /* Build configuration list for PBXNativeTarget "Mira" */;
 			buildPhases = (
-				A50000000000000000000080 /* Prepare Frida Devkit */,
 				A10000000000000000000050 /* Sources */,
 				A10000000000000000000020 /* Frameworks */,
 				A10000000000000000000051 /* Resources */,
@@ -201,26 +194,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		A50000000000000000000080 /* Prepare Frida Devkit */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(PROJECT_DIR)/../../tools/ios/prepare-frida-devkit.sh",
-			);
-			name = "Prepare Frida Devkit";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(PROJECT_DIR)/../../build/ios-frida-devkit/$(PLATFORM_NAME)/.mira-frida-devkit.stamp",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PROJECT_DIR}/../../tools/ios/prepare-frida-devkit.sh\"";
-		};
 		A20000000000000000000080 /* Prepare iSH RootFS */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -276,10 +249,8 @@
 				A20000000000000000000001 /* mira_pty_ios_shim.c in Sources */,
 				A20000000000000000000002 /* mira_ios_relay.c in Sources */,
 				A40000000000000000000001 /* mira_ios_frida_loader.m in Sources */,
-				A40000000000000000000002 /* mira_ios_frida_service.c in Sources */,
 				A20000000000000000000003 /* shell_core.c in Sources */,
 				A20000000000000000000004 /* builtin_shell.c in Sources */,
-				A40000000000000000000003 /* frida_cli.c in Sources */,
 				A20000000000000000000005 /* pty_core.c in Sources */,
 				A20000000000000000000006 /* pty_spawn_posix.c in Sources */,
 				A20000000000000000000007 /* pty_pair_darwin.c in Sources */,
@@ -423,7 +394,6 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"MIRA_HAS_ISH_BACKEND=1",
-					"MIRA_FRIDA_CLI_EMBEDDED=1",
 					"$(inherited)",
 				);
 				HEADER_SEARCH_PATHS = (
@@ -431,16 +401,12 @@
 					"$(PROJECT_DIR)/../../native/src",
 					"$(PROJECT_DIR)/../../native/bridge/ios",
 					"$(PROJECT_DIR)/../../third_party/ish",
-					"$(PROJECT_DIR)/../../build/ios-frida-devkit/iphoneos",
-					"$(PROJECT_DIR)/../../build/ios-frida-devkit/iphonesimulator",
 				);
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = (
 					"$(PROJECT_DIR)/../../build/ios-ish-device-libs/Debug-ApplePleaseFixFB19282108-iphoneos/meson",
-					"$(PROJECT_DIR)/../../build/ios-frida-devkit/iphoneos",
 				);
 				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = (
 					"$(PROJECT_DIR)/../../build/ios-ish-libs/Debug-ApplePleaseFixFB19282108-iphonesimulator/meson",
-					"$(PROJECT_DIR)/../../build/ios-frida-devkit/iphonesimulator",
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -449,7 +415,6 @@
 					"-lfakefs",
 					"-lbsm",
 					"-ldl",
-					"-lfrida-core",
 					"-lm",
 					"-lresolv",
 					"-lsqlite3",
@@ -488,7 +453,6 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"MIRA_HAS_ISH_BACKEND=1",
-					"MIRA_FRIDA_CLI_EMBEDDED=1",
 					"$(inherited)",
 				);
 				HEADER_SEARCH_PATHS = (
@@ -496,16 +460,12 @@
 					"$(PROJECT_DIR)/../../native/src",
 					"$(PROJECT_DIR)/../../native/bridge/ios",
 					"$(PROJECT_DIR)/../../third_party/ish",
-					"$(PROJECT_DIR)/../../build/ios-frida-devkit/iphoneos",
-					"$(PROJECT_DIR)/../../build/ios-frida-devkit/iphonesimulator",
 				);
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = (
 					"$(PROJECT_DIR)/../../build/ios-ish-device-libs/Debug-ApplePleaseFixFB19282108-iphoneos/meson",
-					"$(PROJECT_DIR)/../../build/ios-frida-devkit/iphoneos",
 				);
 				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = (
 					"$(PROJECT_DIR)/../../build/ios-ish-libs/Debug-ApplePleaseFixFB19282108-iphonesimulator/meson",
-					"$(PROJECT_DIR)/../../build/ios-frida-devkit/iphonesimulator",
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -514,7 +474,6 @@
 					"-lfakefs",
 					"-lbsm",
 					"-ldl",
-					"-lfrida-core",
 					"-lm",
 					"-lresolv",
 					"-lsqlite3",

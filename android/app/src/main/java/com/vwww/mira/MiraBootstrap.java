@@ -282,16 +282,7 @@ public final class MiraBootstrap {
             "  fi\n" +
             "  exec \"$PREFIX/bin/frida-official\" \"$@\"\n" +
             "fi\n" +
-            "if [ -n \"$MIRA_FRIDA_NATIVE\" ] && [ -x \"$MIRA_FRIDA_NATIVE\" ]; then\n" +
-            "  exec \"$MIRA_FRIDA_NATIVE\" \"$@\"\n" +
-            "fi\n" +
-            "if [ -n \"$MIRA_PATH_PREFIX\" ] && [ -x \"$MIRA_PATH_PREFIX/frida-native\" ]; then\n" +
-            "  exec \"$MIRA_PATH_PREFIX/frida-native\" \"$@\"\n" +
-            "fi\n" +
-            "if [ -n \"$MIRA_TOOLBOX_BIN\" ] && [ -x \"$MIRA_TOOLBOX_BIN/frida-native\" ]; then\n" +
-            "  exec \"$MIRA_TOOLBOX_BIN/frida-native\" \"$@\"\n" +
-            "fi\n" +
-            "echo \"frida: no packaged fallback is available\" >&2\n" +
+            "echo \"frida: official runtime is not available\" >&2\n" +
             "exit 127\n";
     }
 

@@ -53,10 +53,6 @@ tasks.register("syncWebAssets", Copy) {
     into "$projectDir/src/main/assets/web"
 }
 
-tasks.register("buildFridaCliAssets", Exec) {
-    commandLine "bash", "${rootDir}/tools/frida/build-android-cli.sh", generatedToolboxAssetsDir.absolutePath
-}
-
 tasks.register("buildTermuxPrefixAssets", Exec) {
     group = "build"
     description = "Build relocatable Termux bootstrap prefix assets"
@@ -68,5 +64,4 @@ tasks.register("buildTermuxPrefixAssets", Exec) {
 }
 
 preBuild.dependsOn("syncWebAssets")
-preBuild.dependsOn("buildFridaCliAssets")
 preBuild.dependsOn("buildTermuxPrefixAssets")
