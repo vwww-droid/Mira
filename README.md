@@ -26,7 +26,7 @@
 
 ### AI 运行时风险发现
 
-Mira 提供运行时真实沙盒视图, 且内置 frida 可实时执行任何 Java/Native 逻辑, 比动态 dex 更快
+Mira 展示运行时真实沙盒环境, 内置 frida 实时执行 Java/Native 逻辑, 提供 mira-mcp 供 AI 实时分析环境风险
 
 ![claude 分析算法助手的 hook 痕迹](./docs/Area.gif)
 
@@ -34,7 +34,7 @@ Mira 提供运行时真实沙盒视图, 且内置 frida 可实时执行任何 Ja
 
 ### Android / iOS 双端工作台
 
-实时画面, 沙盒 shell, 内置 Frida. Android 是当前进程可见的 procfs 视角; iOS 则是模拟贴近 procfs 的进程视图, 但因为多了一层 syscall 翻译, 即使做了针对性优化, 执行 frida 命令仍会有卡顿.
+Android 视角为当前进程可见 procfs; iOS 则是模拟视图, 多了 syscall 翻译层, 所以即使做了针对性优化, 执行 frida 命令仍有卡顿.
 
 <table>
   <tr>
@@ -47,9 +47,9 @@ Mira 提供运行时真实沙盒视图, 且内置 frida 可实时执行任何 Ja
   </tr>
 </table>
 
-Mira 采用了 gadget 方案, 删减了 frida-cli 中无用的部分, 并参考 iSH 的实现, 成功实现了 frida iOS 端的交叉编译 (官方并未提供该架构下的产物和编译脚本), 并提供类似 android frida 分析的交互体验.
+Mira 内置 Gadget, 删减 frida-cli 中多余部分, 参考 iSH, 实现了 frida iOS 端模拟 shell 环境的交叉编译 (官方并未提供该架构下的产物和编译脚本), 并提供类似桌面端分析的交互体验.
 
-选择使用 Frida 作为动态分析切点, 而非自定义 AOP, linker, xdl 库等生产方案. 原因不是后者不够动态, 恰恰相反, 后者会更强, 但这类实现一旦被完整开源, 很容易被针对性研究, 复现和对抗, 反而会把项目本身变成攻击者的训练样本.
+Mira 选择使用 Frida 作为动态分析切点, 而非自定义 AOP, linker, xdl 库等生产方案. 原因不是后者不够动态, 恰恰相反, 后者会更强, 但这类实现一旦被完整开源, 很容易被针对性研究, 复现和对抗, 反而会把项目本身变成攻击者的训练样本.
 
 这也带来两个暂时的问题:
 1. Frida 自身有注入特征. 在下个迭代周期中, 去掉更多 frida 特征, 同时继续识别 Frida 痕迹.
@@ -58,8 +58,9 @@ Mira 采用了 gadget 方案, 删减了 frida-cli 中无用的部分, 并参考 
 
 ### 可选公网访问
 
-配合 Relay, Mira 允许把一次临时授权会话快速扩展到公网, 好处就是可让大佬快速协助分析 🤝
+配合 Relay, Mira 允许把一次临时授权会话使用 [脚本](./mira-web) 快速扩展到公网, 好处就是可让大佬快速协助分析 🤝
 
+![使用 cpolar 方案公网访问](./docs/public-deploy.png)
 
 ### 持续沉淀经验
 
