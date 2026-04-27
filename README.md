@@ -1,30 +1,27 @@
-<table>
-  <tr>
-    <td width="78%" valign="middle">
-      <h1>MIRA | AI-Powered Mobile App Runtime Risk Analysis</h1>
-      <p>
-        <img src="https://img.shields.io/badge/android-runtime-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android Runtime" />
-        <img src="https://img.shields.io/badge/iOS-runtime-111111?style=flat-square&logo=apple&logoColor=white" alt="iOS Runtime" />
-        <img src="https://img.shields.io/badge/Built--in-MCP-0f172a?style=flat-square" alt="Built-in MCP" />
-        <img src="https://img.shields.io/badge/Built--in-Frida-dc2626?style=flat-square" alt="Built-in Frida" />
-        <img src="https://img.shields.io/badge/Relay-Ready-2563eb?style=flat-square" alt="Relay Ready" />
-      </p>
-      <p>让 AI 在授权的 Android 与 iOS App 沙盒会话中, 统一完成运行时观察, 证据串联与风险研判.</p>
-      <p>
-        <a href="./docs/GETTING-STARTED.md">Getting Started</a> |
-        <a href="./docs/">Documentation</a> |
-        <a href="./docs/THIRD-PARTY-NOTICES.md">Third-Party Notices</a>
-      </p>
-    </td>
-    <td width="22%" align="center" valign="middle">
-      <img src="./apps/console/app/icon.svg" alt="MIRA icon" width="96" />
-      <br />
-      <strong>MIRA</strong>
-      <br />
-      <sub>Runtime Workbench</sub>
-    </td>
-  </tr>
-</table>
+<p align="center">
+  <img src="./apps/console/app/icon.svg" alt="MIRA icon" width="88" />
+</p>
+
+<h1 align="center">MIRA | AI-Powered Runtime Risk Analysis</h1>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Android-iOS-2f855a?style=flat-square" alt="Android and iOS" />
+  <img src="https://img.shields.io/badge/Built--in-MCP-0f172a?style=flat-square" alt="Built-in MCP" />
+  <img src="https://img.shields.io/badge/Built--in-Frida-dc2626?style=flat-square" alt="Built-in Frida" />
+  <img src="https://img.shields.io/badge/Relay-Ready-2563eb?style=flat-square" alt="Relay Ready" />
+</p>
+
+<p align="center">
+  面向 Android 与 iOS App 沙盒会话的 AI 原生运行时风险分析工作台.
+</p>
+
+<p align="center">
+  <a href="./docs/GETTING-STARTED.md">Getting Started</a> ·
+  <a href="./docs/">Documentation</a> ·
+  <a href="./docs/THIRD-PARTY-NOTICES.md">Third-Party Notices</a>
+</p>
+
+---
 
 Mira 允许 Agent 在授权的 App 沙盒会话中直接读取运行时信号, 理解系统 API, 识别可疑特征, 解释风险来源, 串起证据链, 并给出下一步验证路径.
 
