@@ -53,6 +53,16 @@ Mira 只面向授权研究和自有 App 分析
 5. 不提供生产 SDK 或静默后台控制能力
 6. 所有会话都必须从 Mira App 内主动连接 Relay 后才存在
 
+## 致谢
+
+Mira 的实现和产品表达, 受到了不少优秀开源项目的启发, 在这里特别致谢:
+
+1. [lamda](https://github.com/firerpa/lamda): Web 控制台的界面设计参考了 lamda 的工作台气质, 信息密度和开发者工具表达方式.
+2. [Termux](https://github.com/termux/termux-app): Android 侧终端体验, 包管理工作流与可扩展终端生态给了 Mira 很多基础思路.
+3. [iSH](https://github.com/ish-app/ish): iOS 侧 Linux shell 体验, 用户态仿真与 syscall 转换路径为 Mira 的 iOS 运行时工作台提供了重要参考.
+
+感谢这些开源项目和维护者持续推动移动端终端, 自动化与研究基础设施的演进.
+
 ## 开源许可证
 
 Mira 使用 `GPL-3.0-only`, 第三方组件按各自上游许可证分发, 详见 `docs/THIRD-PARTY-NOTICES.md`.
