@@ -1,24 +1,50 @@
-# Mira
-
-> 让 AI 自主探索与整合 App 运行时风险
+<table>
+  <tr>
+    <td width="78%" valign="middle">
+      <h1>MIRA | AI-Powered Mobile App Runtime Risk Analysis</h1>
+      <p>
+        <img src="https://img.shields.io/badge/android-runtime-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android Runtime" />
+        <img src="https://img.shields.io/badge/iOS-runtime-111111?style=flat-square&logo=apple&logoColor=white" alt="iOS Runtime" />
+        <img src="https://img.shields.io/badge/Built--in-MCP-0f172a?style=flat-square" alt="Built-in MCP" />
+        <img src="https://img.shields.io/badge/Built--in-Frida-dc2626?style=flat-square" alt="Built-in Frida" />
+        <img src="https://img.shields.io/badge/Relay-Ready-2563eb?style=flat-square" alt="Relay Ready" />
+      </p>
+      <p>让 AI 在授权的 Android 与 iOS App 沙盒会话中, 统一完成运行时观察, 证据串联与风险研判.</p>
+      <p>
+        <a href="./docs/GETTING-STARTED.md">Getting Started</a> |
+        <a href="./docs/">Documentation</a> |
+        <a href="./docs/THIRD-PARTY-NOTICES.md">Third-Party Notices</a>
+      </p>
+    </td>
+    <td width="22%" align="center" valign="middle">
+      <img src="./apps/console/app/icon.svg" alt="MIRA icon" width="96" />
+      <br />
+      <strong>MIRA</strong>
+      <br />
+      <sub>Runtime Workbench</sub>
+    </td>
+  </tr>
+</table>
 
 Mira 允许 Agent 在授权的 App 沙盒会话中直接读取运行时信号, 理解系统 API, 识别可疑特征, 解释风险来源, 串起证据链, 并给出下一步验证路径.
 
-它不是 SDK, 不是远控框架, 也不是只会报点位的黑盒检测器. Mira 希望是把原本依赖经验和手工排查的移动安全分析流程, 变成 AI 可复用, 可验证, 可持续演进的运行时分析流程.
+它不是 SDK, 不是远控框架, 也不是只会报点位的黑盒检测器. Mira 更像一个面向 AI 的移动运行时安全分析工作台, 把原本依赖经验和手工排查的分析流程, 变成可复用, 可验证, 可持续演进的运行时分析流程.
 
 ## 核心能力
 
-### AI 主导运行时风险发现
+### Built-in MCP 驱动的运行时风险探索
 
 Mira 提供 AI 通过公网进入 App 沙盒运行时的 MCP 入口, 从当前进程, 沙盒文件视图, PTY 输出, 运行时状态和 App 自身画面中收集/观察/分析可疑信号并使用 Agent 能力进一步探索.
 
-### Android / iOS 双端沙盒工作台
+### Android / iOS 双端运行时工作台
 
 Mira 在 Android 和 iOS 上提供一致的浏览器工作台体验: 设备列表, App 实时画面, 沙盒 PTY, 运行态指标, 内置 Frida, MCP 工具调用. Android 侧直接暴露当前进程可见的 procfs 视角, 重点覆盖 `/proc/self/maps`, `/proc/self/status`, `/proc/self/mountinfo`, `/proc/self/fd`; iOS 侧则在 `/mira/proc` 下重建贴近 procfs 的进程视图, 把 images, maps, fd, task 等运行时信息组织成统一分析面.
 
-配合 Relay, Mira 还可以把一次临时授权会话快速扩展到异地或复杂网络环境中的样本调试链路, 方便在受控前提下复现实验室之外的风险现场.
-
 这并非系统级远控桌面, Android 侧进入的是 Mira 自身 App 沙盒和 `/proc/self/*` 当前进程视角, iOS 侧则通过 iSH, hostfs 和 `/mira/proc` 把 App 自身可见的真实运行时状态投影给 AI.
+
+### Relay-ready 授权会话链路
+
+配合 Relay, Mira 可以把一次临时授权会话快速扩展到异地或复杂网络环境中的样本调试链路, 方便在受控前提下复现实验室之外的风险现场, 同时保持 App 主动连接后才建立会话的边界.
 
 ### 进程内置 Frida C/S 双端
 
