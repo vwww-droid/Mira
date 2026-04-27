@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "mira": {
+      "command": "python3",
+      "args": [
+        "-m",
+        "mira.mcp.server",
+        "--relay",
+        "http://127.0.0.1:8765"
+      ],
+      "cwd": "/Users/vw2x/Projects/Reverses/Mira"
+    }
+  }
+}

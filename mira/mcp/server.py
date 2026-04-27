@@ -220,6 +220,21 @@ class TerminalSession:
                     raise ToolError(f"timeout waiting for marker: {pattern}")
                 self.lock.wait(min(remaining, 0.25))
 
+    def wait_until_active(self, timeout: float) -> None:
+        deadline = time.monotonic() + timeout
+        with self.lock:
+            while True:
+                if self.status == "active" and self.active:
+                    return
+                if self.status in {"session closed", "device disconnected"}:
+                    raise ToolError(f"session is not active: {self.status}")
+                if self.status.startswith("reader stopped:"):
+                    raise ToolError(self.status)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ToolError(f"timeout waiting for session active, current status={self.status}")
+                self.lock.wait(min(remaining, 0.25))
+
     def close(self) -> None:
         self.active = False
         try:
@@ -283,12 +298,18 @@ class MiraMcpServer:
         self.tools: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
             "mira_discover_devices": self.tool_discover_devices,
             "mira_list_devices": self.tool_list_devices,
+            "mira_get_device": self.tool_get_device,
+            "mira_get_screen": self.tool_get_screen,
+            "mira_send_screen_input": self.tool_send_screen_input,
             "mira_open_terminal": self.tool_open_terminal,
             "mira_run_command": self.tool_run_command,
             "mira_collect_snapshot": self.tool_collect_snapshot,
             "mira_send_input": self.tool_send_input,
             "mira_read_output": self.tool_read_output,
             "mira_close_terminal": self.tool_close_terminal,
+            "mira_frida_status": self.tool_frida_status,
+            "mira_frida_list_processes": self.tool_frida_list_processes,
+            "mira_frida_run_script": self.tool_frida_run_script,
         }
 
     def handle(self, message: dict[str, Any]) -> dict[str, Any] | None:
@@ -322,11 +343,12 @@ class MiraMcpServer:
         return {
             "protocolVersion": requested if requested else PROTOCOL_VERSION,
             "capabilities": {"tools": {"listChanged": False}, "resources": {"listChanged": False}, "prompts": {"listChanged": False}},
-            "serverInfo": {"name": SERVER_NAME, "title": "Mira Remote Android Terminal", "version": SERVER_VERSION},
+            "serverInfo": {"name": SERVER_NAME, "title": "Mira Remote Android Workbench", "version": SERVER_VERSION},
             "instructions": (
-                "Use Mira tools to list connected Android devices, open an on-demand PTY session, run short diagnostic commands, "
-                "read terminal output, and close the session. Prefer mira_run_command for non-interactive analysis. "
-                "Start with mira_list_devices, then inspect id, uname, getprop, mountinfo, processes, network state, and toolbox metadata. "
+                "Use Mira tools to inspect connected Android devices, read outline and screen state, open an on-demand PTY session, "
+                "run short diagnostic commands, and use the built-in Frida runtime exposed by the Mira app. Prefer mira_get_device or "
+                "mira_list_devices to select a device, mira_run_command for non-interactive shell analysis, mira_get_screen plus "
+                "mira_send_screen_input for app UI exploration, and mira_frida_status or mira_frida_run_script for runtime instrumentation. "
                 "When the user asks for Magisk risk review, provide only the environment context: Magisk phone, third-party app shell, real PTY, and BusyBox availability."
             ),
         }
@@ -362,7 +384,47 @@ class MiraMcpServer:
                 "description": "List devices currently known by Mira Relay, including phones connected through /ws/control.",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {"refresh": {"type": "boolean"}, "broadcastTarget": {"type": "string"}},
+                    "properties": {"refresh": {"type": "boolean"}, "broadcastTarget": {"type": "string"}, "onlyOnline": {"type": "boolean", "default": False}},
+                },
+            },
+            {
+                "name": "mira_get_device",
+                "title": "Get one Mira device detail",
+                "description": "Return a single device record with platform, address, outline, metrics, and current state.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"installId": {"type": "string", "description": "Target installId. If omitted and exactly one online device exists, it is selected."}},
+                },
+            },
+            {
+                "name": "mira_get_screen",
+                "title": "Get latest Mira screen frame",
+                "description": "Read the latest uploaded app screen frame metadata, optionally including JPEG dataBase64.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "installId": {"type": "string", "description": "Target installId. If omitted and exactly one online device exists, it is selected."},
+                        "includeFrameData": {"type": "boolean", "default": False},
+                    },
+                },
+            },
+            {
+                "name": "mira_send_screen_input",
+                "title": "Send screen input to device",
+                "description": "Queue a tap, text, paste, key, copy, selectall, or clear action to the Mira app screen channel.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "installId": {"type": "string", "description": "Target installId. If omitted and exactly one online device exists, it is selected."},
+                        "kind": {"type": "string", "enum": ["tap", "text", "paste", "key", "copy", "selectall", "clear"]},
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "text": {"type": "string"},
+                        "key": {"type": "string"},
+                        "requestId": {"type": "string"},
+                        "clientId": {"type": "string"},
+                    },
+                    "required": ["kind"],
                 },
             },
             {
@@ -375,6 +437,7 @@ class MiraMcpServer:
                         "installId": {"type": "string", "description": "Device installId. If omitted and one device exists, it is selected."},
                         "cols": {"type": "integer", "default": 120},
                         "rows": {"type": "integer", "default": 36},
+                        "reuseExisting": {"type": "boolean", "default": False, "description": "Attach to an already-active relay session instead of force-closing and reopening it."},
                     },
                 },
             },
@@ -391,6 +454,7 @@ class MiraMcpServer:
                         "timeoutSeconds": {"type": "number", "default": 10},
                         "cols": {"type": "integer", "default": 120},
                         "rows": {"type": "integer", "default": 36},
+                        "closeAfter": {"type": "boolean", "default": False},
                     },
                     "required": ["command"],
                 },
@@ -427,6 +491,61 @@ class MiraMcpServer:
                 "description": "Close a Mira terminal session and clean the device-side PTY/toolbox state. Can also request Relay to close a known sessionId from a previous MCP process.",
                 "inputSchema": {"type": "object", "properties": {"sessionId": {"type": "string"}}, "required": ["sessionId"]},
             },
+            {
+                "name": "mira_frida_status",
+                "title": "Read Mira Frida runtime status",
+                "description": "Verify the built-in Frida runtime is reachable from the Mira Android sandbox and return target summary JSON.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "sessionId": {"type": "string"},
+                        "installId": {"type": "string"},
+                        "timeoutSeconds": {"type": "number", "default": 8},
+                        "cols": {"type": "integer", "default": 120},
+                        "rows": {"type": "integer", "default": 36},
+                        "closeAfter": {"type": "boolean", "default": False},
+                    },
+                },
+            },
+            {
+                "name": "mira_frida_list_processes",
+                "title": "List Frida-visible processes",
+                "description": "Enumerate processes visible from the Mira built-in Frida remote device and return a trimmed process list.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "sessionId": {"type": "string"},
+                        "installId": {"type": "string"},
+                        "timeoutSeconds": {"type": "number", "default": 8},
+                        "limit": {"type": "integer", "default": 32},
+                        "cols": {"type": "integer", "default": 120},
+                        "rows": {"type": "integer", "default": 36},
+                        "closeAfter": {"type": "boolean", "default": False},
+                    },
+                },
+            },
+            {
+                "name": "mira_frida_run_script",
+                "title": "Run Frida JavaScript inside Mira",
+                "description": "Attach to the built-in Frida Gadget target, load a JavaScript snippet, collect send() messages, and optionally call an exported RPC method.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "script": {"type": "string", "description": "Frida JavaScript source code. Use send(...) or rpc.exports for structured output."},
+                        "sessionId": {"type": "string"},
+                        "installId": {"type": "string"},
+                        "target": {"type": "string", "default": "Gadget"},
+                        "rpcMethod": {"type": "string", "description": "Optional rpc.exports method name to invoke after script.load()."},
+                        "rpcArgs": {"type": "array", "description": "Optional positional arguments for rpcMethod."},
+                        "waitSeconds": {"type": "number", "default": 0.5, "description": "When rpcMethod is omitted, how long to wait after script.load() before collecting messages."},
+                        "timeoutSeconds": {"type": "number", "default": 12},
+                        "cols": {"type": "integer", "default": 120},
+                        "rows": {"type": "integer", "default": 36},
+                        "closeAfter": {"type": "boolean", "default": False},
+                    },
+                    "required": ["script"],
+                },
+            },
         ]
 
     def tool_discover_devices(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -437,17 +556,65 @@ class MiraMcpServer:
     def tool_list_devices(self, arguments: dict[str, Any]) -> dict[str, Any]:
         if bool(arguments.get("refresh")):
             return self.tool_discover_devices(arguments)
-        data = self.relay.request("/api/devices", timeout=10.0)
-        return {"relayUrl": self.relay.relay_url, "devices": data.get("devices", [])}
+        devices = self.list_devices()
+        if bool(arguments.get("onlyOnline")):
+            devices = self.online_devices(devices)
+        return {"relayUrl": self.relay.relay_url, "devices": devices}
+
+    def tool_get_device(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        devices = self.list_devices()
+        install_id = self.resolve_install_id(arguments.get("installId"), devices=devices)
+        device = self.find_device(devices, install_id)
+        return {"relayUrl": self.relay.relay_url, "device": device}
+
+    def tool_get_screen(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        install_id = self.resolve_install_id(arguments.get("installId"))
+        include_frame_data = bool(arguments.get("includeFrameData"))
+        query = urllib.parse.urlencode({"installId": install_id, "metadataOnly": "0" if include_frame_data else "1"})
+        frame = self.relay.request(f"/api/screen/latest?{query}", timeout=10.0)
+        if not include_frame_data and "dataBase64" in frame:
+            frame["dataBase64"] = ""
+        return {"relayUrl": self.relay.relay_url, "installId": install_id, "frame": frame, "includeFrameData": include_frame_data}
+
+    def tool_send_screen_input(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        install_id = self.resolve_install_id(arguments.get("installId"))
+        body = {"installId": install_id, "kind": str(arguments.get("kind") or "").strip().lower()}
+        for key in ("x", "y", "text", "key", "requestId", "clientId"):
+            if key in arguments and arguments.get(key) is not None:
+                body[key] = arguments.get(key)
+        result = self.relay.request("/api/screen/input", body, timeout=10.0)
+        result["installId"] = install_id
+        return result
 
     def tool_open_terminal(self, arguments: dict[str, Any]) -> dict[str, Any]:
         install_id = self.resolve_install_id(arguments.get("installId"))
         cols = int(arguments.get("cols") or 120)
         rows = int(arguments.get("rows") or 36)
-        opened = self.relay.request("/api/open", {"installId": install_id, "cols": cols, "rows": rows}, timeout=10.0)
-        session_id = str(opened.get("sessionId") or "")
-        if not session_id:
-            raise ToolError("relay did not return sessionId")
+        reused_session = False
+        reopened_existing = False
+        reuse_existing = bool(arguments.get("reuseExisting"))
+        try:
+            opened = self.relay.request("/api/open", {"installId": install_id, "cols": cols, "rows": rows}, timeout=10.0)
+            session_id = str(opened.get("sessionId") or "")
+            if not session_id:
+                raise ToolError("relay did not return sessionId")
+        except ToolError as exc:
+            detail = str(exc)
+            match = re.search(r'"sessionId"\s*:\s*"([^"]+)"', detail)
+            if "relay HTTP 409" not in detail or match is None:
+                raise
+            conflicted_session_id = match.group(1)
+            if reuse_existing:
+                session_id = conflicted_session_id
+                reused_session = True
+            else:
+                self.relay.request("/api/close", {"sessionId": conflicted_session_id}, timeout=5.0)
+                time.sleep(0.2)
+                reopened_existing = True
+                opened = self.relay.request("/api/open", {"installId": install_id, "cols": cols, "rows": rows}, timeout=10.0)
+                session_id = str(opened.get("sessionId") or "")
+                if not session_id:
+                    raise ToolError("relay did not return sessionId after reopening conflicted session")
         ws = BrowserWebSocket(self.relay)
         try:
             ws.connect()
@@ -460,29 +627,28 @@ class MiraMcpServer:
             raise
         self.sessions[session_id] = session
         time.sleep(0.2)
-        return {"sessionId": session_id, "installId": install_id, "status": session.status, "cols": cols, "rows": rows}
+        return {
+            "sessionId": session_id,
+            "installId": install_id,
+            "status": session.status,
+            "cols": cols,
+            "rows": rows,
+            "reusedSession": reused_session,
+            "reopenedExisting": reopened_existing,
+        }
 
     def tool_run_command(self, arguments: dict[str, Any]) -> dict[str, Any]:
         command = str(arguments.get("command") or "")
         if not command.strip():
             raise ToolError("command is required")
         timeout = float(arguments.get("timeoutSeconds") or 10.0)
-        session_id = str(arguments.get("sessionId") or "")
-        opened = False
-        if not session_id:
-            opened_data = self.tool_open_terminal(arguments)
-            session_id = str(opened_data["sessionId"])
-            opened = True
-        session = self.get_session(session_id)
-        marker = f"__MIRA_MCP_DONE_{uuid.uuid4().hex}__"
-        before = len(session.buffer)
-        session.send_input(command.rstrip("\n") + "\nprintf '\\n%s:%s\\n' " + shlex.quote(marker) + " \"$?\"\n")
-        transcript = session.wait_for_text(marker + ":", timeout)
-        new_text = transcript[before:]
-        match = re.search(re.escape(marker) + r":(\d+)", new_text)
-        exit_code = int(match.group(1)) if match else None
-        cleaned = re.sub(r"\r?\n?" + re.escape(marker) + r":\d+\r?\n?", "\n", new_text)
-        return {"sessionId": session_id, "openedSession": opened, "exitCode": exit_code, "output": cleaned, "status": session.status}
+        session, opened = self.ensure_session(arguments)
+        result = self.execute_command(session, command, timeout)
+        result["openedSession"] = opened
+        if bool(arguments.get("closeAfter")):
+            self.tool_close_terminal({"sessionId": session.session_id})
+            result["closed"] = True
+        return result
 
     def tool_collect_snapshot(self, arguments: dict[str, Any]) -> dict[str, Any]:
         command = "\n".join(
@@ -548,13 +714,299 @@ class MiraMcpServer:
         session.close()
         return {"sessionId": session_id, "closed": True, "localSession": True}
 
-    def resolve_install_id(self, value: Any) -> str:
+    def tool_frida_status(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        session, opened = self.ensure_session(arguments)
+        command = "frida --status"
+        result = self.execute_json_command(session, command, float(arguments.get("timeoutSeconds") or 8.0), "mira_frida_status")
+        payload = {
+            "sessionId": session.session_id,
+            "openedSession": opened,
+            "status": session.status,
+            "frida": result,
+        }
+        if bool(arguments.get("closeAfter")):
+            self.tool_close_terminal({"sessionId": session.session_id})
+            payload["closed"] = True
+        return payload
+
+    def tool_frida_list_processes(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        limit = int(arguments.get("limit") or 32)
+        if limit < 1:
+            raise ToolError("limit must be >= 1")
+        limit = min(limit, 256)
+        session, opened = self.ensure_session(arguments)
+        python_source = self.build_frida_python_source(
+            {
+                "mode": "list_processes",
+                "host": "127.0.0.1:27042",
+                "limit": limit,
+            }
+        )
+        result = self.execute_json_command(
+            session,
+            self.wrap_python_command(python_source),
+            float(arguments.get("timeoutSeconds") or 8.0),
+            "mira_frida_list_processes",
+        )
+        payload = {
+            "sessionId": session.session_id,
+            "openedSession": opened,
+            "status": session.status,
+            "frida": result,
+        }
+        if bool(arguments.get("closeAfter")):
+            self.tool_close_terminal({"sessionId": session.session_id})
+            payload["closed"] = True
+        return payload
+
+    def tool_frida_run_script(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        script = str(arguments.get("script") or "")
+        if not script.strip():
+            raise ToolError("script is required")
+        rpc_args = arguments.get("rpcArgs") or []
+        if not isinstance(rpc_args, list):
+            raise ToolError("rpcArgs must be an array when provided")
+        wait_seconds = float(arguments.get("waitSeconds") or 0.5)
+        if wait_seconds < 0:
+            raise ToolError("waitSeconds must be >= 0")
+        session, opened = self.ensure_session(arguments)
+        python_source = self.build_frida_python_source(
+            {
+                "mode": "run_script",
+                "host": "127.0.0.1:27042",
+                "target": str(arguments.get("target") or "Gadget"),
+                "scriptBase64": base64.b64encode(script.encode("utf-8")).decode("ascii"),
+                "rpcMethod": str(arguments.get("rpcMethod") or ""),
+                "rpcArgs": rpc_args,
+                "waitSeconds": wait_seconds,
+            }
+        )
+        result = self.execute_json_command(
+            session,
+            self.wrap_python_command(python_source),
+            float(arguments.get("timeoutSeconds") or 12.0),
+            "mira_frida_run_script",
+        )
+        payload = {
+            "sessionId": session.session_id,
+            "openedSession": opened,
+            "status": session.status,
+            "frida": result,
+        }
+        if bool(arguments.get("closeAfter")):
+            self.tool_close_terminal({"sessionId": session.session_id})
+            payload["closed"] = True
+        return payload
+
+    def list_devices(self) -> list[dict[str, Any]]:
+        data = self.relay.request("/api/devices", timeout=10.0)
+        devices = data.get("devices", [])
+        if not isinstance(devices, list):
+            raise ToolError("relay returned invalid devices payload")
+        return [device for device in devices if isinstance(device, dict)]
+
+    @staticmethod
+    def online_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        online: list[dict[str, Any]] = []
+        for device in devices:
+            state = str(device.get("state") or "").strip().lower()
+            if state and state not in {"offline", "disconnected"}:
+                online.append(device)
+        return online
+
+    @staticmethod
+    def find_device(devices: list[dict[str, Any]], install_id: str) -> dict[str, Any]:
+        for device in devices:
+            if str(device.get("installId") or "") == install_id:
+                return device
+        raise ToolError(f"unknown installId: {install_id}")
+
+    def ensure_session(self, arguments: dict[str, Any]) -> tuple[TerminalSession, bool]:
+        session_id = str(arguments.get("sessionId") or "")
+        opened = False
+        if not session_id:
+            opened_data = self.tool_open_terminal(arguments)
+            session_id = str(opened_data["sessionId"])
+            opened = True
+        return self.get_session(session_id), opened
+
+    def execute_command(self, session: TerminalSession, command: str, timeout: float) -> dict[str, Any]:
+        session.wait_until_active(min(max(timeout, 1.0), 5.0))
+        marker = f"__MIRA_MCP_DONE_{uuid.uuid4().hex}__"
+        before = len(session.buffer)
+        session.send_input(command.rstrip("\n") + "\nprintf '\\n%s:%s\\n' " + shlex.quote(marker) + " \"$?\"\n")
+        transcript = session.wait_for_text(marker + ":", timeout)
+        new_text = transcript[before:]
+        match = re.search(re.escape(marker) + r":(\d+)", new_text)
+        exit_code = int(match.group(1)) if match else None
+        cleaned = re.sub(r"\r?\n?" + re.escape(marker) + r":\d+\r?\n?", "\n", new_text)
+        return {"sessionId": session.session_id, "exitCode": exit_code, "output": cleaned, "status": session.status}
+
+    def execute_json_command(self, session: TerminalSession, command: str, timeout: float, label: str) -> dict[str, Any]:
+        begin = f"__MIRA_JSON_BEGIN_{uuid.uuid4().hex}__"
+        end = f"__MIRA_JSON_END_{uuid.uuid4().hex}__"
+        wrapped = "\n".join(
+            [
+                f"printf '%s\\n' {shlex.quote(begin)}",
+                command,
+                f"printf '%s\\n' {shlex.quote(end)}",
+            ]
+        )
+        result = self.execute_command(session, wrapped, timeout)
+        block = self.extract_marked_block(result["output"], begin, end, label)
+        try:
+            payload = self.parse_json_from_block(block)
+        except json.JSONDecodeError as exc:
+            raise ToolError(f"{label} returned invalid JSON: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise ToolError(f"{label} returned non-object JSON")
+        if result.get("exitCode") not in {0, None}:
+            error = str(payload.get("error") or result["output"].strip() or f"{label} failed")
+            raise ToolError(error)
+        if payload.get("ok") is False:
+            raise ToolError(str(payload.get("error") or f"{label} failed"))
+        return payload
+
+    @staticmethod
+    def extract_marked_block(output: str, begin: str, end: str, label: str) -> str:
+        pattern = re.compile(
+            rf"(?:^|\r?\n){re.escape(begin)}\r?\n(.*?)(?:\r?\n){re.escape(end)}(?:\r?\n|$)",
+            re.S,
+        )
+        match = pattern.search(output)
+        if not match:
+            raise ToolError(f"{label} did not return expected markers")
+        return match.group(1).strip()
+
+    @staticmethod
+    def parse_json_from_block(block: str) -> Any:
+        try:
+            return json.loads(block)
+        except json.JSONDecodeError:
+            pass
+        for line in reversed([line.strip() for line in block.splitlines() if line.strip()]):
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                continue
+        raise json.JSONDecodeError("Expecting value", block, 0)
+
+    @staticmethod
+    def wrap_python_command(source: str) -> str:
+        marker = f"MIRA_PY_{uuid.uuid4().hex}"
+        return f"python3 - <<'{marker}'\n{source.rstrip()}\n{marker}"
+
+    @staticmethod
+    def build_frida_python_source(spec: dict[str, Any]) -> str:
+        encoded = base64.b64encode(json.dumps(spec, ensure_ascii=False).encode("utf-8")).decode("ascii")
+        return f"""
+import base64
+import frida
+import json
+import traceback
+import time
+
+spec = json.loads(base64.b64decode({encoded!r}).decode("utf-8"))
+
+def to_jsonable(value):
+    if isinstance(value, bytes):
+        return {{"type": "bytes", "dataBase64": base64.b64encode(value).decode("ascii")}}
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {{str(k): to_jsonable(v) for k, v in value.items()}}
+    if isinstance(value, (list, tuple)):
+        return [to_jsonable(item) for item in value]
+    return str(value)
+
+payload = {{"ok": False}}
+
+try:
+    device = frida.get_device_manager().add_remote_device(spec.get("host") or "127.0.0.1:27042")
+    mode = spec.get("mode")
+    if mode == "list_processes":
+        processes = device.enumerate_processes()
+        limit = max(1, min(int(spec.get("limit") or 32), 256))
+        payload = {{
+            "ok": True,
+            "fridaVersion": getattr(frida, "__version__", ""),
+            "processCount": len(processes),
+            "processes": [
+                {{
+                    "pid": getattr(proc, "pid", None),
+                    "name": getattr(proc, "name", None),
+                    "parameters": to_jsonable(getattr(proc, "parameters", {{}})),
+                }}
+                for proc in processes[:limit]
+            ],
+        }}
+    elif mode == "run_script":
+        target = spec.get("target") or "Gadget"
+        wait_seconds = float(spec.get("waitSeconds") or 0.5)
+        rpc_method = spec.get("rpcMethod") or ""
+        rpc_args = spec.get("rpcArgs") or []
+        script_source = base64.b64decode(spec.get("scriptBase64") or "").decode("utf-8")
+        messages = []
+        session = device.attach(target)
+        script = session.create_script(script_source)
+
+        def on_message(message, data):
+            entry = to_jsonable(message)
+            if data is not None:
+                entry["dataBase64"] = base64.b64encode(data).decode("ascii")
+            messages.append(entry)
+
+        script.on("message", on_message)
+        script.load()
+        rpc_result = None
+        if rpc_method:
+            rpc_result = getattr(script.exports_sync, rpc_method)(*rpc_args)
+        else:
+            time.sleep(wait_seconds)
+        script.unload()
+        session.detach()
+        payload = {{
+            "ok": True,
+            "fridaVersion": getattr(frida, "__version__", ""),
+            "target": target,
+            "rpcMethod": rpc_method,
+            "rpcResult": to_jsonable(rpc_result),
+            "messageCount": len(messages),
+            "messages": messages,
+        }}
+    else:
+        processes = device.enumerate_processes()
+        first = processes[0] if processes else None
+        payload = {{
+            "ok": True,
+            "fridaVersion": getattr(frida, "__version__", ""),
+            "connected": True,
+            "processCount": len(processes),
+            "pid": getattr(first, "pid", None),
+            "target": getattr(first, "name", None),
+        }}
+except Exception as exc:
+    payload = {{
+        "ok": False,
+        "error": str(exc),
+        "traceback": traceback.format_exc().splitlines(),
+    }}
+
+print(json.dumps(payload, ensure_ascii=False))
+raise SystemExit(0 if payload.get("ok") else 1)
+""".strip()
+
+    def resolve_install_id(self, value: Any, devices: list[dict[str, Any]] | None = None) -> str:
         install_id = str(value or "")
         if install_id:
             return install_id
-        devices = self.relay.request("/api/devices", timeout=10.0).get("devices", [])
+        if devices is None:
+            devices = self.list_devices()
+        online_devices = self.online_devices(devices)
+        if len(online_devices) == 1:
+            return str(online_devices[0].get("installId") or "")
         if len(devices) != 1:
-            raise ToolError(f"installId required, known device count={len(devices)}")
+            raise ToolError(f"installId required, online device count={len(online_devices)}, known device count={len(devices)}")
         return str(devices[0].get("installId") or "")
 
     def get_session(self, session_id: str) -> TerminalSession:
@@ -567,6 +1019,7 @@ class MiraMcpServer:
         return [
             {"uri": "mira://analysis-guide", "name": "Mira Android analysis guide", "mimeType": "text/markdown"},
             {"uri": "mira://magisk-app-shell-context", "name": "Mira Magisk app-shell context", "mimeType": "text/markdown"},
+            {"uri": "mira://frida-guide", "name": "Mira built-in Frida guide", "mimeType": "text/markdown"},
             {"uri": "mira://sessions", "name": "Mira active MCP sessions", "mimeType": "application/json"},
             {"uri": "mira://relay", "name": "Mira relay configuration", "mimeType": "application/json"},
         ]
@@ -577,6 +1030,8 @@ class MiraMcpServer:
             return {"contents": [{"uri": uri, "mimeType": "text/markdown", "text": ANALYSIS_GUIDE}]}
         if uri == "mira://magisk-app-shell-context":
             return {"contents": [{"uri": uri, "mimeType": "text/markdown", "text": MAGISK_CONTEXT}]}
+        if uri == "mira://frida-guide":
+            return {"contents": [{"uri": uri, "mimeType": "text/markdown", "text": FRIDA_GUIDE}]}
         if uri == "mira://sessions":
             data = {key: {"installId": value.install_id, "status": value.status, "active": value.active} for key, value in self.sessions.items()}
             return {"contents": [{"uri": uri, "mimeType": "application/json", "text": json.dumps(data, ensure_ascii=False, indent=2)}]}
@@ -599,18 +1054,30 @@ class MiraMcpServer:
                 "description": "Tell an AI client the device is a Magisk phone reached through a third-party app shell with BusyBox available.",
                 "arguments": [{"name": "installId", "description": "Optional target installId", "required": False}],
             },
+            {
+                "name": "mira_frida_triage",
+                "title": "Mira built-in Frida triage",
+                "description": "Guide an AI client to verify Frida connectivity, enumerate the Gadget target, and run small Frida scripts through Mira MCP.",
+                "arguments": [{"name": "installId", "description": "Optional target installId", "required": False}],
+            },
         ]
 
     def get_prompt(self, params: dict[str, Any]) -> dict[str, Any]:
         name = str(params.get("name") or "")
-        if name not in {"mira_android_triage", "mira_magisk_risk_review"}:
+        if name not in {"mira_android_triage", "mira_magisk_risk_review", "mira_frida_triage"}:
             raise ToolError(f"unknown prompt: {name}")
         arguments = params.get("arguments") or {}
         install_id = str(arguments.get("installId") or "") if isinstance(arguments, dict) else ""
         suffix = f" Target installId: {install_id}." if install_id else " If exactly one device is known, select it automatically."
-        prompt_text = ANALYSIS_PROMPT if name == "mira_android_triage" else RISK_PROMPT
+        prompt_text = ANALYSIS_PROMPT if name == "mira_android_triage" else RISK_PROMPT if name == "mira_magisk_risk_review" else FRIDA_PROMPT
         return {
-            "description": "Mira Android terminal triage workflow" if name == "mira_android_triage" else "Mira Magisk app-shell risk review workflow",
+            "description": (
+                "Mira Android terminal triage workflow"
+                if name == "mira_android_triage"
+                else "Mira Magisk app-shell risk review workflow"
+                if name == "mira_magisk_risk_review"
+                else "Mira built-in Frida triage workflow"
+            ),
             "messages": [
                 {
                     "role": "user",
@@ -662,6 +1129,17 @@ MAGISK_CONTEXT = """# Mira Magisk 第三方 app shell 环境上下文
 8. 分析结束后关闭 Mira PTY 会话。
 """
 
+FRIDA_GUIDE = """# Mira 内置 Frida 指南
+
+1. 先用 `mira_frida_status` 验证 Mira App 内置的 Frida runtime 是否可达。
+2. `mira_frida_list_processes` 会返回 Frida remote device 视角里的进程列表。当前 Android 沙盒场景通常至少能看到 `Gadget`。
+3. `mira_frida_run_script` 会 attach 到默认目标 `Gadget`, 加载一段 Frida JavaScript, 收集 `send(...)` 消息, 并可选调用 `rpc.exports` 方法。
+4. 如果只是做轻量探针, 建议脚本直接 `send({...})` 输出结构化信息。例如 `send({ pid: Process.id, arch: Process.arch })`。
+5. 如果要拿返回值, 可以在脚本里定义 `rpc.exports = { ping() { return "pong"; } }`, 再通过 `rpcMethod` 和 `rpcArgs` 调用。
+6. 二进制 message data 会被编码成 `dataBase64`, 非 JSON 类型结果会被尽量转换为 JSON 兼容结构或字符串。
+7. Frida 相关工具底层仍通过 Mira PTY 中的 Python runtime 与 `frida` 模块交互, 所以分析完成后如无持续交互需求, 记得关闭 PTY 会话。
+"""
+
 
 ANALYSIS_PROMPT = """请通过 Mira MCP 工具对 Android 设备做一次最小终端态势分析。
 
@@ -688,6 +1166,18 @@ RISK_PROMPT = """环境信息:
 
 请你自己决定分析路径, 自己发现风险点, 然后告诉用户风险是什么, 证据是什么, 以及用户接下来可以怎么处理。
 完成后关闭 Mira PTY 会话。
+"""
+
+FRIDA_PROMPT = """请通过 Mira MCP 工具验证并使用 Mira Android App 内置的 Frida runtime。
+
+步骤:
+1. 调用 `mira_list_devices` 或 `mira_get_device` 选择目标设备。
+2. 调用 `mira_frida_status` 确认 Frida runtime 可达。
+3. 调用 `mira_frida_list_processes` 查看当前 Frida 视角下可见进程。
+4. 调用 `mira_frida_run_script` 运行一段最小脚本, 例如 `send({ pid: Process.id, arch: Process.arch, platform: Process.platform })`。
+5. 如果需要, 再运行带 `rpc.exports` 的脚本并通过 `rpcMethod` 调用导出函数。
+6. 总结 Frida 是否可用, 当前默认目标是谁, 收到了哪些消息, 以及后续可继续做什么分析。
+7. 结束后关闭 PTY 会话。
 """
 
 
