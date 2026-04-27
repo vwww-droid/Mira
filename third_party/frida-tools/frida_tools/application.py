@@ -147,11 +147,11 @@ class ConsoleApplication:
         if hasattr(signal, "SIGPIPE"):
             signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
-        colorama.init(strip=True if plain_terminal else None)
-
         parser = self._initialize_arguments_parser()
         real_args = compute_real_args(parser, args=args)
         options = parser.parse_args(real_args)
+
+        colorama.init(strip=True if plain_terminal else None)
 
         # handle scripts that don't need a target
         if not hasattr(options, "args"):

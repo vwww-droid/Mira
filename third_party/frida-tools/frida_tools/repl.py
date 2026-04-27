@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import codecs
 import hashlib
@@ -13,19 +15,9 @@ import threading
 import time
 from timeit import default_timer as timer
 from typing import Any, AnyStr, Callable, Dict, Iterable, List, Mapping, MutableMapping, Optional, Tuple, TypeVar, Union
-from urllib.request import build_opener
 
 import frida
 from colorama import Fore, Style
-from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import CompleteEvent, Completer, Completion
-from prompt_toolkit.document import Document
-from prompt_toolkit.history import FileHistory
-from prompt_toolkit.lexers import PygmentsLexer
-from prompt_toolkit.shortcuts import prompt
-from prompt_toolkit.styles import Style as PromptToolkitStyle
-from pygments.lexers.javascript import JavascriptLexer
-from pygments.token import Token
 
 from frida_tools import _repl_magic
 from frida_tools.application import ConsoleApplication
@@ -41,7 +33,7 @@ class REPLApplication(ConsoleApplication):
         self._ready = threading.Event()
         self._stopping = threading.Event()
         self._errors = 0
-        self._completer = FridaCompleter(self)
+        self._completer: Optional[FridaCompleter] = None
         self._cli = None
         self._last_change_id = 0
         self._compilers: Dict[str, CompilerContext] = {}
@@ -54,29 +46,49 @@ class REPLApplication(ConsoleApplication):
         super().__init__(self._process_input, self._on_stop)
 
         if self._have_terminal and not self._plain_terminal:
-            style = PromptToolkitStyle(
-                [
-                    ("completion-menu", "bg:#3d3d3d #ef6456"),
-                    ("completion-menu.completion.current", "bg:#ef6456 #3d3d3d"),
-                ]
-            )
-            history = FileHistory(self._get_or_create_history_file())
-            self._cli = PromptSession(
-                lexer=PygmentsLexer(JavascriptLexer),
-                style=style,
-                history=history,
-                completer=self._completer,
-                complete_in_thread=True,
-                enable_open_in_editor=True,
-                tempfile_suffix=".js",
-            )
             self._dumb_stdin_reader = None
         else:
             self._cli = None
             self._dumb_stdin_reader = DumbStdinReader(valid_until=self._stopping.is_set)
 
         if not self._have_terminal:
+            self._ensure_completion_support()
             self._rpc_complete_server = start_completion_thread(self)
+
+    def _ensure_completion_support(self) -> FridaCompleter:
+        if self._completer is None:
+            self._completer = FridaCompleter(self)
+        return self._completer
+
+    def _ensure_cli(self) -> Any:
+        if self._cli is not None:
+            return self._cli
+        if not self._have_terminal or self._plain_terminal:
+            return None
+
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.history import FileHistory
+        from prompt_toolkit.lexers import PygmentsLexer
+        from prompt_toolkit.styles import Style as PromptToolkitStyle
+        from pygments.lexers.javascript import JavascriptLexer
+
+        style = PromptToolkitStyle(
+            [
+                ("completion-menu", "bg:#3d3d3d #ef6456"),
+                ("completion-menu.completion.current", "bg:#ef6456 #3d3d3d"),
+            ]
+        )
+        history = FileHistory(self._get_or_create_history_file())
+        self._cli = PromptSession(
+            lexer=PygmentsLexer(JavascriptLexer),
+            style=style,
+            history=history,
+            completer=self._ensure_completion_support(),
+            complete_in_thread=True,
+            enable_open_in_editor=True,
+            tempfile_suffix=".js",
+        )
+        return self._cli
 
     def _add_options(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
@@ -401,12 +413,14 @@ class REPLApplication(ConsoleApplication):
                     try:
                         if self._cli is not None:
                             line = self._cli.prompt(prompt)
-                            if line is None:
-                                return
+                        elif self._have_terminal and not self._plain_terminal:
+                            line = self._ensure_cli().prompt(prompt)
                         else:
                             assert self._dumb_stdin_reader is not None
                             line = self._dumb_stdin_reader.read_line(prompt)
                             self._print(line)
+                        if line is None:
+                            return
                     except EOFError:
                         if not self._have_terminal and os.environ.get("TERM", "") != "dumb":
                             while not self._stopping.wait(1):
@@ -455,6 +469,8 @@ class REPLApplication(ConsoleApplication):
             prompt_string = question + " [y/N] "
 
         if self._have_terminal and not self._plain_terminal:
+            from prompt_toolkit.shortcuts import prompt
+
             answer = prompt(prompt_string)
         else:
             answer = self._dumb_stdin_reader.read_line(prompt_string)
@@ -894,6 +910,8 @@ g_free (message);
         )
 
     def _load_codeshare_script(self, uri: str) -> Optional[str]:
+        from urllib.request import build_opener
+
         trust_store = self._get_or_create_truststore()
 
         project_url = f"https://codeshare.frida.re/api/project/{uri}/"
@@ -1053,12 +1071,24 @@ class CompilerContext:
         return self._bundle
 
 
-class FridaCompleter(Completer):
+class FridaCompleter:
     def __init__(self, repl: REPLApplication) -> None:
+        from pygments.lexers.javascript import JavascriptLexer
+        from pygments.token import Token
+
         self._repl = repl
         self._lexer = JavascriptLexer()
+        self._token = Token
+        self._completion = None
 
-    def get_completions(self, document: Document, complete_event: CompleteEvent) -> Iterable[Completion]:
+    def get_completions(self, document, complete_event) -> Iterable[Any]:
+        if self._completion is None:
+            from prompt_toolkit.completion import Completion
+
+            self._completion = Completion
+
+        Completion = self._completion
+        Token = self._token
         prefix = document.text_before_cursor
 
         magic = len(prefix) > 0 and prefix[0] == "%" and not any(map(lambda c: c.isspace(), prefix))
@@ -1166,7 +1196,7 @@ class FridaCompleter(Completer):
 
     def _is_valid_name(self, name) -> bool:
         tokens = list(self._lexer.get_tokens(name))
-        return len(tokens) == 2 and tokens[0][0] in Token.Name.subtypes
+        return len(tokens) == 2 and tokens[0][0] in self._token.Name.subtypes
 
     def _pattern_matches(self, pattern: str, text: str) -> bool:
         return re.search(re.escape(pattern), text, re.IGNORECASE) is not None

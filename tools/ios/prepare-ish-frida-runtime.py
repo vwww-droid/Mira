@@ -17,7 +17,7 @@ from pathlib import Path
 
 FRIDA_VERSION = "16.0.7"
 FRIDA_TOOLS_VERSION = "12.1.0"
-RUNTIME_VERSION = "official-frida-tools-12.1.0-frida-16.0.7-v9"
+RUNTIME_VERSION = "official-frida-tools-12.1.0-frida-16.0.7-v13"
 ALPINE_VERSION = "v3.19"
 ALPINE_ARCH = "x86"
 ALPINE_REPOS = (
@@ -524,6 +524,14 @@ set -eu
 
 export PYTHONUNBUFFERED=1
 export PYTHONPATH="/opt/mira/frida-python/site-packages${PYTHONPATH:+:$PYTHONPATH}"
+
+for mira_arg in "$@"; do
+    case "$mira_arg" in
+        --version)
+            exec /usr/bin/python3 -c "import _frida; print(_frida.__version__)"
+            ;;
+    esac
+done
 
 if [ "${1:-}" = "--status" ]; then
     shift
