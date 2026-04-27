@@ -234,7 +234,7 @@ Android 创建 PTY 后连接 `/ws/device`:
 PATH=/data/user/0/com.vwww.mira/cache/mira-sessions/<sessionId>/bin:$PREFIX/bin:/system/bin:/system/xbin
 ```
 
-会话关闭后, Android 会删除该 session 工具目录。详细说明见 `docs/TOOLBOX.md`。
+会话关闭后, Android 会删除该 session 工具目录。详细说明见 `TOOLBOX.md`.
 
 ## 设备身份
 

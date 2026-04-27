@@ -51,22 +51,8 @@ Mira 只面向授权研究和自有 App 分析
 
 ## 开源许可证
 
-Mira 自身代码采用 `GPL-3.0-only` 许可证发布.
-
-1. 仓库根目录 `LICENSE` 对应 Mira 自身代码.
-2. `third_party/` 与其他随产物分发的第三方组件继续保持各自上游许可证.
-3. 第三方组件说明见 `docs/THIRD-PARTY-NOTICES.md`.
+Mira 使用 `GPL-3.0-only`, 第三方组件按各自上游许可证分发, 详见 `docs/THIRD-PARTY-NOTICES.md`.
 
 ## 文档
 
-更多细节下沉到文档中:
-
-1. `docs/GETTING-STARTED.md`: 安装, 构建, 连接, MCP 和 CLI 使用入口.
-2. `docs/REMOTE-RELAY.md`: Relay 和远程按需终端说明.
-3. `docs/MCP.md`: MCP server 配置和工具说明.
-4. `docs/IOS-APP.md`: iOS App 架构和运行说明.
-5. `docs/NATIVE-ARCHITECTURE.md`: Android 和 iOS 共享原生 PTY 架构.
-6. `docs/TOOLBOX.md`: Android 内置工具箱说明.
-7. `docs/TERMUX-FORK.md`: Termux fork 备用研究路线.
-8. `docs/REPO-ARCHITECTURE.md`: 仓库分层说明.
-9. `docs/THIRD-PARTY-NOTICES.md`: 第三方组件许可证与来源说明.
+详细文档见 `docs/`, 安装与使用入口见 `docs/GETTING-STARTED.md`.
