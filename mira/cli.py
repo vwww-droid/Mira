@@ -292,16 +292,58 @@ def terminal_size() -> tuple[int, int]:
     return size.columns, size.lines
 
 
+def _is_interactive_terminal() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _pick_install_id_interactively(devices: list[dict[str, Any]]) -> str:
+    valid_devices: list[dict[str, Any]] = []
+    for device in devices:
+        install_id = str(device.get("installId") or "").strip()
+        if install_id:
+            valid_devices.append(device)
+    if not valid_devices:
+        raise CliError("no selectable device with installId")
+    if len(valid_devices) == 1:
+        return str(valid_devices[0].get("installId") or "")
+    print("Multiple devices detected. Select one:", file=sys.stderr)
+    for index, device in enumerate(valid_devices, start=1):
+        install_id = str(device.get("installId") or "")
+        name = str(device.get("deviceName") or device.get("model") or "Mira Device")
+        state = str(device.get("state") or "unknown")
+        arch = str(device.get("arch") or "unknown")
+        address = str(device.get("address") or "unknown")
+        print(f"  {index}. {install_id[:8]}  {state}  {name}  {arch}  {address}", file=sys.stderr)
+    while True:
+        try:
+            raw = input("Select device number: ").strip()
+        except EOFError as exc:
+            raise CliError("installId required, selection aborted") from exc
+        if not raw:
+            continue
+        if raw.lower() in {"q", "quit", "exit"}:
+            raise CliError("installId required, selection aborted")
+        if not raw.isdigit():
+            print("Please enter a valid number.", file=sys.stderr)
+            continue
+        selected = int(raw)
+        if 1 <= selected <= len(valid_devices):
+            return str(valid_devices[selected - 1].get("installId") or "")
+        print("Selection out of range.", file=sys.stderr)
+
+
 def resolve_install_id(relay: RelayHttpClient, install_id: str | None) -> str:
     if install_id:
         return install_id
     devices = relay.request("/api/devices", timeout=10.0).get("devices", [])
-    if len(devices) != 1:
-        raise CliError(f"installId required, device count={len(devices)}")
-    value = str(devices[0].get("installId") or "")
-    if not value:
-        raise CliError("device has no installId")
-    return value
+    if len(devices) == 1:
+        value = str(devices[0].get("installId") or "")
+        if not value:
+            raise CliError("device has no installId")
+        return value
+    if len(devices) > 1 and _is_interactive_terminal():
+        return _pick_install_id_interactively(devices)
+    raise CliError(f"installId required, device count={len(devices)}")
 
 
 def open_session(relay: RelayHttpClient, install_id: str | None, cols: int, rows: int) -> TerminalSession:
