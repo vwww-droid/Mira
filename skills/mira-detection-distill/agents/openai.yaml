@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mira Detection Distill"
+  short_description: "Route clues into the Mira knowledge pipeline."
+  default_prompt: "Use $mira-detection-distill to route this Mira detection clue into topic confirmation, case capture, and article update suggestions."

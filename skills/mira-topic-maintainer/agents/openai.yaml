@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mira Topic Maintainer"
+  short_description: "Maintain one Mira topic with cases and patterns."
+  default_prompt: "Use $mira-topic-maintainer to update this confirmed Mira topic with cases, patterns, links, and backlog items."

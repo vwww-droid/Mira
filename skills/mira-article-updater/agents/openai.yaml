@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mira Article Updater"
+  short_description: "Update English-first Mira topic articles safely."
+  default_prompt: "Use $mira-article-updater to decide whether this confirmed Mira topic needs English-first and Chinese-adapted article updates."

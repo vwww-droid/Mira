@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mira Case Capture"
+  short_description: "Capture one Mira case with signals and next checks."
+  default_prompt: "Use $mira-case-capture to turn this Mira detection finding into a structured case with smells, clues, and next checks."
