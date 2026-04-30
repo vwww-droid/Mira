@@ -43,12 +43,50 @@ ANDROID_SDK_ROOT = Path(os.environ.get("ANDROID_SDK_ROOT", str(Path.home() / "Li
 ANDROID_NDK_ROOT = Path(
     os.environ.get("ANDROID_NDK_ROOT", str(ANDROID_SDK_ROOT / "ndk" / os.environ.get("MIRA_NDK_VERSION", "29.0.14206865")))
 ).expanduser()
-TOOLCHAIN_DIR = ANDROID_NDK_ROOT / "toolchains" / "llvm" / "prebuilt" / "darwin-x86_64" / "bin"
 FRIDA_DEVKIT_DIR = ROOT_DIR / "build" / "frida" / "devkit" / FRIDA_VERSION / "android-arm64"
 FRIDA_DEVKIT_TAR = FRIDA_DEVKIT_DIR / f"frida-core-devkit-{FRIDA_VERSION}-android-arm64.tar.xz"
 FRIDA_DEVKIT_URL = (
     f"https://github.com/frida/frida/releases/download/{FRIDA_VERSION}/frida-core-devkit-{FRIDA_VERSION}-android-arm64.tar.xz"
 )
+
+
+def resolve_toolchain_dir() -> Path:
+    explicit = os.environ.get("MIRA_ANDROID_NDK_TOOLCHAIN_DIR")
+    if explicit:
+        return Path(explicit).expanduser()
+
+    prebuilt_root = ANDROID_NDK_ROOT / "toolchains" / "llvm" / "prebuilt"
+    candidates: list[Path] = []
+
+    platform = sys.platform
+    machine = os.uname().machine if hasattr(os, "uname") else ""
+    if platform == "darwin":
+        if machine in {"arm64", "aarch64"}:
+            candidates.extend(
+                [
+                    prebuilt_root / "darwin-arm64" / "bin",
+                    prebuilt_root / "darwin-x86_64" / "bin",
+                ]
+            )
+        else:
+            candidates.append(prebuilt_root / "darwin-x86_64" / "bin")
+    elif platform.startswith("linux"):
+        candidates.append(prebuilt_root / "linux-x86_64" / "bin")
+    else:
+        candidates.append(prebuilt_root / "windows-x86_64" / "bin")
+
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+
+    for candidate in sorted(prebuilt_root.glob("*/bin")):
+        if candidate.is_dir():
+            return candidate
+
+    raise FileNotFoundError(f"缺少 Android NDK toolchain 目录: {prebuilt_root}")
+
+
+TOOLCHAIN_DIR = resolve_toolchain_dir()
 
 
 @dataclass(frozen=True)

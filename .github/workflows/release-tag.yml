@@ -61,7 +61,7 @@ jobs:
 
       - name: Install iOS build prerequisites
         run: |
-          brew install llvm lld ninja pkg-config libarchive
+          brew install llvm lld ninja pkg-config libarchive zig
           python -m pip install --upgrade pip meson
 
       - name: Prepare iOS native dependencies
