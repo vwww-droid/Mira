@@ -454,6 +454,7 @@ for arg in "$@"; do
       ;;
   esac
 done
+args+=("-Wno-error=incompatible-function-pointer-types" "-Wno-int-conversion")
 exec /opt/homebrew/bin/zig cc -target "$use_target" "${args[@]}"
 EOF
 
@@ -488,6 +489,7 @@ for arg in "$@"; do
       ;;
   esac
 done
+args+=("-Wno-error=incompatible-function-pointer-types" "-Wno-int-conversion")
 exec /opt/homebrew/bin/zig c++ -target "$use_target" "${args[@]}"
 EOF
 
