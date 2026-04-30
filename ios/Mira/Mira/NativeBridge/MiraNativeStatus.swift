@@ -65,6 +65,7 @@ struct MiraNativeStatus {
         }
     }
 
+    @MainActor
     private static func modelName() -> String {
         let identifier = hardwareIdentifier()
         if let mapped = modelNames[identifier] { return mapped }
@@ -88,7 +89,8 @@ struct MiraNativeStatus {
         guard sysctlbyname("hw.machine", &machine, &size, nil, 0) == 0 else {
             return ""
         }
-        return String(cString: machine)
+        let buffer = machine.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+        return String(decoding: buffer, as: UTF8.self)
     }
 
     private static let modelNames: [String: String] = [
