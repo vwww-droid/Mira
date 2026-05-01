@@ -1,2 +1,29 @@
 *.gif filter=lfs diff=lfs merge=lfs -text
 *.png filter=lfs diff=lfs merge=lfs -text
+
+third_party/**/*.py linguist-vendored
+third_party/**/*.js linguist-vendored
+third_party/**/*.java linguist-vendored
+
+mira/**/*.py linguist-detectable=false
+tools/**/*.py linguist-detectable=false
+android/**/*.java linguist-detectable=false
+apps/console/**/* linguist-detectable=false
+web/**/* linguist-detectable=false
+
+mira/mcp/server.py linguist-detectable=true
+tools/termux/build-bootstrap-prefix.py linguist-detectable=true
+mira/bridge/termux/pty_session.py linguist-detectable=true
+mira/bridge/termux/__init__.py linguist-detectable=true
+mira/relay/__init__.py linguist-detectable=true
+mira/mcp/__init__.py linguist-detectable=true
+mira/bridge/__init__.py linguist-detectable=true
+
+android/app/src/main/java/com/vwww/mira/MiraDiscoveryService.java linguist-detectable=true
+android/app/src/main/java/com/vwww/mira/MiraTerminalServer.java linguist-detectable=true
+android/app/src/main/java/com/vwww/mira/MiraOutlineCollector.java linguist-detectable=true
+android/app/src/main/java/com/vwww/mira/MiraToolbox.java linguist-detectable=true
+android/app/src/main/java/com/vwww/mira/MiraCommandRouter.java linguist-detectable=true
+android/app/src/main/java/com/vwww/mira/MiraWebSocketConnection.java linguist-detectable=true
+android/app/src/main/java/com/vwww/mira/MiraLocalCommandServer.java linguist-detectable=true
+android/app/src/main/java/com/vwww/mira/MiraDeviceMetrics.java linguist-detectable=true
