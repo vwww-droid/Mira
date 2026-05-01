@@ -38,14 +38,6 @@ Turn Android and iOS runtime inspection into one AI-native defensive workflow.
 - **iOS**: Verified on a real device running iOS 16.7.10. See [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md).
 - **AI**: `PYTHONPATH=. python3 -m mira.mcp.server --relay http://127.0.0.1:8765`. MCP config: [`docs/MCP.md`](./docs/MCP.md).
 
-## Workflow
-
-1. Launch Relay and open the Mira browser console.
-2. Connect the Mira app on Android or iOS.
-3. Open the remote PTY and inspect the real runtime state.
-4. Execute live logic, collect evidence, and validate risk hypotheses.
-5. Convert findings into repeatable review steps and hardening follow-ups.
-
 ## Runtime Views
 
 <table>

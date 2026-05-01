@@ -38,14 +38,6 @@
 - **iOS**: 当前验证的是 iOS 16.7.10 真机. 详见 [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md)
 - **AI 接入**: `PYTHONPATH=. python3 -m mira.mcp.server --relay http://127.0.0.1:8765`. MCP 配置见 [`docs/MCP.md`](./docs/MCP.md)
 
-## Workflow
-
-1. 启动 Relay 并打开 Mira 浏览器工作台.
-2. 在 Android 或 iOS 上连接 Mira App.
-3. 打开远程 PTY, 检查真实运行时状态.
-4. 动态执行逻辑, 采集证据, 验证风险假设.
-5. 将结果沉淀为可复用检查步骤和加固后续动作.
-
 ## Runtime Views
 
 <table>
