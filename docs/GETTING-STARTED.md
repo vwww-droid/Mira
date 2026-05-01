@@ -4,31 +4,30 @@
 
 ## 1. 启动 Relay 和浏览器工作台
 
-局域网演示优先使用:
+优先使用 Python 模块入口启动本地 Relay:
 
 ```bash
-./mira-local-web
+PYTHONPATH=. python3 -m mira.relay.server \
+  --host 0.0.0.0 \
+  --port 8765 \
+  --advertise-url http://<电脑局域网IP>:8765
 ```
 
 电脑浏览器打开:
 
 ```text
-http://localhost:8765
+http://127.0.0.1:8765
 ```
 
-Android 或 iOS 端填写:
+Android 或 iOS 端填写电脑的局域网地址:
 
 ```text
-http://<电脑局域网 IP>:8765
+http://<电脑局域网IP>:8765
 ```
 
-如果需要远程临时调试链路, 可以使用:
+不要在手机上填写 `127.0.0.1`. 对手机来说, `127.0.0.1` 指向的是手机自己, 不是你的电脑.
 
-```bash
-./mira-web
-```
-
-`./mira-web` 会启动 Mira Relay, 构建 `apps/console`, 并通过 cpolar 输出可访问的 Browser URL(浏览器地址) 和移动端 Relay URL(中继地址). 详细说明见 `REMOTE-RELAY.md`.
+如果需要远程临时调试链路, 详见 `REMOTE-RELAY.md`. 仓库内也保留了 `./mira-local-web` 与 `./mira-web` 这类开发者快捷脚本, 但它们不是这里的主入口.
 
 ## 2. 构建并启动 Android App
 
@@ -66,17 +65,7 @@ Android shell 的默认路径和工作目录是:
 
 ## 3. 构建并启动 iOS App
 
-命令行构建并启动 iOS Simulator(模拟器):
-
-```bash
-./mira-ios
-```
-
-也可以直接用 Xcode 打开:
-
-```bash
-open ios/Mira/Mira.xcodeproj
-```
+当前已验证的 iOS 链路是 **iOS 16.7.10 真机**. 这里优先按真机理解, 不把模拟器写成默认推荐路径.
 
 iOS 侧已经接入 Relay, PTY, Mira App 自身 key window 画面上传, 设备指标采样, `/mira` app-view root 和 `/mira/proc` simulated process view(模拟进程视图). 详细说明见 `IOS-APP.md`.
 
@@ -104,6 +93,8 @@ MIRA_IOS_RELAY_URL="http://<电脑局域网IP>:8765" \
 3. 当前仓库已内置 `tools/ios/build-frida-musl-devkit.sh`, 跑完后会把 musl devkit 输出到 `build/frida/devkit/16.0.7/linux-x86-musl`.
 4. 真机构建推荐固定清理宿主机 SDK 环境污染, 详见 `IOS-APP.md`.
 
+如果你在仓库源码环境里开发, 也可以使用 `./mira-ios` 作为开发者快捷入口.
+
 ## 4. 连接移动端
 
 1. 打开 Android 或 iOS 端 Mira App 首页.
@@ -119,7 +110,7 @@ MIRA_IOS_RELAY_URL="http://<电脑局域网IP>:8765" \
 启动 Relay Server 后, MCP client 以 stdio(标准输入输出) 方式启动:
 
 ```bash
-python3 -m mira.mcp.server \
+PYTHONPATH=. python3 -m mira.mcp.server \
   --relay http://127.0.0.1:8765
 ```
 
@@ -136,23 +127,23 @@ python3 -m mira.mcp.server \
 ## 6. CLI
 
 ```bash
-./mira-cli devices
-./mira-cli run 'pwd'
-./mira-cli shell
+PYTHONPATH=. python3 -m mira.cli devices
+PYTHONPATH=. python3 -m mira.cli run 'pwd'
+PYTHONPATH=. python3 -m mira.cli shell
 ```
 
 `mira-cli` 直接使用 Relay HTTP 和 WebSocket, 不经过 MCP. 默认连接 `http://127.0.0.1:8765`, 也可以指定 Relay:
 
 ```bash
-./mira-cli --relay https://example.invalid devices
-./mira-cli run 'echo hello' --relay https://example.invalid
+PYTHONPATH=. python3 -m mira.cli --relay https://example.invalid devices
+PYTHONPATH=. python3 -m mira.cli run 'echo hello' --relay https://example.invalid
 ```
 
 `shell` 会进入交互式远程 PTY, 按 `Ctrl-]` 退出本地 CLI 会话并关闭远程 session.
 
 ## 7. 统一构建与打包
 
-仓库现在提供一个统一构建入口, 用来收口桌面控制端 Python package, Android APK 和 iOS device archive.
+仓库现在提供一个统一构建入口, 用来收口桌面控制端 Python package, Android APK 和 iOS device archive. 这里优先展示 Python 模块入口.
 
 先确保本地已经有:
 
@@ -164,26 +155,28 @@ python3 -m mira.mcp.server \
 统一构建示例:
 
 ```bash
-./mira-build
+PYTHONPATH=. python3 -m mira.release
 ```
 
 只构建 Python package 和 Android APK:
 
 ```bash
-./mira-build --target python --target android
+PYTHONPATH=. python3 -m mira.release --target python --target android
 ```
 
 只构建 iOS 真机产物并显式指定设备:
 
 ```bash
-./mira-build --target ios --ios-device-id <device-udid>
+PYTHONPATH=. python3 -m mira.release --target ios --ios-device-id <device-udid>
 ```
 
 如果是给 CI 或本机无真机环境使用, 可以显式走 `generic iphoneos(通用 iPhoneOS 目标)`:
 
 ```bash
-./mira-build --target ios --ios-destination-mode generic
+PYTHONPATH=. python3 -m mira.release --target ios --ios-destination-mode generic
 ```
+
+如果你在仓库源码环境里开发, 也可以继续使用 `./mira-build` 作为快捷入口.
 
 产物会统一落到:
 

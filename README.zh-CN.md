@@ -32,10 +32,11 @@
 
 ## Getting Started
 
-- **本地 Relay**: 使用 `./mira-local-web` 启动本地浏览器工作台.
-- **Android**: 使用 `MIRA_ANDROID_RELAY_URL="http://<host-ip>:8765" ./mira-android` 完成构建, 安装和自动连接.
-- **iOS**: 模拟器场景使用 `./mira-ios`, 真机链路见 [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md).
-- **AI 接入**: 启动 `python3 -m mira.mcp.server --relay http://127.0.0.1:8765`, 再从 Codex 或 Claude 连接.
+- **Relay**: `PYTHONPATH=. python3 -m mira.relay.server --host 0.0.0.0 --port 8765 --advertise-url http://<你的局域网IP>:8765`
+- **浏览器**: 在电脑打开 `http://127.0.0.1:8765`
+- **Android**: 从 [Releases](https://github.com/vwww-droid/Mira/releases) 下载 APK, 安装后在 App 中填写 `http://<你的局域网IP>:8765`
+- **iOS**: 当前验证的是 iOS 16.7.10 真机. 详见 [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md)
+- **AI 接入**: `PYTHONPATH=. python3 -m mira.mcp.server --relay http://127.0.0.1:8765`. MCP 配置见 [`docs/MCP.md`](./docs/MCP.md)
 
 ## Workflow
 
@@ -80,11 +81,12 @@
 
 ## Documentation
 
-- [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md)
-- [`docs/MCP.md`](./docs/MCP.md)
-- [`docs/IOS-APP.md`](./docs/IOS-APP.md)
-- [`docs/NATIVE-ARCHITECTURE.md`](./docs/NATIVE-ARCHITECTURE.md)
-- [`docs/THIRD-PARTY-NOTICES.md`](./docs/THIRD-PARTY-NOTICES.md)
+- [`docs/README.md`](./docs/README.md): 文档总入口.
+- [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md): 完整安装, 构建, 设备连接, MCP 和 CLI 说明.
+- [`docs/MCP.md`](./docs/MCP.md): Codex 与 Claude 的 MCP 接入说明.
+- [`docs/IOS-APP.md`](./docs/IOS-APP.md): iOS App 架构与设备侧说明.
+- [`docs/NATIVE-ARCHITECTURE.md`](./docs/NATIVE-ARCHITECTURE.md): Android 与 iOS 共享 PTY 原生架构.
+- [`docs/THIRD-PARTY-NOTICES.md`](./docs/THIRD-PARTY-NOTICES.md): 第三方许可证与来源说明.
 
 ## Acknowledgements
 

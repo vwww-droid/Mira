@@ -32,10 +32,11 @@ Turn Android and iOS runtime inspection into one AI-native defensive workflow.
 
 ## Getting Started
 
-- **Local Relay**: Start the local browser console with `./mira-local-web`.
-- **Android**: Use `MIRA_ANDROID_RELAY_URL="http://<host-ip>:8765" ./mira-android` for build, install, and auto-connect.
-- **iOS**: Use `./mira-ios` for simulator work, or follow the real-device flow in [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md).
-- **AI integration**: Start `python3 -m mira.mcp.server --relay http://127.0.0.1:8765` and connect from Codex or Claude.
+- **Relay**: `PYTHONPATH=. python3 -m mira.relay.server --host 0.0.0.0 --port 8765 --advertise-url http://<your-lan-ip>:8765`
+- **Browser**: Open `http://127.0.0.1:8765` on your desktop.
+- **Android**: Download the APK from [Releases](https://github.com/vwww-droid/Mira/releases), install it, then enter `http://<your-lan-ip>:8765` in the app.
+- **iOS**: Verified on a real device running iOS 16.7.10. See [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md).
+- **AI**: `PYTHONPATH=. python3 -m mira.mcp.server --relay http://127.0.0.1:8765`. MCP config: [`docs/MCP.md`](./docs/MCP.md).
 
 ## Workflow
 
@@ -80,11 +81,12 @@ With Relay, you can temporarily expose an authorized session beyond the local ne
 
 ## Documentation
 
-- [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md)
-- [`docs/MCP.md`](./docs/MCP.md)
-- [`docs/IOS-APP.md`](./docs/IOS-APP.md)
-- [`docs/NATIVE-ARCHITECTURE.md`](./docs/NATIVE-ARCHITECTURE.md)
-- [`docs/THIRD-PARTY-NOTICES.md`](./docs/THIRD-PARTY-NOTICES.md)
+- [`docs/README.md`](./docs/README.md): documentation hub.
+- [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md): full setup, build, device connect, MCP, and CLI.
+- [`docs/MCP.md`](./docs/MCP.md): Codex and Claude MCP integration.
+- [`docs/IOS-APP.md`](./docs/IOS-APP.md): iOS app architecture and device notes.
+- [`docs/NATIVE-ARCHITECTURE.md`](./docs/NATIVE-ARCHITECTURE.md): shared PTY native architecture.
+- [`docs/THIRD-PARTY-NOTICES.md`](./docs/THIRD-PARTY-NOTICES.md): third-party notices.
 
 ## Acknowledgements
 
