@@ -38,12 +38,12 @@ Turn Android and iOS runtime inspection into one AI-native defensive workflow.
 - **iOS**: Verified on a real device running iOS 16.7.10. See [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md).
 - **AI**: `PYTHONPATH=. python3 -m mira.mcp.server --relay http://127.0.0.1:8765`. MCP config: [`docs/MCP.md`](./docs/MCP.md).
 
-## Runtime Views
+## Live Discovery Examples
 
 <table>
   <tr>
-    <th align="center">Android</th>
-    <th align="center">iOS</th>
+    <th align="center">Android Remote Frida</th>
+    <th align="center">iOS Remote Frida</th>
   </tr>
   <tr>
     <td>
@@ -53,6 +53,20 @@ Turn Android and iOS runtime inspection into one AI-native defensive workflow.
     <td>
       <img src="./docs/ios-remote-frida.png" alt="iOS Remote Frida" />
       <div align="center"><sub>Equivalent PTY and Frida workflow adapted to the iOS iSH compatibility layer.</sub></div>
+    </td>
+  </tr>
+  <tr>
+    <th align="center">Android LSPosed Trace</th>
+    <th align="center">iOS Jailbreak Trace</th>
+  </tr>
+  <tr>
+    <td>
+      <img src="./docs/Area.gif" alt="Android LSPosed Trace" />
+      <div align="center"><sub>Construct a Frida path around the app classloader and surface LSPosed traces from runtime state.</sub></div>
+    </td>
+    <td>
+      <img src="./docs/cydia-ios.gif" alt="iOS Jailbreak Trace" />
+      <div align="center"><sub>Ask Claude to roam the live terminal and surface jailbreak-related traces in the device environment.</sub></div>
     </td>
   </tr>
 </table>

@@ -38,12 +38,12 @@
 - **iOS**: 当前验证的是 iOS 16.7.10 真机. 详见 [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md)
 - **AI 接入**: `PYTHONPATH=. python3 -m mira.mcp.server --relay http://127.0.0.1:8765`. MCP 配置见 [`docs/MCP.md`](./docs/MCP.md)
 
-## Runtime Views
+## Live Discovery Examples
 
 <table>
   <tr>
-    <th align="center">Android</th>
-    <th align="center">iOS</th>
+    <th align="center">Android Remote Frida</th>
+    <th align="center">iOS Remote Frida</th>
   </tr>
   <tr>
     <td>
@@ -53,6 +53,20 @@
     <td>
       <img src="./docs/ios-remote-frida.png" alt="iOS Remote Frida" />
       <div align="center"><sub>iOS 侧对应的 PTY 与 Frida 工作流, 适配 iSH 兼容层.</sub></div>
+    </td>
+  </tr>
+  <tr>
+    <th align="center">Android LSPosed Trace</th>
+    <th align="center">iOS Jailbreak Trace</th>
+  </tr>
+  <tr>
+    <td>
+      <img src="./docs/Area.gif" alt="Android LSPosed Trace" />
+      <div align="center"><sub>通过 Frida 围绕 App classloader 构造运行时路径, 进一步发现 LSPosed 痕迹.</sub></div>
+    </td>
+    <td>
+      <img src="./docs/cydia-ios.gif" alt="iOS Jailbreak Trace" />
+      <div align="center"><sub>一句话让 Claude 在实时终端中漫游, 自动发现设备环境里的越狱工具痕迹.</sub></div>
     </td>
   </tr>
 </table>
