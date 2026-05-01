@@ -96,7 +96,9 @@ tar -xzf "$ARCHIVE" -C "$STAGING_ROOT"
 python3 "$FRIDA_RUNTIME_HELPER" --rootfs "$STAGING_ROOT" --cache-dir "$CACHE_DIR/frida-runtime" --stamp-path "$STAGING_STAMP"
 tar -C "$STAGING_ROOT" -czf "$PATCHED_ARCHIVE" .
 "$FAKEFSIFY" "$PATCHED_ARCHIVE" "$TMP_DIR"
-"$ISH_HOST" -f "$TMP_DIR" /bin/sh -lc 'export PYTHONPATH=/opt/mira/frida-python/site-packages; /usr/bin/python3 -c "import compileall, sys; compileall.compile_dir(f\"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}\", quiet=1); compileall.compile_dir(\"/opt/mira/frida-python/site-packages\", quiet=1)"'
+if [[ "${MIRA_ISH_SKIP_COMPILEALL:-0}" != "1" ]]; then
+    "$ISH_HOST" -f "$TMP_DIR" /bin/sh -lc 'export PYTHONPATH=/opt/mira/frida-python/site-packages; /usr/bin/python3 -c "import compileall, sys; compileall.compile_dir(f\"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}\", quiet=1); compileall.compile_dir(\"/opt/mira/frida-python/site-packages\", quiet=1)"'
+fi
 rm -rf "$OUTPUT_DIR"
 ditto "$TMP_DIR" "$OUTPUT_DIR"
 cleanup_path "$TMP_DIR"

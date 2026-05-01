@@ -72,6 +72,7 @@ jobs:
           MIRA_ISH_BUILD_DIR="$PWD/build/ios-ish-device-libs" \
           bash ./tools/ios/build-ish-libs.sh
           bash ./tools/ios/build-frida-musl-devkit.sh
+          MIRA_ISH_SKIP_COMPILEALL=1 \
           MIRA_ISH_ROOTFS_OUTPUT="$PWD/build/ios-mira-device-native-relay-derived/Build/Products/Debug-iphoneos/Mira.app/MiraISHRoot.fakefs" \
           bash ./tools/ios/prepare-ish-rootfs.sh
 
@@ -79,7 +80,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip build wheel setuptools
           chmod +x ./mira-build
-          ./mira-build --target ios --ios-destination-mode generic
+          MIRA_ISH_SKIP_COMPILEALL=1 ./mira-build --target ios --ios-destination-mode generic
 
       - name: Upload iOS artifacts
         uses: actions/upload-artifact@v4
