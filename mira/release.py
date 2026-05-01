@@ -45,6 +45,13 @@ class BuildResult:
     details: dict[str, Any]
 
 
+@dataclass
+class VersionInfo:
+    pyproject: str
+    package: str
+    expected: str | None
+
+
 def run_command(command: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None, dry_run: bool = False) -> None:
     rendered = " ".join(shell_quote(part) for part in command)
     print(f"[mira-build] {rendered}")
@@ -63,6 +70,92 @@ def ensure_directory(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
+def read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def read_pyproject_version() -> str:
+    match = re.search(r'(?m)^version\s*=\s*"([^"]+)"\s*$', read_text(ROOT_DIR / "pyproject.toml"))
+    if not match:
+        raise ReleaseError("未在 pyproject.toml 中找到 project.version")
+    return match.group(1)
+
+
+def read_package_version() -> str:
+    match = re.search(r'(?m)^__version__\s*=\s*"([^"]+)"\s*$', read_text(ROOT_DIR / "mira/__init__.py"))
+    if not match:
+        raise ReleaseError("未在 mira/__init__.py 中找到 __version__")
+    return match.group(1)
+
+
+def normalize_release_version(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if normalized.startswith("refs/tags/"):
+        normalized = normalized[len("refs/tags/") :]
+    if normalized.startswith("v"):
+        normalized = normalized[1:]
+    return normalized
+
+
+def resolve_expected_release_version(args: argparse.Namespace) -> str | None:
+    if args.release_tag:
+        return normalize_release_version(args.release_tag)
+    if os.environ.get("MIRA_RELEASE_TAG"):
+        return normalize_release_version(os.environ["MIRA_RELEASE_TAG"])
+    if os.environ.get("GITHUB_REF_TYPE") == "tag" and os.environ.get("GITHUB_REF_NAME"):
+        return normalize_release_version(os.environ["GITHUB_REF_NAME"])
+    if os.environ.get("GITHUB_REF", "").startswith("refs/tags/"):
+        return normalize_release_version(os.environ["GITHUB_REF"])
+    return None
+
+
+def collect_version_info(expected_version: str | None = None) -> VersionInfo:
+    return VersionInfo(
+        pyproject=read_pyproject_version(),
+        package=read_package_version(),
+        expected=expected_version,
+    )
+
+
+def validate_release_versions(expected_version: str | None = None) -> VersionInfo:
+    info = collect_version_info(expected_version)
+    if info.pyproject != info.package:
+        raise ReleaseError(
+            "版本源不一致: "
+            f"pyproject.toml={info.pyproject}, "
+            f"mira/__init__.py={info.package}"
+        )
+    if info.expected and info.pyproject != info.expected:
+        raise ReleaseError(
+            "发布版本不匹配: "
+            f"tag={info.expected}, "
+            f"pyproject.toml={info.pyproject}, "
+            f"mira/__init__.py={info.package}"
+        )
+    return info
+
+
+def validate_python_artifacts(version_info: VersionInfo, artifact_names: list[str]) -> None:
+    expected_version = version_info.pyproject
+    expected_wheel = f"mira-{expected_version}-py3-none-any.whl"
+    expected_sdist = f"mira-{expected_version}.tar.gz"
+    names = set(artifact_names)
+    missing: list[str] = []
+    if expected_wheel not in names:
+        missing.append(expected_wheel)
+    if expected_sdist not in names:
+        missing.append(expected_sdist)
+    if missing:
+        raise ReleaseError(
+            "Python 构建产物版本不匹配: "
+            f"缺少 {', '.join(missing)}, 实际产物 {', '.join(sorted(names)) or '<empty>'}"
+        )
+
+
 def write_manifest(results: list[BuildResult]) -> Path:
     ensure_directory(DIST_DIR)
     manifest_path = DIST_DIR / "release-manifest.json"
@@ -75,6 +168,7 @@ def write_manifest(results: list[BuildResult]) -> Path:
 
 
 def build_python(args: argparse.Namespace) -> BuildResult:
+    version_info = validate_release_versions(resolve_expected_release_version(args))
     ensure_directory(PYTHON_DIST_DIR)
     artifacts: list[ArtifactRecord] = []
     if args.dry_run:
@@ -93,7 +187,11 @@ def build_python(args: argparse.Namespace) -> BuildResult:
             target="python",
             status="dry-run",
             artifacts=[],
-            details={"distDir": str(PYTHON_DIST_DIR)},
+            details={
+                "distDir": str(PYTHON_DIST_DIR),
+                "packageVersion": version_info.pyproject,
+                "releaseTagVersion": version_info.expected,
+            },
         )
 
     with tempfile.TemporaryDirectory(prefix="mira-python-dist-") as temp_dir:
@@ -121,11 +219,16 @@ def build_python(args: argparse.Namespace) -> BuildResult:
             )
     if not artifacts and not args.dry_run:
         raise ReleaseError(f"Python 包产物缺失: {PYTHON_DIST_DIR}")
+    validate_python_artifacts(version_info, [Path(artifact.path).name for artifact in artifacts])
     return BuildResult(
         target="python",
         status="built",
         artifacts=artifacts,
-        details={"distDir": str(PYTHON_DIST_DIR)},
+        details={
+            "distDir": str(PYTHON_DIST_DIR),
+            "packageVersion": version_info.pyproject,
+            "releaseTagVersion": version_info.expected,
+        },
     )
 
 
@@ -337,6 +440,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Mira 统一构建入口")
     parser.add_argument("--target", dest="targets", action="append", choices=["python", "android", "ios", "all"], help="要构建的目标, 可重复传入")
     parser.add_argument("--python", default=os.environ.get("PYTHON_BIN", sys.executable or "python3"), help="Python 可执行文件")
+    parser.add_argument("--release-tag", default=os.environ.get("MIRA_RELEASE_TAG"), help="要校验的发布 tag 或版本号, 例如 v1.1.2")
+    parser.add_argument("--validate-only", action="store_true", help="仅校验版本一致性, 不执行构建")
     parser.add_argument("--android-gradle-task", default=os.environ.get("MIRA_ANDROID_GRADLE_TASK", ":mira-app:assembleDebug"), help="Android Gradle 任务")
     parser.add_argument("--android-output-name", default=os.environ.get("MIRA_ANDROID_DIST_NAME", "mira-app-debug.apk"), help="dist/android 下的 APK 文件名")
     parser.add_argument("--ios-device-id", default=os.environ.get("MIRA_IOS_DEVICE_ID"), help="iOS 真机 UDID")
@@ -366,6 +471,22 @@ def normalize_targets(raw_targets: list[str] | None) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    expected_release_version = resolve_expected_release_version(args)
+
+    if args.validate_only:
+        try:
+            info = validate_release_versions(expected_release_version)
+        except ReleaseError as exc:
+            sys.stderr.write(f"mira-build: {exc}\n")
+            return 1
+        print(
+            "[mira-build] 版本校验通过: "
+            f"pyproject.toml={info.pyproject}, "
+            f"mira/__init__.py={info.package}, "
+            f"releaseTag={info.expected or '<none>'}"
+        )
+        return 0
+
     targets = normalize_targets(args.targets)
 
     builders = {

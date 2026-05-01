@@ -30,11 +30,16 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Validate release version
+        run: |
+          chmod +x ./mira-build
+          ./mira-build --validate-only --release-tag "${GITHUB_REF_NAME}"
+
       - name: Build Python package and Android APK
         run: |
           python -m pip install --upgrade pip build wheel setuptools
           chmod +x ./gradlew ./mira-build
-          ./mira-build --target python --target android
+          ./mira-build --target python --target android --release-tag "${GITHUB_REF_NAME}"
 
       - name: Upload Python artifacts
         uses: actions/upload-artifact@v4
@@ -74,6 +79,11 @@ jobs:
           brew install llvm lld ninja pkg-config libarchive zig
           python -m pip install --upgrade pip meson
 
+      - name: Validate release version
+        run: |
+          chmod +x ./mira-build
+          ./mira-build --validate-only --release-tag "${GITHUB_REF_NAME}"
+
       - name: Prepare iOS native dependencies
         run: |
           MIRA_ISH_SDK=iphoneos \
@@ -88,7 +98,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip build wheel setuptools
           chmod +x ./mira-build
-          MIRA_ISH_SKIP_COMPILEALL=1 ./mira-build --target ios --ios-destination-mode generic
+          MIRA_ISH_SKIP_COMPILEALL=1 ./mira-build --target ios --ios-destination-mode generic --release-tag "${GITHUB_REF_NAME}"
 
       - name: Upload iOS artifacts
         uses: actions/upload-artifact@v4
