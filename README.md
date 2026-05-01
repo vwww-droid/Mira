@@ -1,40 +1,49 @@
-#### English | [简体中文](./README.zh-CN.md)
+<p align="right">
+  English | <a href="./README.zh-CN.md">简体中文</a>
+</p>
 
 <div align="center">
-  <img src="./apps/console/app/icon-round.png" alt="Mira icon" width="160" />
-</div>
+  <img src="./apps/console/app/icon-round.png" alt="Mira icon" width="180" style="border-radius: 50%;" />
 
 # Mira
 
-An AI-native mobile runtime risk discovery workspace for Android and iOS.
+Turn Android and iOS runtime inspection into one AI-native defensive workflow.
 
-<p align="center">
+<p>
   <img src="https://img.shields.io/badge/analysis-AI--native-0f172a?style=flat-square" alt="AI-native analysis" />
   <img src="https://img.shields.io/badge/platform-Android%20%2B%20iOS-2f855a?style=flat-square" alt="Android and iOS" />
   <img src="https://img.shields.io/badge/execution-live%20logic-2563eb?style=flat-square" alt="Live logic execution" />
+  <img src="https://img.shields.io/badge/workflow-Relay%20%2B%20MCP-7c3aed?style=flat-square" alt="Relay and MCP" />
 </p>
+</div>
+
+---
+
+<div align="center">
+  <strong>Inspect real mobile runtime state, execute live logic, and turn raw signals into repeatable hardening evidence.</strong>
+</div>
 
 ## Features
 
-- **AI-assisted analysis**: Connect Codex or Claude through `mira-mcp` and let AI inspect the same live session as the researcher.
-- **Cross-platform runtime coverage**: Run one workflow across Android and iOS instead of splitting device inspection into separate toolchains.
-- **Live logic execution**: Execute Java and Native logic through the built-in Frida path and validate hypotheses directly inside the running app.
-- **Defense-oriented evidence collection**: Surface runtime hooks, environment fingerprints, process state, and verification signals that matter for mobile hardening.
+- **Cross-platform runtime workspace**: Use one Relay-based workbench across Android and iOS instead of splitting research into separate toolchains.
+- **AI-assisted analysis**: Connect Codex or Claude through `mira-mcp` so AI can inspect the same live device session as the researcher.
+- **Live Java and Native execution**: Run Frida-backed logic directly inside the target app runtime and validate hypotheses without leaving the session.
+- **Defense-oriented evidence collection**: Surface hook traces, environment fingerprints, process state, PTY output, and verification signals relevant to mobile hardening.
 
 ## Getting Started
 
-- **Local relay**: Start the local web console with `./mira-local-web`.
-- **Android workflow**: Use `MIRA_ANDROID_RELAY_URL="http://<host-ip>:8765" ./mira-android` for build, install, and auto-connect.
-- **iOS workflow**: Use `./mira-ios` for simulator work, or follow the device flow in [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md).
+- **Local Relay**: Start the local browser console with `./mira-local-web`.
+- **Android**: Use `MIRA_ANDROID_RELAY_URL="http://<host-ip>:8765" ./mira-android` for build, install, and auto-connect.
+- **iOS**: Use `./mira-ios` for simulator work, or follow the real-device flow in [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md).
 - **AI integration**: Start `python3 -m mira.mcp.server --relay http://127.0.0.1:8765` and connect from Codex or Claude.
 
 ## Workflow
 
-1. Launch Relay and open the browser console.
+1. Launch Relay and open the Mira browser console.
 2. Connect the Mira app on Android or iOS.
 3. Open the remote PTY and inspect the real runtime state.
 4. Execute live logic, collect evidence, and validate risk hypotheses.
-5. Turn findings into repeatable review steps and hardening follow-ups.
+5. Convert findings into repeatable review steps and hardening follow-ups.
 
 ## Runtime Views
 
@@ -46,11 +55,11 @@ An AI-native mobile runtime risk discovery workspace for Android and iOS.
   <tr>
     <td>
       <img src="./docs/android-remote-frida.png" alt="Android Remote Frida" />
-      <div align="center"><sub>Remote shell and runtime inspection on Android.</sub></div>
+      <div align="center"><sub>Remote shell, runtime inspection, and live Frida execution on Android.</sub></div>
     </td>
     <td>
       <img src="./docs/ios-remote-frida.png" alt="iOS Remote Frida" />
-      <div align="center"><sub>Equivalent PTY and Frida workflow on iOS.</sub></div>
+      <div align="center"><sub>Equivalent PTY and Frida workflow adapted to the iOS iSH compatibility layer.</sub></div>
     </td>
   </tr>
 </table>
