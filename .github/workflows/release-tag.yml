@@ -36,12 +36,20 @@ jobs:
           chmod +x ./gradlew ./mira-build
           ./mira-build --target python --target android
 
-      - name: Upload Python and Android artifacts
+      - name: Upload Python artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mira-python-android-${{ github.ref_name }}
+          name: mira-python-${{ github.ref_name }}
           path: |
             dist/python/**
+            dist/release-manifest.json
+          if-no-files-found: error
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mira-android-${{ github.ref_name }}
+          path: |
             dist/android/**
             dist/release-manifest.json
           if-no-files-found: error

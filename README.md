@@ -3,7 +3,7 @@
 </p>
 
 <div align="center">
-  <img src="./apps/console/app/icon-round.png" alt="Mira icon" width="180" style="border-radius: 50%;" />
+  <img src="./docs/mira-readme-icon-round.png" alt="Mira icon" width="180" />
 
 # Mira
 
