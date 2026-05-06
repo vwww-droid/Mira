@@ -67,6 +67,7 @@ public final class MiraDiscoveryService extends Service {
     private volatile MiraControlClient controlClient;
     private volatile MiraSelfScreenStreamer screenStreamer;
     private volatile MiraLocalCommandServer commandServer;
+    private volatile MiraTerminalServer terminalServer;
 
     @Override
     public void onCreate() {
@@ -114,6 +115,7 @@ public final class MiraDiscoveryService extends Service {
         try {
             bootstrap.installIfNeeded();
             startCommandServer();
+            startTerminalServer();
             if (!relayUrl.isEmpty()) {
                 startControlClient();
                 return;
@@ -132,6 +134,7 @@ public final class MiraDiscoveryService extends Service {
             running.set(false);
             lifecycleGeneration.incrementAndGet();
             closeCommandServer();
+            closeTerminalServer();
             releaseMulticastLock();
             publishStatus("startup failed: " + e.getMessage());
             throw new RuntimeException(e);
@@ -187,12 +190,21 @@ public final class MiraDiscoveryService extends Service {
         commandServer = server;
     }
 
+    private synchronized void startTerminalServer() throws IOException {
+        if (terminalServer != null) return;
+        MiraTerminalServer server = new MiraTerminalServer(this, bootstrap, 0);
+        server.start();
+        terminalServer = server;
+        Log.i(TAG, "Mira Web Terminal listening on http://127.0.0.1:" + server.getPort() + "/?token=" + server.getToken());
+    }
+
     private void stopDiscovery() {
         running.set(false);
         lifecycleGeneration.incrementAndGet();
         closeScreenStreamer();
         closeRelay();
         closeCommandServer();
+        closeTerminalServer();
         if (controlClient != null) {
             controlClient.close();
             controlClient = null;
@@ -517,6 +529,13 @@ public final class MiraDiscoveryService extends Service {
         if (commandServer != null) {
             commandServer.close();
             commandServer = null;
+        }
+    }
+
+    private synchronized void closeTerminalServer() {
+        if (terminalServer != null) {
+            terminalServer.close();
+            terminalServer = null;
         }
     }
 
