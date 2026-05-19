@@ -5,7 +5,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import { DeviceFrame } from '@/components/DeviceFrame';
 import { ConsoleEvent, TerminalStage } from '@/components/TerminalStage';
 import { deviceTitle, shortId } from '@/lib/format';
-import { fetchServerLogs } from '@/lib/relay';
+import { fetchDeviceLogcat, fetchDeviceProcAudit, fetchServerLogs } from '@/lib/relay';
 import type { MiraDevice } from '@/lib/types';
 
 export function Workbench({
@@ -22,7 +22,7 @@ export function Workbench({
   onBack: () => void;
   onEvent: (event: ConsoleEvent) => void;
   onRefreshDevices: () => void;
-  activePanel: 'server-logs' | null;
+  activePanel: 'server-logs' | 'android-logcat' | null;
   onClosePanel: () => void;
 }) {
   const hostRef = useRef<HTMLElement | null>(null);
@@ -34,8 +34,19 @@ export function Workbench({
   const [serverLogsLoading, setServerLogsLoading] = useState(false);
   const [serverLogsError, setServerLogsError] = useState('');
   const [serverLogsAt, setServerLogsAt] = useState('');
+  const [logcatText, setLogcatText] = useState('');
+  const [logcatLoading, setLogcatLoading] = useState(false);
+  const [logcatError, setLogcatError] = useState('');
+  const [logcatAt, setLogcatAt] = useState('');
+  const [logcatCount, setLogcatCount] = useState(5000);
+  const [logcatBuffer, setLogcatBuffer] = useState('all');
+  const [logcatTag, setLogcatTag] = useState('');
+  const [logcatLevel, setLogcatLevel] = useState('');
+  const [logcatSearch, setLogcatSearch] = useState('');
   const adaptiveLeftWidth = useMemo(() => adaptiveDevicePaneWidth(selectedDevice, hostSize), [hostSize, selectedDevice]);
   const leftWidth = clampPaneSize(manualLeftWidth ?? adaptiveLeftWidth, minDevicePaneWidth(hostSize), maxDevicePaneWidth(hostSize));
+  const platform = devicePlatform(selectedDevice);
+  const filteredLogcat = useMemo(() => filterLogText(logcatText, logcatSearch), [logcatSearch, logcatText]);
 
   const loadServerLogs = useCallback(
     async (mode: 'reset' | 'append' = 'append') => {
@@ -91,7 +102,86 @@ export function Workbench({
 
   useEffect(() => {
     setManualLeftWidth(null);
+    setLogcatText('');
+    setLogcatError('');
+    setLogcatAt('');
+    setLogcatSearch('');
   }, [selectedDevice.installId]);
+
+  const loadLogcat = useCallback(
+    async () => {
+      if (devicePlatform(selectedDevice) !== 'android') {
+        setLogcatError('当前只支持 Android 设备的 logcat.');
+        setLogcatText('');
+        return;
+      }
+      setLogcatLoading(true);
+      setLogcatError('');
+      try {
+        const response = await fetchDeviceLogcat({
+          installId: selectedDevice.installId,
+          count: logcatCount,
+          buffer: logcatBuffer,
+          tag: logcatTag.trim(),
+          level: logcatLevel,
+          timeoutMs: 10000,
+        });
+        const stderr = response.stderr ? `\n\n[stderr]\n${response.stderr.trim()}` : '';
+        const output = `${response.stdout || ''}${stderr}`.trim();
+        setLogcatText((output || '(logcat returned no output)').split('\n').slice(-5000).join('\n'));
+        setLogcatAt(new Date().toLocaleTimeString());
+        if (!response.ok) setLogcatError(response.error || response.stderr || `logcat exited with ${response.exitCode}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setLogcatError(message);
+        setLogcatText(message || 'logcat request failed');
+      } finally {
+        setLogcatLoading(false);
+      }
+    },
+    [logcatBuffer, logcatCount, logcatLevel, logcatTag, selectedDevice],
+  );
+
+  const runProcAuditScan = useCallback(
+    async () => {
+      if (devicePlatform(selectedDevice) !== 'android') {
+        setLogcatError('当前只支持 Android 设备的 proc audit scan.');
+        setLogcatText('');
+        return;
+      }
+      setLogcatLoading(true);
+      setLogcatError('');
+      try {
+        const response = await fetchDeviceProcAudit({
+          installId: selectedDevice.installId,
+          maxPid: 10000,
+          count: logcatCount,
+          chunkSize: 500,
+          timeoutMs: 70000,
+        });
+        const stderr = response.stderr ? `\n\n[stderr]\n${response.stderr.trim()}` : '';
+        const output = `${response.stdout || ''}${stderr}`.trim();
+        setLogcatText(output || '(mira-proc-audit returned no output)');
+        setLogcatAt(new Date().toLocaleTimeString());
+        if (!response.ok) {
+          setLogcatError(response.error || response.stderr || `mira-proc-audit exited with ${response.exitCode}`);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setLogcatError(message);
+        setLogcatText(message || 'mira-proc-audit request failed');
+      } finally {
+        setLogcatLoading(false);
+      }
+    },
+    [logcatCount, selectedDevice],
+  );
+
+  useEffect(() => {
+    if (activePanel !== 'android-logcat') return;
+    if (logcatText || logcatLoading) return;
+    void loadLogcat();
+  }, [activePanel, loadLogcat, logcatLoading, logcatText]);
 
   useEffect(() => {
     setInfoHeight((current) => clampPaneSize(current, minInfoPanelHeight(hostSize), maxInfoPanelHeight(hostSize)));
@@ -178,6 +268,29 @@ export function Workbench({
         error={serverLogsError}
         updatedAt={serverLogsAt}
         onRefresh={() => loadServerLogs('reset')}
+      />
+      <AndroidLogcatPanel
+        open={activePanel === 'android-logcat'}
+        onClose={onClosePanel}
+        platform={platform}
+        text={filteredLogcat.text}
+        rawLineCount={filteredLogcat.rawLineCount}
+        shownLineCount={filteredLogcat.shownLineCount}
+        loading={logcatLoading}
+        error={logcatError}
+        updatedAt={logcatAt}
+        count={logcatCount}
+        buffer={logcatBuffer}
+        tag={logcatTag}
+        level={logcatLevel}
+        search={logcatSearch}
+        onCountChange={setLogcatCount}
+        onBufferChange={setLogcatBuffer}
+        onTagChange={setLogcatTag}
+        onLevelChange={setLogcatLevel}
+        onSearchChange={setLogcatSearch}
+        onRefresh={() => loadLogcat()}
+        onProcAudit={() => runProcAuditScan()}
       />
     </section>
   );
@@ -464,6 +577,33 @@ function formatBytesPerSecond(value: number) {
 }
 
 
+
+function filterLogText(text: string, query: string) {
+  const lines = text ? text.split('\n') : [];
+  const terms = query
+    .trim()
+    .toLowerCase()
+    .split(/[,\s|]+/)
+    .map((term) => term.trim())
+    .filter(Boolean);
+  if (!terms.length) {
+    return {
+      text,
+      rawLineCount: lines.filter(Boolean).length,
+      shownLineCount: lines.filter(Boolean).length,
+    };
+  }
+  const filtered = lines.filter((line) => {
+    const lower = line.toLowerCase();
+    return terms.some((term) => lower.includes(term));
+  });
+  return {
+    text: filtered.join('\n'),
+    rawLineCount: lines.filter(Boolean).length,
+    shownLineCount: filtered.filter(Boolean).length,
+  };
+}
+
 function ServerLogsPanel({
   open,
   text,
@@ -509,6 +649,173 @@ function ServerLogsPanel({
         <div className="min-h-0 flex-1 overflow-auto px-3 py-2 text-[12px] text-[#2e2e2e]">
           {error ? <div className="mb-2 text-[12px] text-[#d85a47]">{error}</div> : null}
           <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-[#2e2e2e]">{text || 'No server logs yet.'}</pre>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AndroidLogcatPanel({
+  open,
+  platform,
+  text,
+  rawLineCount,
+  shownLineCount,
+  loading,
+  error,
+  updatedAt,
+  count,
+  buffer,
+  tag,
+  level,
+  search,
+  onCountChange,
+  onBufferChange,
+  onTagChange,
+  onLevelChange,
+  onSearchChange,
+  onRefresh,
+  onProcAudit,
+  onClose,
+}: {
+  open: boolean;
+  platform: DevicePlatform;
+  text: string;
+  rawLineCount: number;
+  shownLineCount: number;
+  loading: boolean;
+  error: string;
+  updatedAt: string;
+  count: number;
+  buffer: string;
+  tag: string;
+  level: string;
+  search: string;
+  onCountChange: (value: number) => void;
+  onBufferChange: (value: string) => void;
+  onTagChange: (value: string) => void;
+  onLevelChange: (value: string) => void;
+  onSearchChange: (value: string) => void;
+  onRefresh: () => void;
+  onProcAudit: () => void;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+  const disabled = platform !== 'android' || loading;
+  const hasSearch = search.trim().length > 0;
+  return (
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/25 backdrop-blur-[1px]">
+      <div className="flex h-[min(86vh,760px)] w-[min(88vw,1040px)] flex-col overflow-hidden rounded border border-[#cfd9e4] bg-[#fff] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[#d8d8d8] bg-[#f0f4fb] px-4 py-2">
+          <div className="font-mono text-[12px] font-semibold tracking-[0.12em] text-[#3f7fd3]">
+            ANDROID LOGCAT
+            {updatedAt ? <span className="ml-2 font-normal tracking-normal text-[#777]">updated {updatedAt}</span> : null}
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="rounded border border-[#8f8f8f] bg-white px-2 py-0.5 text-[12px] font-semibold text-[#333] transition hover:bg-[#f0f7ff] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={disabled}
+            >
+              {loading ? 'Loading...' : 'Refresh'}
+            </button>
+            <button
+              type="button"
+              onClick={onProcAudit}
+              className="rounded border border-[#8f8f8f] bg-white px-2 py-0.5 text-[12px] font-semibold text-[#333] transition hover:bg-[#f0f7ff] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={disabled}
+              title="在 App 内扫描 /proc 并读取 App 可见 proc audit 日志"
+            >
+              Proc audit
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded border border-[#8f8f8f] bg-white px-2 py-0.5 text-[12px] text-[#333] transition hover:bg-[#f0f7ff]"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 border-b border-[#ececec] bg-[#fafafa] px-3 py-2 font-mono text-[11px] text-[#555]">
+          <label className="flex items-center gap-1">
+            keep
+            <input
+              type="number"
+              min={1}
+              max={5000}
+              value={count}
+              onChange={(event) => onCountChange(clampPaneSize(Number(event.target.value) || 1, 1, 5000))}
+              className="h-6 w-20 rounded border border-[#bdbdbd] bg-white px-1 text-[#222]"
+              disabled={loading}
+            />
+          </label>
+          <label className="flex items-center gap-1">
+            buffer
+            <select
+              value={buffer}
+              onChange={(event) => onBufferChange(event.target.value)}
+              className="h-6 rounded border border-[#bdbdbd] bg-white px-1 text-[#222]"
+              disabled={loading}
+            >
+              <option value="all">all</option>
+              <option value="main">main</option>
+              <option value="events">events</option>
+              <option value="system">system</option>
+              <option value="crash">crash</option>
+              <option value="radio">radio</option>
+              <option value="kernel">kernel</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-1">
+            level
+            <select
+              value={level}
+              onChange={(event) => onLevelChange(event.target.value)}
+              className="h-6 rounded border border-[#bdbdbd] bg-white px-1 text-[#222]"
+              disabled={loading}
+            >
+              <option value="">all</option>
+              <option value="V">V</option>
+              <option value="D">D</option>
+              <option value="I">I</option>
+              <option value="W">W</option>
+              <option value="E">E</option>
+              <option value="F">F</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-1">
+            tag
+            <input
+              type="text"
+              value={tag}
+              onChange={(event) => onTagChange(event.target.value)}
+              placeholder="optional"
+              className="h-6 w-32 rounded border border-[#bdbdbd] bg-white px-1 text-[#222]"
+              disabled={loading}
+            />
+          </label>
+          <label className="flex min-w-[240px] flex-1 items-center gap-1">
+            search
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="keyword, pid, context, path..."
+              className="h-6 min-w-0 flex-1 rounded border border-[#bdbdbd] bg-white px-2 text-[#222]"
+            />
+          </label>
+          <div className="ml-auto whitespace-nowrap text-[#777]">
+            {hasSearch ? `${shownLineCount}/${rawLineCount} matched` : `${rawLineCount}/5000 lines`}
+          </div>
+        </div>
+        {platform !== 'android' ? (
+          <div className="border-b border-[#ececec] px-3 py-2 font-mono text-[12px] text-[#777]">Android logcat is available only for Android devices.</div>
+        ) : null}
+        <div className="min-h-0 flex-1 overflow-auto px-3 py-2 text-[12px] text-[#2e2e2e]">
+          {error ? <div className="mb-2 text-[12px] text-[#d85a47]">{error}</div> : null}
+          <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-[#2e2e2e]">{text || (hasSearch ? 'No matching logcat lines.' : 'Click Refresh to read Android logcat.')}</pre>
         </div>
       </div>
     </div>

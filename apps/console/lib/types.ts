@@ -172,6 +172,19 @@ export type ServerLogsResponse = {
   reset: boolean;
 };
 
+export type DeviceLogcatResponse = {
+  ok: boolean;
+  installId: string;
+  requestId: string;
+  command: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  error?: string;
+};
+
+export type DeviceProcAuditResponse = DeviceLogcatResponse;
+
 export type DeviceMetrics = {
   sampledAt?: number;
   cpuPercent?: number;

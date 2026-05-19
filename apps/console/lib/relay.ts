@@ -5,6 +5,8 @@ import type {
   ScreenFrameMetadata,
   ScreenInputRequest,
   ScreenInputResponse,
+  DeviceLogcatResponse,
+  DeviceProcAuditResponse,
   ServerLogsResponse,
 } from './types';
 
@@ -102,6 +104,28 @@ export function sendScreenTap(installId: string, x: number, y: number): Promise<
 
 export function fetchServerLogs(cursor = 0, limit = 300): Promise<ServerLogsResponse> {
   return request<ServerLogsResponse>(`/api/server/logs?cursor=${encodeURIComponent(String(cursor))}&limit=${encodeURIComponent(String(limit))}`);
+}
+
+export function fetchDeviceLogcat(input: {
+  installId: string;
+  count?: number;
+  buffer?: string;
+  tag?: string;
+  level?: string;
+  timeoutMs?: number;
+}): Promise<DeviceLogcatResponse> {
+  return request<DeviceLogcatResponse>('/api/device/logcat', input);
+}
+
+export function fetchDeviceProcAudit(input: {
+  installId: string;
+  startPid?: number;
+  maxPid?: number;
+  count?: number;
+  chunkSize?: number;
+  timeoutMs?: number;
+}): Promise<DeviceProcAuditResponse> {
+  return request<DeviceProcAuditResponse>('/api/device/proc-audit', input);
 }
 
 export function postBrowserLog(scope: string, message: string, installId: string, details?: unknown): Promise<{ ok: boolean }> {

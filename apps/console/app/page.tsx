@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Server } from 'lucide-react';
+import { ScrollText, Server } from 'lucide-react';
 import { BackgroundGlow, Lobby, MiraBrandBar } from '@/components/ConsoleChrome';
 import type { ConsoleEvent } from '@/components/TerminalStage';
 import { Workbench } from '@/components/Workbench';
@@ -13,7 +13,7 @@ export default function RelayConsolePage() {
   const [devices, setDevices] = useState<MiraDevice[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [events, setEvents] = useState<ConsoleEvent[]>([]);
-  const [activePanel, setActivePanel] = useState<'server-logs' | null>(null);
+  const [activePanel, setActivePanel] = useState<'server-logs' | 'android-logcat' | null>(null);
   const devicesSnapshot = useRef('');
 
   const selectedDevice = useMemo(
@@ -83,6 +83,13 @@ export default function RelayConsolePage() {
               onClick={() => setActivePanel((current) => (current === 'server-logs' ? null : 'server-logs'))}
             >
               <Server className="h-3.5 w-3.5" strokeWidth={1.8} />
+            </ToolbarIconButton>
+            <ToolbarIconButton
+              title={activePanel === 'android-logcat' ? '关闭 Android logcat' : '打开 Android logcat'}
+              active={activePanel === 'android-logcat'}
+              onClick={() => setActivePanel((current) => (current === 'android-logcat' ? null : 'android-logcat'))}
+            >
+              <ScrollText className="h-3.5 w-3.5" strokeWidth={1.8} />
             </ToolbarIconButton>
           </div>
         ) : null}

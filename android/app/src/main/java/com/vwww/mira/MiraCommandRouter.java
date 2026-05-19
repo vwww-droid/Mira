@@ -5,8 +5,11 @@ import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
 import android.provider.Settings;
+import android.system.ErrnoException;
+import android.system.Os;
 
 import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
 import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Method;
@@ -21,7 +24,9 @@ import java.util.Set;
 final class MiraCommandRouter {
     private static final long DUMPSYS_TIMEOUT_MS = 10_000L;
     private static final long LOGCAT_TIMEOUT_MS = 30_000L;
+    private static final long PROC_AUDIT_LOGCAT_TIMEOUT_MS = 20_000L;
     private static final long GETPROP_TIMEOUT_MS = 5_000L;
+    private static final int PROC_AUDIT_MAX_LOG_BYTES = 128 * 1024;
     private static final Set<String> DUMPSYS_ALLOWLIST = new HashSet<>(Arrays.asList(
         "activity",
         "battery",
@@ -51,6 +56,8 @@ final class MiraCommandRouter {
                     return runDumpsys(argv);
                 case "mira-logcat":
                     return runLogcat(argv);
+                case "mira-proc-audit":
+                    return runProcAudit(argv);
                 default:
                     return MiraCommandResult.error("unsupported Mira command: " + tool + "\n");
             }
@@ -234,6 +241,155 @@ final class MiraCommandRouter {
             command.add("time");
         }
         return MiraProcessRunner.run(command, LOGCAT_TIMEOUT_MS);
+    }
+
+    private static MiraCommandResult runProcAudit(List<String> argv) {
+        int maxPid = intArg(argv, "--max-pid", 10_000, 1, 100_000);
+        int startPid = intArg(argv, "--start-pid", 1, 1, 100_000);
+        if (startPid > maxPid) startPid = maxPid;
+        int logCount = intArg(argv, "--count", 5_000, 1, 5_000);
+        int chunkSize = intArg(argv, "--chunk-size", 500, 1, 5_000);
+        StringBuilder output = new StringBuilder();
+        output.append("ProcAudit app-context scan pid=").append(startPid).append('-').append(maxPid).append('\n');
+        output.append("context=").append(readSelfContext()).append('\n');
+
+        byte[] buffer = new byte[256];
+        long start = System.nanoTime();
+        int emittedLines = 0;
+        int filteredLines = 0;
+        Set<String> emitted = new HashSet<>();
+        for (int pid = startPid; pid <= maxPid; pid++) {
+            String directContext = triggerAuditForPid(pid, buffer);
+            if (!directContext.isEmpty()) {
+                String line = "XATTR-CONTEXT: pid=" + pid + " " + directContext;
+                if (emitted.add(line)) {
+                    emittedLines++;
+                    output.append(line).append('\n');
+                }
+            }
+            if (pid % 50 == 0) {
+                try {
+                    Thread.sleep(90L);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return new MiraCommandResult(130, output.toString(), "mira-proc-audit interrupted\n");
+                }
+            }
+            if (pid == maxPid || ((pid - startPid + 1) % chunkSize == 0)) {
+                try {
+                    Thread.sleep(200L);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return new MiraCommandResult(130, output.toString(), "mira-proc-audit interrupted\n");
+                }
+                int[] counts = collectProcAuditLogs(logCount, output, emitted);
+                filteredLines += counts[0];
+                emittedLines += counts[1];
+            }
+        }
+
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+        output.append("\nfiltered_lines=").append(filteredLines).append('\n');
+        output.append("emitted_lines=").append(emittedLines).append('\n');
+        output.append("elapsed_ms=").append(elapsedMs).append('\n');
+        output.append("scan_completed=true\n");
+        return MiraCommandResult.ok(output.toString());
+    }
+
+    private static int[] collectProcAuditLogs(int logCount, StringBuilder output, Set<String> emitted) {
+        int filteredLines = 0;
+        int emittedLines = 0;
+        String[] commands = {
+            "logcat -d -b events -t " + logCount,
+            "logcat -d -b main -t " + logCount,
+            "logcat -d -b all -t " + logCount
+        };
+        for (String commandText : commands) {
+            MiraCommandResult logs = MiraProcessRunner.run(Arrays.asList("/system/bin/sh", "-c", commandText), PROC_AUDIT_LOGCAT_TIMEOUT_MS);
+            output.append("\n## ").append(commandText).append(" exit=").append(logs.exitCode).append(" ##\n");
+            String text = logs.stdout;
+            if (text.length() > PROC_AUDIT_MAX_LOG_BYTES) {
+                text = text.substring(text.length() - PROC_AUDIT_MAX_LOG_BYTES);
+            }
+            String[] lines = text.split("\\n");
+            for (String line : lines) {
+                if (!isProcAuditLine(line)) continue;
+                filteredLines++;
+                if (!emitted.add(line)) continue;
+                emittedLines++;
+                output.append("PROC-AUDIT: ").append(line).append('\n');
+            }
+        }
+        return new int[] { filteredLines, emittedLines };
+    }
+
+    private static String triggerAuditForPid(int pid, byte[] buffer) {
+        StringBuilder contexts = null;
+        String path = "/proc/" + pid;
+        try {
+            Os.stat(path);
+        } catch (ErrnoException ignored) {
+        }
+        String statusPath = path + "/status";
+        try (FileInputStream input = new FileInputStream(statusPath)) {
+            input.read(buffer);
+        } catch (Throwable ignored) {
+        }
+        try {
+            contexts = appendXattrContext(contexts, path);
+        } catch (ErrnoException ignored) {
+        }
+        try {
+            Os.stat(statusPath);
+        } catch (ErrnoException ignored) {
+        }
+        try {
+            contexts = appendXattrContext(contexts, statusPath);
+        } catch (ErrnoException ignored) {
+        }
+        return contexts == null ? "" : contexts.toString();
+    }
+
+    private static StringBuilder appendXattrContext(StringBuilder contexts, String path) throws ErrnoException {
+        byte[] raw = Os.getxattr(path, "security.selinux");
+        if (raw == null || raw.length == 0) return contexts;
+        String value = new String(raw, StandardCharsets.UTF_8).replace("\u0000", "").trim();
+        if (value.isEmpty()) return contexts;
+        if (contexts == null) contexts = new StringBuilder();
+        if (contexts.length() > 0) contexts.append(' ');
+        contexts.append(path).append('=').append(value);
+        return contexts;
+    }
+
+    private static boolean isProcAuditLine(String line) {
+        if (line == null || line.isEmpty()) return false;
+        String lower = line.toLowerCase(Locale.ROOT);
+        return (lower.contains("audit") || lower.contains("avc")) &&
+            (lower.contains("dev=\"proc\"") || lower.contains("path=\"/proc/"));
+    }
+
+    private static String readSelfContext() {
+        byte[] buffer = new byte[256];
+        try (FileInputStream input = new FileInputStream("/proc/self/attr/current")) {
+            int read = input.read(buffer);
+            if (read <= 0) return "unknown";
+            return new String(buffer, 0, read, StandardCharsets.UTF_8).replace("\u0000", "").trim();
+        } catch (Throwable ignored) {
+            return "unknown";
+        }
+    }
+
+    private static int intArg(List<String> argv, String name, int fallback, int min, int max) {
+        for (int i = 0; i < argv.size() - 1; i++) {
+            if (!name.equals(argv.get(i))) continue;
+            try {
+                int value = Integer.parseInt(argv.get(i + 1));
+                return Math.max(min, Math.min(max, value));
+            } catch (NumberFormatException ignored) {
+                return fallback;
+            }
+        }
+        return fallback;
     }
 
     private static String normalizeNamespace(String namespace) {

@@ -630,12 +630,16 @@ def build_logcat_args(body: dict[str, Any]) -> tuple[list[str], str | None]:
     count = int_field(body, "count", 1, 5000)
     if count is None:
         return [], "invalid logcat count"
+    buffer_name = str(body.get("buffer") or "all").strip().lower()
+    allowed_buffers = {"all", "main", "system", "events", "radio", "crash", "kernel"}
+    if buffer_name not in allowed_buffers:
+        return [], "invalid logcat buffer"
     tag = str(body.get("tag") or "").strip()
     level = normalize_logcat_level(str(body.get("level") or "").strip())
     if body.get("level") not in (None, "") and level is None:
         return [], "invalid logcat level"
 
-    args: list[str] = ["-d", "-t", str(count), "-v", "time"]
+    args: list[str] = ["-d", "-b", buffer_name, "-t", str(count), "-v", "time"]
     if tag:
         if level:
             args.append(f"{tag}:{level}")
@@ -683,6 +687,71 @@ async def api_device_logcat(state: RelayState, body: dict[str, Any]) -> bytes:
             "installId": response.get("installId", install_id),
             "requestId": response.get("requestId", request_id),
             "command": response.get("command", "mira-logcat"),
+            "exitCode": response.get("exitCode", 1),
+            "stdout": response.get("stdout", ""),
+            "stderr": response.get("stderr", ""),
+            "error": response.get("error", ""),
+        },
+    )
+
+
+async def api_device_proc_audit(state: RelayState, body: dict[str, Any]) -> bytes:
+    install_id = str(body.get("installId") or "").strip()
+    if not install_id:
+        return json_response("400 Bad Request", {"error": "missing installId"})
+    max_pid = int_field(body, "maxPid", 1, 100000)
+    if max_pid is None:
+        max_pid = 10000
+    start_pid = int_field(body, "startPid", 1, 100000)
+    if start_pid is None:
+        start_pid = 1
+    if start_pid > max_pid:
+        start_pid = max_pid
+    count = int_field(body, "count", 1, 5000)
+    if count is None:
+        count = 5000
+    chunk_size = int_field(body, "chunkSize", 1, 5000)
+    if chunk_size is None:
+        chunk_size = 500
+    request_timeout = int_field(body, "timeoutMs", 1000, 90000)
+    if request_timeout is None:
+        request_timeout = 70000
+    request_id = uuid.uuid4().hex
+    payload = {
+        "type": "device.command",
+        "protocol": PROTOCOL_VERSION,
+        "installId": install_id,
+        "requestId": request_id,
+        "command": "mira-proc-audit",
+        "arguments": [
+            "--start-pid",
+            str(start_pid),
+            "--max-pid",
+            str(max_pid),
+            "--count",
+            str(count),
+            "--chunk-size",
+            str(chunk_size),
+        ],
+        "timeoutMs": request_timeout,
+    }
+    request_timeout_seconds = request_timeout / 1000 + 5.0
+    ok, send_error, response = await send_control_request(state, install_id, payload, request_timeout_seconds)
+    if not ok:
+        if send_error == "device not found":
+            return json_response("404 Not Found", {"error": send_error})
+        if "not connected" in send_error:
+            return json_response("409 Conflict", {"error": send_error})
+        if send_error.startswith("device control request timeout"):
+            return json_response("504 Gateway Timeout", {"error": send_error})
+        return json_response("502 Bad Gateway", {"error": send_error})
+    return json_response(
+        "200 OK",
+        {
+            "ok": bool(response.get("ok")),
+            "installId": response.get("installId", install_id),
+            "requestId": response.get("requestId", request_id),
+            "command": response.get("command", "mira-proc-audit"),
             "exitCode": response.get("exitCode", 1),
             "stdout": response.get("stdout", ""),
             "stderr": response.get("stderr", ""),
@@ -1484,6 +1553,8 @@ async def handle_client(state: RelayState, reader: asyncio.StreamReader, writer:
             writer.write(await api_browser_log(parse_json_body(body)))
         elif path == "/api/device/logcat" and method.upper() == "POST":
             writer.write(await api_device_logcat(state, parse_json_body(body)))
+        elif path == "/api/device/proc-audit" and method.upper() == "POST":
+            writer.write(await api_device_proc_audit(state, parse_json_body(body)))
         elif path == "/api/open" and method.upper() == "POST":
             writer.write(await api_open(state, parse_json_body(body)))
         elif path == "/api/close" and method.upper() == "POST":
