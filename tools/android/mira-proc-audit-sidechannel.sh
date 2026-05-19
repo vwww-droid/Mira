@@ -1,14 +1,14 @@
-# Mira Android proc audit side-channel(进程审计侧信道)探测片段.
+# Mira Android proc audit side-channel probe.
 #
-# 在 Mira PTY(伪终端)中的用法:
-#   1. 把整个文件内容粘贴给 mira_run_command 执行.
-#   2. 或者先推送到设备后用 source(在当前 shell 中加载执行)方式运行:
+# Usage inside a Mira PTY:
+#   1. Paste this file content into mira_run_command.
+#   2. Or write it to the device and source it in the current shell:
 #      . /data/data/com.vwww.mira/cache/mira-proc-audit-sidechannel.sh
 #
-# 不要用 "sh mira-proc-audit-sidechannel.sh" 运行这个侧信道探测.
-# 这个探测依赖当前 Mira PTY shell(命令解释器)进程触碰 /proc/<pid>.
+# Do not run this probe with "sh mira-proc-audit-sidechannel.sh".
+# The signal depends on the current Mira PTY shell process touching /proc/<pid>.
 #
-# 可调参数:
+# Tunables:
 #   START=1 END=10000 CHUNK=50 STEP=50 WAIT_SEC=1 COOLDOWN_SEC=2 LOG_TAIL=1000
 #   MATCH='tcontext=u:r:magisk:s0|tcontext=u:r:su:s0|tcontext=u:r:magiskd:s0'
 #   HIT_FILE=/data/data/com.vwww.mira/cache/audit_sidechannel_hit.txt

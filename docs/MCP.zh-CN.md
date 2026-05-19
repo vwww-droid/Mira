@@ -316,21 +316,21 @@ codex -a never exec \
   '这是一个安装了 Magisk 的手机。你现在位于第三方 app 权限中的 shell, 可以使用 busybox。请自己判断如何分析, 找到风险点, 然后告诉我该怎么做。'
 ```
 
-## Android audit 侧信道脚本
+## Android audit side-channel script
 
-Mira 的 Android 终端可以作为通用侧信道执行环境, 但 Magisk 检测逻辑不应固化进 MCP tool(工具)本身。推荐把检测策略写成 shell 片段, 通过 `mira_run_command` 注入当前 PTY 执行。
+Mira Android terminal can be used as a generic side-channel execution surface. Magisk detection logic should stay in generated shell scripts, not in MCP tools.
 
-已沉淀的通用脚本和 case(案例)记录见:
+Reusable script and case record:
 
 1. `tools/android/mira-proc-audit-sidechannel.sh`
 2. `knowledge/cases/2026/2026-05-19-android-proc-audit-magisk-sidechannel.md`
 
-关键约束:
+Key constraints:
 
-1. 使用 `[ -d "/proc/$pid" ]` 触发 SELinux audit, 避免每个 PID fork 外部 `stat`.
-2. 每个扫描窗口前清空 logcat, 每个窗口后只判断当前窗口日志.
-3. 默认 `CHUNK=50`, 不稳定时降到 `CHUNK=10` 或使用重叠 `STEP=25`.
-4. 不要把 `sh script.sh` 和当前 PTY 交互 shell 视为等价执行环境.
+1. Use `[ -d "/proc/$pid" ]` to trigger SELinux audit.
+2. Clear logcat before each scan window and only judge current-window logs.
+3. Default to `CHUNK=50`; fallback to `CHUNK=10` or overlapping `STEP=25` when unstable.
+4. Do not treat `sh script.sh` as equivalent to the current Mira PTY shell.
 
 ## 设计边界
 
