@@ -32,17 +32,7 @@ Mobile runtime detection workbench for iOS and Android.
 
 ## Research Updates
 
-Mira is developed in public and updated across multiple channels.
-
-Different platforms carry different parts of the work:
-
-- GitHub for the main project record
-- Articles for full case write-ups
-- Case record: [Android emulator proc audit side-channel exposes qemu SELinux context](./knowledge/cases/en/2026/2026-05-20-android-emulator-proc-audit-sidechannel.md)
-- Community posts for focused technical sharing
-- Short updates for demos, progress, and smaller discoveries
-
-> Next updates will resume after the early May 2026 holiday break. Happy International Workers' Day to everyone celebrating.
+- [260520] [Android emulator proc audit side-channel exposes qemu SELinux context](./knowledge/cases/en/2026/2026-05-20-android-emulator-proc-audit-sidechannel.md)
 
 ## Features
 

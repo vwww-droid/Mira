@@ -32,17 +32,7 @@
 
 ## Research Updates
 
-Mira 会以公开方式持续更新, 并把不同形态的内容分发到不同平台.
-
-不同平台分别承载不同部分的工作:
-
-- GitHub 作为项目主记录地
-- 文章用于完整案例和长篇分析
-- 案例记录: [Android 模拟器 proc audit 侧信道暴露 qemu SELinux 上下文](./knowledge/cases/zh/2026/2026-05-20-android-emulator-proc-audit-sidechannel.md)
-- 社区帖子用于更聚焦的技术分享
-- 短更新用于 demo, 进展和小型发现
-
-> 等我过完 2026 年 5 月初这轮劳动节假期后, 就开始继续更新. 祝大家 51 劳动节快乐, 也祝所有正在过 International Workers' Day 的朋友节日开心.
+- [260520] [Android 模拟器 proc audit 侧信道暴露 qemu SELinux 上下文](./knowledge/cases/zh/2026/2026-05-20-android-emulator-proc-audit-sidechannel.md)
 
 ## Features
 
