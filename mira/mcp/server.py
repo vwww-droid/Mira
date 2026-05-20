@@ -478,6 +478,11 @@ class MiraMcpServer:
                         "cols": {"type": "integer", "default": 120},
                         "rows": {"type": "integer", "default": 36},
                         "closeAfter": {"type": "boolean", "default": False},
+                        "reuseExisting": {
+                            "type": "boolean",
+                            "default": True,
+                            "description": "Attach to an already-active relay session instead of closing UI-owned sessions. Defaults to true so MCP output remains visible in the console.",
+                        },
                     },
                     "required": ["command"],
                 },
@@ -665,12 +670,17 @@ class MiraMcpServer:
         if not command.strip():
             raise ToolError("command is required")
         timeout = float(arguments.get("timeoutSeconds") or 10.0)
-        session, opened = self.ensure_session(arguments)
+        session, opened, reused_shared = self.ensure_command_session(arguments)
         result = self.execute_command(session, command, timeout)
         result["openedSession"] = opened
+        result["reusedSharedSession"] = reused_shared
         if bool(arguments.get("closeAfter")):
-            self.tool_close_terminal({"sessionId": session.session_id})
-            result["closed"] = True
+            if reused_shared:
+                result["closed"] = False
+                result["closeSkippedReason"] = "reused shared relay session"
+            else:
+                self.tool_close_terminal({"sessionId": session.session_id})
+                result["closed"] = True
         return result
 
     def tool_collect_snapshot(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -901,8 +911,17 @@ class MiraMcpServer:
         return str(device.get("platform") or "").strip().lower()
 
     def ensure_session(self, arguments: dict[str, Any]) -> tuple[TerminalSession, bool]:
+        session, opened, _ = self.ensure_command_session(arguments, default_reuse_existing=False)
+        return session, opened
+
+    def ensure_command_session(
+        self,
+        arguments: dict[str, Any],
+        default_reuse_existing: bool = True,
+    ) -> tuple[TerminalSession, bool, bool]:
         session_id = str(arguments.get("sessionId") or "")
         opened = False
+        reused_shared = False
         if not session_id:
             install_id = str(arguments.get("installId") or "")
             if not install_id:
@@ -913,11 +932,15 @@ class MiraMcpServer:
             if install_id:
                 for existing in self.sessions.values():
                     if existing.install_id == install_id and existing.active:
-                        return existing, False
-            opened_data = self.tool_open_terminal(arguments)
+                        return existing, False, False
+            open_args = dict(arguments)
+            if "reuseExisting" not in open_args:
+                open_args["reuseExisting"] = default_reuse_existing
+            opened_data = self.tool_open_terminal(open_args)
             session_id = str(opened_data["sessionId"])
             opened = True
-        return self.get_session(session_id), opened
+            reused_shared = bool(opened_data.get("reusedSession"))
+        return self.get_session(session_id), opened, reused_shared
 
     def execute_command(self, session: TerminalSession, command: str, timeout: float) -> dict[str, Any]:
         session.wait_until_active(max(5.0, min(timeout, 20.0)))

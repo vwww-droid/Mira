@@ -1,4 +1,5 @@
 # Mira Android emulator audit side-channel probe.
+# Upstream: https://github.com/vwww-droid/Mira/blob/main/tools/android/mira-emulator-audit-sidechannel.sh
 #
 # Usage inside a Mira PTY:
 #   1. Paste this file content into mira_run_command.
@@ -7,9 +8,14 @@
 #
 # Do not run this probe with "sh mira-emulator-audit-sidechannel.sh".
 # The signal depends on the current Mira PTY shell process touching /proc/<pid>.
+# Keep the trigger equivalent to the proven minimal probe:
+#   [ -d /proc/<pid> ]
+# Do not replace it with cat/readlink/timeout-heavy probing unless a new case
+# proves the behavior is equivalent.
 #
 # Tunables:
 #   START=1000 END=2500 CHUNK=10 STEP=10 WAIT_SEC=1 LOG_TAIL=400
+#   For a single known qemu-props PID, use START=<pid> END=<pid> CHUNK=1 STEP=1.
 #   MATCH='tcontext=u:r:qemu_props:s0|tcontext=u:r:[^ ]*(goldfish|ranchu|qemu)[^ ]*:s0'
 #   HIT_FILE=/data/data/com.vwww.mira/cache/emulator_audit_sidechannel_hit.txt
 

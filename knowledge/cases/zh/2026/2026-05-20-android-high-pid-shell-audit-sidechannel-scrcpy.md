@@ -72,15 +72,11 @@ avc: denied { getattr } for comm="sh" path="/proc/27864" ... scontext=u:r:untrus
 
 Case script artifact(案例脚本快照):
 
-```text
-knowledge/cases/artifacts/2026/2026-05-20-android-high-pid-shell-audit-sidechannel-scrcpy.sh
-```
+[2026-05-20-android-high-pid-shell-audit-sidechannel-scrcpy.sh](https://github.com/vwww-droid/Mira/blob/main/knowledge/cases/artifacts/2026/2026-05-20-android-high-pid-shell-audit-sidechannel-scrcpy.sh)
 
 Maintained reusable copy(维护版可复用脚本):
 
-```text
-tools/android/mira-high-pid-shell-audit-sidechannel.sh
-```
+[mira-high-pid-shell-audit-sidechannel.sh](https://github.com/vwww-droid/Mira/blob/main/tools/android/mira-high-pid-shell-audit-sidechannel.sh)
 
 推荐执行方式:
 

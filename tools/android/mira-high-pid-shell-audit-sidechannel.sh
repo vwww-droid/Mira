@@ -1,4 +1,5 @@
 # Mira Android high-PID shell audit side-channel probe.
+# Upstream: https://github.com/vwww-droid/Mira/blob/main/tools/android/mira-high-pid-shell-audit-sidechannel.sh
 #
 # Usage inside a Mira PTY:
 #   1. Paste this file content into mira_run_command.

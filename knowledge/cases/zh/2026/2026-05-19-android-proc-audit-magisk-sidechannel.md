@@ -16,7 +16,7 @@ Android app sandbox shell 中对 `/proc/<pid>` 元数据的访问行为, 作为 
 
 ## 4. 已确认主题
 
-未确认. 当前仅作为单个 case 记录. 只有在后续积累更多相关 case 后, 才创建 `knowledge/topics/android-proc-audit-sidechannel-root-detection/`.
+未确认. 当前仅作为单个 case 记录. 只有在后续积累更多相关 case 后, 才创建 [knowledge/topics/android-proc-audit-sidechannel-root-detection](https://github.com/vwww-droid/Mira/tree/main/knowledge/topics/android-proc-audit-sidechannel-root-detection/).
 
 ## 5. 异常味道
 
@@ -38,21 +38,17 @@ Android app sandbox shell 中对 `/proc/<pid>` 元数据的访问行为, 作为 
 2. 在当前 shell 中运行 `[ -d /proc/1030 ]`, 再用 `/system/bin/logcat -d -b all` 搜索 `tcontext=u:r:magisk:s0`.
 3. 对比 `sh script.sh`, `source script`, inline loop, 外部 `/system/bin/stat`, shell builtin 等触发方式.
 4. 对比 `CHUNK=10`, `CHUNK=50`, `CHUNK=500` 和不同 wait duration.
-5. 将可复用脚本落到 `tools/android/mira-proc-audit-sidechannel.sh`, 并将 case artifact 放入 `knowledge/cases/artifacts/2026/`.
+5. 将可复用脚本落到 [mira-proc-audit-sidechannel.sh](https://github.com/vwww-droid/Mira/blob/main/tools/android/mira-proc-audit-sidechannel.sh), 并将 case artifact 放入 [knowledge/cases/artifacts/2026](https://github.com/vwww-droid/Mira/tree/main/knowledge/cases/artifacts/2026/).
 
 ## 8. 脚本产物与执行模型
 
 Case script artifact:
 
-```text
-knowledge/cases/artifacts/2026/2026-05-19-android-proc-audit-magisk-sidechannel.sh
-```
+[2026-05-19-android-proc-audit-magisk-sidechannel.sh](https://github.com/vwww-droid/Mira/blob/main/knowledge/cases/artifacts/2026/2026-05-19-android-proc-audit-magisk-sidechannel.sh)
 
 Maintained reusable copy:
 
-```text
-tools/android/mira-proc-audit-sidechannel.sh
-```
+[mira-proc-audit-sidechannel.sh](https://github.com/vwww-droid/Mira/blob/main/tools/android/mira-proc-audit-sidechannel.sh)
 
 推荐执行方式:
 
@@ -84,9 +80,7 @@ MATCH='tcontext=u:r:magisk:s0|tcontext=u:r:su:s0|tcontext=u:r:magiskd:s0'
 
 已验证脚本快照作为独立 `.sh` 文件保存在 case artifacts 目录, 便于直接复现:
 
-```text
-knowledge/cases/artifacts/2026/2026-05-19-android-proc-audit-magisk-sidechannel.sh
-```
+[2026-05-19-android-proc-audit-magisk-sidechannel.sh](https://github.com/vwww-droid/Mira/blob/main/knowledge/cases/artifacts/2026/2026-05-19-android-proc-audit-magisk-sidechannel.sh)
 
 ## 10. 结果
 
