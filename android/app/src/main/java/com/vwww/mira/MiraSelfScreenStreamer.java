@@ -19,9 +19,11 @@ import java.io.Closeable;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -36,6 +38,7 @@ public final class MiraSelfScreenStreamer implements Closeable {
     private static final int FRAME_RATE = 10;
     private static final int BITRATE = 220_000;
     private static final int I_FRAME_INTERVAL_SECONDS = 1;
+    private static final long ENCODER_CREATE_TIMEOUT_MS = 3000;
     private static final long ENCODER_CONFIGURE_TIMEOUT_MS = 3000;
     private static final long FIRST_FRAME_TIMEOUT_MS = 3000;
     private static final String PREFS_NAME = "mira-screen-encoder";
@@ -121,7 +124,13 @@ public final class MiraSelfScreenStreamer implements Closeable {
         activeProfile = null;
         List<VideoProfile> profiles = buildVideoProfiles(rootSize.width, rootSize.height);
         Throwable lastFailure = null;
+        Set<String> skippedEncoders = new HashSet<>();
         for (VideoProfile profile : profiles) {
+            String encoderKey = profile.encoderName == null ? "" : profile.encoderName;
+            if (skippedEncoders.contains(encoderKey)) {
+                Log.i(TAG, "skipping AVC encoder candidate after create timeout " + profile.describe());
+                continue;
+            }
             closeEncoderOnly();
             codecConfig = null;
             try {
@@ -139,6 +148,9 @@ public final class MiraSelfScreenStreamer implements Closeable {
             } catch (Throwable throwable) {
                 lastFailure = throwable;
                 Log.w(TAG, "AVC encoder candidate failed " + profile.describe(), throwable);
+                if (throwable instanceof CodecCreateTimeoutException) {
+                    skippedEncoders.add(encoderKey);
+                }
                 sleepQuietly(150);
             }
         }
@@ -163,9 +175,7 @@ public final class MiraSelfScreenStreamer implements Closeable {
         if (Build.VERSION.SDK_INT >= 23) {
             format.setInteger(MediaFormat.KEY_PRIORITY, 0);
         }
-        MediaCodec codec = profile.encoderName == null || profile.encoderName.isEmpty()
-            ? MediaCodec.createEncoderByType(MIME_AVC)
-            : MediaCodec.createByCodecName(profile.encoderName);
+        MediaCodec codec = createCodecWithTimeout(profile);
         try {
             Log.i(TAG, "AVC codec created " + profile.describe() + " format=" + format);
             Log.i(TAG, "AVC codec configure begin " + profile.describe());
@@ -179,6 +189,64 @@ public final class MiraSelfScreenStreamer implements Closeable {
             }
             throw throwable;
         }
+    }
+
+    private MediaCodec createCodecWithTimeout(VideoProfile profile) throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<MediaCodec> result = new AtomicReference<>();
+        AtomicReference<Throwable> error = new AtomicReference<>();
+        AtomicBoolean abandoned = new AtomicBoolean(false);
+        Thread createThread = new Thread(() -> {
+            MediaCodec codec = null;
+            try {
+                codec = profile.encoderName == null || profile.encoderName.isEmpty()
+                    ? MediaCodec.createEncoderByType(MIME_AVC)
+                    : MediaCodec.createByCodecName(profile.encoderName);
+                if (abandoned.get()) {
+                    try {
+                        codec.release();
+                    } catch (Throwable ignored) {
+                    }
+                } else {
+                    result.set(codec);
+                    codec = null;
+                }
+            } catch (Throwable throwable) {
+                error.set(throwable);
+            } finally {
+                latch.countDown();
+                if (codec != null) {
+                    try {
+                        codec.release();
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+        }, "MiraAvcCreate");
+        createThread.setDaemon(true);
+        createThread.start();
+
+        boolean completed;
+        try {
+            completed = latch.await(ENCODER_CREATE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw interrupted;
+        }
+        if (!completed) {
+            abandoned.set(true);
+            Log.w(TAG, "AVC codec create timeout " + profile.describe() + " timeoutMs=" + ENCODER_CREATE_TIMEOUT_MS);
+            throw new CodecCreateTimeoutException(profile.encoderName);
+        }
+        Throwable throwable = error.get();
+        if (throwable != null) {
+            if (throwable instanceof Exception) throw (Exception) throwable;
+            if (throwable instanceof Error) throw (Error) throwable;
+            throw new RuntimeException(throwable);
+        }
+        MediaCodec codec = result.get();
+        if (codec == null) throw new IllegalStateException("AVC codec create returned null");
+        return codec;
     }
 
     private void configureCodecWithTimeout(MediaCodec codec, MediaFormat format, VideoProfile profile) throws Exception {
@@ -463,9 +531,8 @@ public final class MiraSelfScreenStreamer implements Closeable {
                 addCodecProfiles(profiles, codecInfo, sourceWidth, sourceHeight);
             }
         } catch (Throwable throwable) {
-            Log.w(TAG, "Unable to inspect AVC encoder capabilities, using fallback profiles", throwable);
+            Log.w(TAG, "Unable to inspect AVC encoder capabilities", throwable);
         }
-        addFallbackProfiles(profiles, sourceWidth, sourceHeight);
         return new ArrayList<>(profiles.values());
     }
 
@@ -503,22 +570,6 @@ public final class MiraSelfScreenStreamer implements Closeable {
             }
         } catch (Throwable throwable) {
             Log.w(TAG, "Unable to build AVC profiles for " + codecInfo.getName(), throwable);
-        }
-    }
-
-    private void addFallbackProfiles(LinkedHashMap<String, VideoProfile> profiles, int sourceWidth, int sourceHeight) {
-        int[] targetWidths = new int[] {MAX_WIDTH, 512, 480, 360};
-        int[] targetFps = new int[] {FRAME_RATE, 8};
-        boolean[] baselineModes = new boolean[] {true, false};
-        for (int targetWidth : targetWidths) {
-            int width = alignDown(Math.min(targetWidth, Math.max(VIDEO_SIZE_ALIGNMENT, sourceWidth)), VIDEO_SIZE_ALIGNMENT);
-            int height = alignDown(Math.round(width * (sourceHeight / (float) Math.max(1, sourceWidth))), VIDEO_SIZE_ALIGNMENT);
-            for (int fps : targetFps) {
-                int bitrate = fps >= FRAME_RATE ? BITRATE : Math.max(120_000, BITRATE * fps / FRAME_RATE);
-                for (boolean forceBaseline : baselineModes) {
-                    addProfile(profiles, new VideoProfile("", width, height, fps, bitrate, forceBaseline, "fallback"));
-                }
-            }
         }
     }
 
@@ -708,6 +759,12 @@ public final class MiraSelfScreenStreamer implements Closeable {
                 + " bitrate=" + bitrate
                 + " baseline=" + forceBaseline
                 + " source=" + source;
+        }
+    }
+
+    private static final class CodecCreateTimeoutException extends Exception {
+        CodecCreateTimeoutException(String encoderName) {
+            super("AVC codec create timeout for " + (encoderName == null || encoderName.isEmpty() ? "default encoder" : encoderName));
         }
     }
 }
