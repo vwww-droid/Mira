@@ -38,6 +38,7 @@ Different platforms carry different parts of the work:
 
 - GitHub for the main project record
 - Articles for full case write-ups
+- Case record: [Android emulator proc audit side-channel exposes qemu SELinux context](./knowledge/cases/en/2026/2026-05-20-android-emulator-proc-audit-sidechannel.md)
 - Community posts for focused technical sharing
 - Short updates for demos, progress, and smaller discoveries
 
