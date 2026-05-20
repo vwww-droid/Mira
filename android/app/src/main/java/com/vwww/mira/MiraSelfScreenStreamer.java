@@ -1,11 +1,14 @@
 package com.vwww.mira;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
+import android.media.MediaCodecList;
 import android.media.MediaFormat;
 import android.os.Build;
 import android.os.SystemClock;
+import android.util.Range;
 import android.util.Log;
 import android.view.Surface;
 
@@ -15,18 +18,27 @@ import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.net.URI;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class MiraSelfScreenStreamer implements Closeable {
     private static final String TAG = "MiraScreenStreamer";
     private static final String MIME_AVC = "video/avc";
     private static final String CODEC_AVC_BASELINE = "avc1.42E01E";
     private static final int MAX_WIDTH = 540;
+    private static final int VIDEO_SIZE_ALIGNMENT = 16;
     private static final int FRAME_RATE = 10;
     private static final int BITRATE = 220_000;
     private static final int I_FRAME_INTERVAL_SECONDS = 1;
-    private static final long FRAME_PERIOD_MS = 1000L / FRAME_RATE;
+    private static final long ENCODER_CONFIGURE_TIMEOUT_MS = 3000;
+    private static final long FIRST_FRAME_TIMEOUT_MS = 3000;
+    private static final String PREFS_NAME = "mira-screen-encoder";
     private static final int PACKET_HEADER_BYTES = 20;
     private static final byte FLAG_KEY_FRAME = 1;
 
@@ -44,6 +56,7 @@ public final class MiraSelfScreenStreamer implements Closeable {
     private long sequence;
     private byte[] codecConfig;
     private String codecString = CODEC_AVC_BASELINE;
+    private VideoProfile activeProfile;
 
     public MiraSelfScreenStreamer(Context context, MiraIdentity identity, String deviceName, String relayUrl) {
         this.context = context.getApplicationContext();
@@ -73,14 +86,13 @@ public final class MiraSelfScreenStreamer implements Closeable {
                     sleepQuietly(500);
                     continue;
                 }
-                VideoSize videoSize = chooseVideoSize(rootSize.width, rootSize.height);
-                configureEncoder(videoSize.width, videoSize.height);
+                VideoProfile profile = configureEncoder(rootSize);
                 if (!running.get()) break;
                 MiraWebSocketConnection connected = MiraWebSocketConnection.connect(screenDeviceWsUrl(relayUrl));
                 websocket = connected;
-                connected.sendJson(screenInfo(videoSize, rootSize));
-                Log.i(TAG, "screen video info sent codec=" + codecString + " size=" + videoSize.width + "x" + videoSize.height + " source=" + rootSize.width + "x" + rootSize.height);
-                encodeLoop(connected, videoSize, rootSize);
+                connected.sendJson(screenInfo(profile, rootSize));
+                Log.i(TAG, "screen video info sent codec=" + codecString + " profile=" + profile.describe() + " source=" + rootSize.width + "x" + rootSize.height);
+                encodeLoop(connected, profile, rootSize);
             } catch (Throwable throwable) {
                 if (running.get()) {
                     logFailure("h264 screen stream failed", throwable);
@@ -103,48 +115,62 @@ public final class MiraSelfScreenStreamer implements Closeable {
         return rootSize;
     }
 
-    private void configureEncoder(int width, int height) throws Exception {
+    private VideoProfile configureEncoder(MiraSelfScreenCapture.RootSize rootSize) throws Exception {
         closeEncoderOnly();
         codecConfig = null;
-        MediaCodec nextEncoder = null;
-        try {
-            Log.i(TAG, "configuring AVC encoder size=" + width + "x" + height + " bitrate=" + BITRATE + " fps=" + FRAME_RATE);
-            nextEncoder = createEncoder(width, height, true);
-        } catch (Throwable first) {
-            if (nextEncoder != null) nextEncoder.release();
-            Log.w(TAG, "Baseline AVC encoder configure failed, retrying default profile", first);
-            nextEncoder = createEncoder(width, height, false);
+        activeProfile = null;
+        List<VideoProfile> profiles = buildVideoProfiles(rootSize.width, rootSize.height);
+        Throwable lastFailure = null;
+        for (VideoProfile profile : profiles) {
+            closeEncoderOnly();
+            codecConfig = null;
+            try {
+                Log.i(TAG, "configuring AVC encoder candidate " + profile.describe());
+                MediaCodec nextEncoder = createEncoder(profile);
+                encoder = nextEncoder;
+                Log.i(TAG, "creating AVC input surface " + profile.describe());
+                inputSurface = nextEncoder.createInputSurface();
+                Log.i(TAG, "starting AVC encoder " + profile.describe());
+                nextEncoder.start();
+                activeProfile = profile;
+                sequence = 0;
+                Log.i(TAG, "AVC encoder started " + profile.describe());
+                return profile;
+            } catch (Throwable throwable) {
+                lastFailure = throwable;
+                Log.w(TAG, "AVC encoder candidate failed " + profile.describe(), throwable);
+                sleepQuietly(150);
+            }
         }
-        encoder = nextEncoder;
-        Log.i(TAG, "creating AVC input surface");
-        inputSurface = nextEncoder.createInputSurface();
-        Log.i(TAG, "starting AVC encoder");
-        nextEncoder.start();
-        Log.i(TAG, "AVC encoder started size=" + width + "x" + height);
+        if (lastFailure instanceof Exception) throw (Exception) lastFailure;
+        if (lastFailure instanceof Error) throw (Error) lastFailure;
+        throw new IllegalStateException("No usable AVC encoder profile");
     }
 
-    private MediaCodec createEncoder(int width, int height, boolean forceBaseline) throws Exception {
-        MediaFormat format = MediaFormat.createVideoFormat(MIME_AVC, width, height);
+    private MediaCodec createEncoder(VideoProfile profile) throws Exception {
+        MediaFormat format = MediaFormat.createVideoFormat(MIME_AVC, profile.width, profile.height);
         format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
-        format.setInteger(MediaFormat.KEY_BIT_RATE, BITRATE);
-        format.setInteger(MediaFormat.KEY_FRAME_RATE, FRAME_RATE);
+        format.setInteger(MediaFormat.KEY_BIT_RATE, profile.bitrate);
+        format.setInteger(MediaFormat.KEY_FRAME_RATE, profile.fps);
         format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL_SECONDS);
         if (Build.VERSION.SDK_INT >= 21) {
             format.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR);
         }
-        if (forceBaseline && Build.VERSION.SDK_INT >= 21) {
+        if (profile.forceBaseline && Build.VERSION.SDK_INT >= 21) {
             format.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline);
             format.setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel31);
         }
         if (Build.VERSION.SDK_INT >= 23) {
             format.setInteger(MediaFormat.KEY_PRIORITY, 0);
         }
-        MediaCodec codec = MediaCodec.createEncoderByType(MIME_AVC);
+        MediaCodec codec = profile.encoderName == null || profile.encoderName.isEmpty()
+            ? MediaCodec.createEncoderByType(MIME_AVC)
+            : MediaCodec.createByCodecName(profile.encoderName);
         try {
-            Log.i(TAG, "AVC codec created forceBaseline=" + forceBaseline + " format=" + format);
-            Log.i(TAG, "AVC codec configure begin forceBaseline=" + forceBaseline);
-            codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
-            Log.i(TAG, "AVC codec configure ok forceBaseline=" + forceBaseline);
+            Log.i(TAG, "AVC codec created " + profile.describe() + " format=" + format);
+            Log.i(TAG, "AVC codec configure begin " + profile.describe());
+            configureCodecWithTimeout(codec, format, profile);
+            Log.i(TAG, "AVC codec configure ok " + profile.describe());
             return codec;
         } catch (Throwable throwable) {
             try {
@@ -155,45 +181,92 @@ public final class MiraSelfScreenStreamer implements Closeable {
         }
     }
 
-    private void encodeLoop(MiraWebSocketConnection connected, VideoSize videoSize, MiraSelfScreenCapture.RootSize rootSize) throws Exception {
+    private void configureCodecWithTimeout(MediaCodec codec, MediaFormat format, VideoProfile profile) throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<Throwable> error = new AtomicReference<>();
+        Thread configureThread = new Thread(() -> {
+            try {
+                codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+            } catch (Throwable throwable) {
+                error.set(throwable);
+            } finally {
+                latch.countDown();
+            }
+        }, "MiraAvcConfigure");
+        configureThread.setDaemon(true);
+        configureThread.start();
+
+        boolean completed;
+        try {
+            completed = latch.await(ENCODER_CONFIGURE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw interrupted;
+        }
+        if (!completed) {
+            Log.w(TAG, "AVC codec configure timeout " + profile.describe() + " timeoutMs=" + ENCODER_CONFIGURE_TIMEOUT_MS);
+            try {
+                codec.release();
+            } catch (Throwable ignored) {
+            }
+            throw new IllegalStateException("AVC codec configure timeout");
+        }
+        Throwable throwable = error.get();
+        if (throwable == null) return;
+        if (throwable instanceof Exception) throw (Exception) throwable;
+        if (throwable instanceof Error) throw (Error) throwable;
+        throw new RuntimeException(throwable);
+    }
+
+    private void encodeLoop(MiraWebSocketConnection connected, VideoProfile profile, MiraSelfScreenCapture.RootSize rootSize) throws Exception {
         MediaCodec currentEncoder = encoder;
         Surface currentSurface = inputSurface;
         if (currentEncoder == null || currentSurface == null) return;
         MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
         long nextFrameAt = SystemClock.uptimeMillis();
+        long startedAt = nextFrameAt;
+        boolean sawFrame = false;
         while (running.get()) {
             long now = SystemClock.uptimeMillis();
             if (now < nextFrameAt) sleepQuietly(nextFrameAt - now);
-            nextFrameAt = Math.max(nextFrameAt + FRAME_PERIOD_MS, SystemClock.uptimeMillis());
+            nextFrameAt = Math.max(nextFrameAt + profile.framePeriodMs(), SystemClock.uptimeMillis());
 
-            MiraSelfScreenCapture.RenderResult render = MiraSelfScreenCapture.getInstance().renderToSurface(currentSurface, videoSize.width, videoSize.height);
+            MiraSelfScreenCapture.RenderResult render = MiraSelfScreenCapture.getInstance().renderToSurface(currentSurface, profile.width, profile.height);
             if (!render.available) {
                 logFailure("screen render unavailable: " + render.error, null);
                 sleepQuietly(250);
                 continue;
             }
-            drainEncoder(currentEncoder, bufferInfo, connected, videoSize, rootSize, false);
+            if (drainEncoder(currentEncoder, bufferInfo, connected, profile, rootSize, false)) {
+                if (!sawFrame) {
+                    sawFrame = true;
+                    rememberSuccessfulProfile(profile);
+                }
+            } else if (!sawFrame && SystemClock.uptimeMillis() - startedAt > FIRST_FRAME_TIMEOUT_MS) {
+                throw new IllegalStateException("AVC encoder produced no frames within " + FIRST_FRAME_TIMEOUT_MS + "ms for " + profile.describe());
+            }
         }
     }
 
-    private void drainEncoder(
+    private boolean drainEncoder(
         MediaCodec currentEncoder,
         MediaCodec.BufferInfo bufferInfo,
         MiraWebSocketConnection connected,
-        VideoSize videoSize,
+        VideoProfile profile,
         MiraSelfScreenCapture.RootSize rootSize,
         boolean endOfStream
     ) throws Exception {
+        boolean sentFrame = false;
         if (endOfStream && Build.VERSION.SDK_INT >= 18) currentEncoder.signalEndOfInputStream();
         while (running.get()) {
             int outputIndex = currentEncoder.dequeueOutputBuffer(bufferInfo, 0);
             if (outputIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
-                break;
+                return sentFrame;
             }
             if (outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                 codecConfig = codecConfigFromFormat(currentEncoder.getOutputFormat());
                 codecString = codecStringFromSps(codecConfig, CODEC_AVC_BASELINE);
-                connected.sendJson(screenInfo(videoSize, rootSize));
+                connected.sendJson(screenInfo(profile, rootSize));
                 continue;
             }
             if (outputIndex < 0) continue;
@@ -206,7 +279,7 @@ public final class MiraSelfScreenStreamer implements Closeable {
             if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
                 codecConfig = toAnnexB(copyBuffer(encodedBuffer, bufferInfo));
                 codecString = codecStringFromSps(codecConfig, codecString);
-                connected.sendJson(screenInfo(videoSize, rootSize));
+                connected.sendJson(screenInfo(profile, rootSize));
                 currentEncoder.releaseOutputBuffer(outputIndex, false);
                 continue;
             }
@@ -216,8 +289,9 @@ public final class MiraSelfScreenStreamer implements Closeable {
                 if (keyFrame && codecConfig != null && codecConfig.length > 0 && findNalUnit(payload, 7) == null) {
                     payload = concat(codecConfig, payload);
                 }
-                byte[] packet = videoPacket(payload, keyFrame);
+                byte[] packet = videoPacket(payload, keyFrame, profile);
                 connected.sendFrame(packet, 0x2);
+                sentFrame = true;
                 if (sequence == 1 || keyFrame) {
                     Log.i(TAG, "screen frame sent seq=" + sequence + " key=" + keyFrame + " bytes=" + payload.length);
                 }
@@ -226,11 +300,12 @@ public final class MiraSelfScreenStreamer implements Closeable {
             currentEncoder.releaseOutputBuffer(outputIndex, false);
             if (ended) break;
         }
+        return sentFrame;
     }
 
-    private byte[] videoPacket(byte[] payload, boolean keyFrame) {
+    private byte[] videoPacket(byte[] payload, boolean keyFrame, VideoProfile profile) {
         long nextSequence = ++sequence;
-        long presentationTimeUs = nextSequence * FRAME_PERIOD_MS * 1000L;
+        long presentationTimeUs = nextSequence * profile.framePeriodMs() * 1000L;
         ByteBuffer packet = ByteBuffer.allocate(PACKET_HEADER_BYTES + payload.length);
         packet.put((byte) 'M');
         packet.put((byte) 'H');
@@ -245,7 +320,7 @@ public final class MiraSelfScreenStreamer implements Closeable {
         return packet.array();
     }
 
-    private JSONObject screenInfo(VideoSize videoSize, MiraSelfScreenCapture.RootSize rootSize) throws Exception {
+    private JSONObject screenInfo(VideoProfile profile, MiraSelfScreenCapture.RootSize rootSize) throws Exception {
         JSONObject json = new JSONObject();
         json.put("type", "screen.video.info");
         json.put("protocol", 1);
@@ -254,13 +329,16 @@ public final class MiraSelfScreenStreamer implements Closeable {
         json.put("codec", codecString);
         json.put("mime", MIME_AVC);
         json.put("format", "annexb");
-        json.put("width", videoSize.width);
-        json.put("height", videoSize.height);
+        json.put("width", profile.width);
+        json.put("height", profile.height);
         json.put("sourceWidth", rootSize.width);
         json.put("sourceHeight", rootSize.height);
-        json.put("fps", FRAME_RATE);
-        json.put("bitrate", BITRATE);
+        json.put("fps", profile.fps);
+        json.put("bitrate", profile.bitrate);
         json.put("maxWidth", MAX_WIDTH);
+        json.put("encoderName", profile.encoderName == null ? "" : profile.encoderName);
+        json.put("profileSource", profile.source);
+        json.put("forceBaseline", profile.forceBaseline);
         return json;
     }
 
@@ -373,17 +451,156 @@ public final class MiraSelfScreenStreamer implements Closeable {
         return result;
     }
 
-    private static VideoSize chooseVideoSize(int sourceWidth, int sourceHeight) {
-        int width = Math.min(MAX_WIDTH, Math.max(2, sourceWidth));
-        int height = Math.max(2, Math.round(width * (sourceHeight / (float) Math.max(1, sourceWidth))));
-        width = even(width);
-        height = even(height);
-        return new VideoSize(width, height);
+    private List<VideoProfile> buildVideoProfiles(int sourceWidth, int sourceHeight) {
+        LinkedHashMap<String, VideoProfile> profiles = new LinkedHashMap<>();
+        VideoProfile cached = readCachedProfile(sourceWidth, sourceHeight);
+        if (cached != null) addProfile(profiles, cached);
+        try {
+            MediaCodecList codecList = new MediaCodecList(MediaCodecList.ALL_CODECS);
+            for (MediaCodecInfo codecInfo : codecList.getCodecInfos()) {
+                if (!codecInfo.isEncoder()) continue;
+                if (!supportsMime(codecInfo, MIME_AVC)) continue;
+                addCodecProfiles(profiles, codecInfo, sourceWidth, sourceHeight);
+            }
+        } catch (Throwable throwable) {
+            Log.w(TAG, "Unable to inspect AVC encoder capabilities, using fallback profiles", throwable);
+        }
+        addFallbackProfiles(profiles, sourceWidth, sourceHeight);
+        return new ArrayList<>(profiles.values());
     }
 
-    private static int even(int value) {
-        int result = Math.max(2, value);
-        return result % 2 == 0 ? result : result - 1;
+    private void addCodecProfiles(
+        LinkedHashMap<String, VideoProfile> profiles,
+        MediaCodecInfo codecInfo,
+        int sourceWidth,
+        int sourceHeight
+    ) {
+        try {
+            MediaCodecInfo.CodecCapabilities capabilities = codecInfo.getCapabilitiesForType(MIME_AVC);
+            MediaCodecInfo.VideoCapabilities video = capabilities.getVideoCapabilities();
+            int widthAlignment = Math.max(VIDEO_SIZE_ALIGNMENT, video.getWidthAlignment());
+            int heightAlignment = Math.max(VIDEO_SIZE_ALIGNMENT, video.getHeightAlignment());
+            Range<Integer> bitrateRange = video.getBitrateRange();
+            int[] targetWidths = new int[] {MAX_WIDTH, 512, 480, 432, 360};
+            int[] targetFps = new int[] {FRAME_RATE, 8};
+            boolean[] baselineModes = new boolean[] {true, false};
+            for (int targetWidth : targetWidths) {
+                int width = alignDown(Math.min(targetWidth, Math.max(widthAlignment, sourceWidth)), widthAlignment);
+                int height = alignDown(Math.round(width * (sourceHeight / (float) Math.max(1, sourceWidth))), heightAlignment);
+                if (width <= 0 || height <= 0 || !video.isSizeSupported(width, height)) continue;
+                for (int fps : targetFps) {
+                    int maxFps = (int) Math.max(1L, Math.round(video.getSupportedFrameRatesFor(width, height).getUpper()));
+                    int clampedFps = clamp(fps, 1, maxFps);
+                    int bitrate = clamp(BITRATE, bitrateRange.getLower(), bitrateRange.getUpper());
+                    for (boolean forceBaseline : baselineModes) {
+                        if (forceBaseline && !supportsAvcProfile(capabilities, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline)) continue;
+                        addProfile(
+                            profiles,
+                            new VideoProfile(codecInfo.getName(), width, height, clampedFps, bitrate, forceBaseline, "capability")
+                        );
+                    }
+                }
+            }
+        } catch (Throwable throwable) {
+            Log.w(TAG, "Unable to build AVC profiles for " + codecInfo.getName(), throwable);
+        }
+    }
+
+    private void addFallbackProfiles(LinkedHashMap<String, VideoProfile> profiles, int sourceWidth, int sourceHeight) {
+        int[] targetWidths = new int[] {MAX_WIDTH, 512, 480, 360};
+        int[] targetFps = new int[] {FRAME_RATE, 8};
+        boolean[] baselineModes = new boolean[] {true, false};
+        for (int targetWidth : targetWidths) {
+            int width = alignDown(Math.min(targetWidth, Math.max(VIDEO_SIZE_ALIGNMENT, sourceWidth)), VIDEO_SIZE_ALIGNMENT);
+            int height = alignDown(Math.round(width * (sourceHeight / (float) Math.max(1, sourceWidth))), VIDEO_SIZE_ALIGNMENT);
+            for (int fps : targetFps) {
+                int bitrate = fps >= FRAME_RATE ? BITRATE : Math.max(120_000, BITRATE * fps / FRAME_RATE);
+                for (boolean forceBaseline : baselineModes) {
+                    addProfile(profiles, new VideoProfile("", width, height, fps, bitrate, forceBaseline, "fallback"));
+                }
+            }
+        }
+    }
+
+    private void addProfile(LinkedHashMap<String, VideoProfile> profiles, VideoProfile profile) {
+        profiles.put(profile.key(), profile);
+    }
+
+    private static boolean supportsMime(MediaCodecInfo codecInfo, String mime) {
+        for (String type : codecInfo.getSupportedTypes()) {
+            if (mime.equalsIgnoreCase(type)) return true;
+        }
+        return false;
+    }
+
+    private static boolean supportsAvcProfile(MediaCodecInfo.CodecCapabilities capabilities, int profile) {
+        if (capabilities == null || capabilities.profileLevels == null || capabilities.profileLevels.length == 0) return true;
+        for (MediaCodecInfo.CodecProfileLevel level : capabilities.profileLevels) {
+            if (level.profile == profile) return true;
+        }
+        return false;
+    }
+
+    private VideoProfile readCachedProfile(int sourceWidth, int sourceHeight) {
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String prefix = deviceCacheKey() + ".";
+            int width = prefs.getInt(prefix + "width", 0);
+            int height = prefs.getInt(prefix + "height", 0);
+            int fps = prefs.getInt(prefix + "fps", 0);
+            int bitrate = prefs.getInt(prefix + "bitrate", 0);
+            if (width <= 0 || height <= 0 || fps <= 0 || bitrate <= 0) return null;
+            if (width > sourceWidth || height > sourceHeight) return null;
+            if (width % VIDEO_SIZE_ALIGNMENT != 0 || height % VIDEO_SIZE_ALIGNMENT != 0) return null;
+            return new VideoProfile(
+                prefs.getString(prefix + "encoderName", ""),
+                width,
+                height,
+                fps,
+                bitrate,
+                prefs.getBoolean(prefix + "forceBaseline", false),
+                "cache"
+            );
+        } catch (Throwable throwable) {
+            Log.w(TAG, "Unable to read cached AVC profile", throwable);
+            return null;
+        }
+    }
+
+    private void rememberSuccessfulProfile(VideoProfile profile) {
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String prefix = deviceCacheKey() + ".";
+            prefs.edit()
+                .putString(prefix + "encoderName", profile.encoderName == null ? "" : profile.encoderName)
+                .putInt(prefix + "width", profile.width)
+                .putInt(prefix + "height", profile.height)
+                .putInt(prefix + "fps", profile.fps)
+                .putInt(prefix + "bitrate", profile.bitrate)
+                .putBoolean(prefix + "forceBaseline", profile.forceBaseline)
+                .apply();
+            Log.i(TAG, "cached AVC profile " + profile.describe());
+        } catch (Throwable throwable) {
+            Log.w(TAG, "Unable to cache AVC profile", throwable);
+        }
+    }
+
+    private static String deviceCacheKey() {
+        return safeKey(Build.MANUFACTURER) + "." + safeKey(Build.MODEL) + ".sdk" + Build.VERSION.SDK_INT;
+    }
+
+    private static String safeKey(String value) {
+        return (value == null ? "unknown" : value).replaceAll("[^A-Za-z0-9_.-]", "_");
+    }
+
+    private static int alignDown(int value, int alignment) {
+        int clamped = Math.max(alignment, value);
+        int aligned = clamped - (clamped % alignment);
+        return Math.max(alignment, aligned);
+    }
+
+    private static int clamp(int value, int lower, int upper) {
+        return Math.max(lower, Math.min(value, upper));
     }
 
     private String screenDeviceWsUrl(String value) throws Exception {
@@ -457,13 +674,40 @@ public final class MiraSelfScreenStreamer implements Closeable {
         if (thread != null) thread.interrupt();
     }
 
-    private static final class VideoSize {
+    private static final class VideoProfile {
+        final String encoderName;
         final int width;
         final int height;
+        final int fps;
+        final int bitrate;
+        final boolean forceBaseline;
+        final String source;
 
-        VideoSize(int width, int height) {
+        VideoProfile(String encoderName, int width, int height, int fps, int bitrate, boolean forceBaseline, String source) {
+            this.encoderName = encoderName == null ? "" : encoderName;
             this.width = width;
             this.height = height;
+            this.fps = fps;
+            this.bitrate = bitrate;
+            this.forceBaseline = forceBaseline;
+            this.source = source == null ? "" : source;
+        }
+
+        long framePeriodMs() {
+            return 1000L / Math.max(1, fps);
+        }
+
+        String key() {
+            return encoderName + "|" + width + "x" + height + "|" + fps + "|" + bitrate + "|" + forceBaseline;
+        }
+
+        String describe() {
+            return "encoder=" + (encoderName.isEmpty() ? "default" : encoderName)
+                + " size=" + width + "x" + height
+                + " fps=" + fps
+                + " bitrate=" + bitrate
+                + " baseline=" + forceBaseline
+                + " source=" + source;
         }
     }
 }
