@@ -23,14 +23,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.MIRA_RELEASE_TAG }}
           submodules: recursive
           lfs: true
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.10'
 
@@ -52,7 +52,7 @@ jobs:
           ./mira-build --target python --target android --release-tag "${MIRA_RELEASE_TAG}"
 
       - name: Upload Python artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mira-python-${{ env.MIRA_RELEASE_TAG }}
           path: |
@@ -61,7 +61,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload Android artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mira-android-${{ env.MIRA_RELEASE_TAG }}
           path: |
@@ -74,14 +74,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.MIRA_RELEASE_TAG }}
           submodules: recursive
           lfs: true
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.10'
 
@@ -112,7 +112,7 @@ jobs:
           MIRA_ISH_SKIP_COMPILEALL=1 ./mira-build --target ios --ios-destination-mode generic --release-tag "${MIRA_RELEASE_TAG}"
 
       - name: Upload iOS artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mira-ios-${{ env.MIRA_RELEASE_TAG }}
           path: |
@@ -146,7 +146,7 @@ jobs:
           path: release-assets/ios
 
       - name: Publish assets to GitHub Releases
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.MIRA_RELEASE_TAG }}
           generate_release_notes: true
