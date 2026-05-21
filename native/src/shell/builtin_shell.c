@@ -44,6 +44,9 @@ static void mira_builtin_append_locked(mira_builtin_shell_t *shell, const char *
     if (shell == NULL || data == NULL || length == 0) {
         return;
     }
+    if (length > SIZE_MAX - shell->output_length - 1U) {
+        return;
+    }
     if (shell->output_length + length + 1U > shell->output_capacity) {
         size_t next = shell->output_capacity == 0 ? 4096U : shell->output_capacity;
         while (next < shell->output_length + length + 1U) {
