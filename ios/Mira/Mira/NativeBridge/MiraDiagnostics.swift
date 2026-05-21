@@ -81,10 +81,7 @@ enum MiraDiagnostics {
     static func logSnapshot(maxBytes: Int = 64_000) -> String {
         queue.sync {
             let current = readTailLocked(url: currentLogURL, maxBytes: maxBytes)
-            let previous = readTailLocked(url: previousLogURL, maxBytes: maxBytes / 2)
-            if current.isEmpty { return previous }
-            if previous.isEmpty { return current }
-            return previous + current
+            return current
         }
     }
 

@@ -389,8 +389,10 @@ install_device_app() {
   local status
 
   if has_idb; then
-    install_device_app_with_idb "${device_id}" "${app_path}"
-    return 0
+    if install_device_app_with_idb "${device_id}" "${app_path}"; then
+      return 0
+    fi
+    echo "idb install failed, falling back to ios-deploy ..." >&2
   fi
 
   set +e
