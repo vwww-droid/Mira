@@ -6,10 +6,12 @@
 
 #include <TargetConditionals.h>
 #include <errno.h>
+#include <limits.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -96,10 +98,18 @@ static int mira_ish_append_output_locked(mira_ish_shell_t *shell, const void *da
         }
     }
 
+    if (shell->output_length == SIZE_MAX || length > SIZE_MAX - shell->output_length - 1U || length > (size_t) INT_MAX) {
+        return -1;
+    }
     size_t needed = shell->output_length + length + 1U;
+
     if (needed > shell->output_capacity) {
         size_t next = shell->output_capacity == 0 ? MIRA_ISH_OUTPUT_INITIAL_CAPACITY : shell->output_capacity;
         while (next < needed) {
+            if (next > SIZE_MAX / 2U) {
+                next = needed;
+                break;
+            }
             next *= 2U;
         }
         char *resized = (char *) realloc(shell->output, next);

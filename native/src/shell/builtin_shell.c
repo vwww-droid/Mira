@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <pwd.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,9 +45,19 @@ static void mira_builtin_append_locked(mira_builtin_shell_t *shell, const char *
     if (shell == NULL || data == NULL || length == 0) {
         return;
     }
-    if (shell->output_length + length + 1U > shell->output_capacity) {
+
+    if (shell->output_length == SIZE_MAX || length > SIZE_MAX - shell->output_length - 1U) {
+        return;
+    }
+    size_t needed = shell->output_length + length + 1U;
+
+    if (needed > shell->output_capacity) {
         size_t next = shell->output_capacity == 0 ? 4096U : shell->output_capacity;
-        while (next < shell->output_length + length + 1U) {
+        while (next < needed) {
+            if (next > SIZE_MAX / 2U) {
+                next = needed;
+                break;
+            }
             next *= 2U;
         }
         char *resized = (char *) realloc(shell->output, next);
