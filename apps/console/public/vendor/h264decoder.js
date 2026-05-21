@@ -123,7 +123,7 @@
       this.pHeight = asm.malloc(4);
       this.pPicture = asm.malloc(4);
       this.decBuffer = asm.malloc(this.decBufferSize);
-      asm.init(this.pStorage, 0);
+      asm.init(this.pStorage, 1);
     }
 
     ensureDecodeBuffer(size) {
@@ -148,6 +148,9 @@
         const width = memory.HEAP32[this.pWidth >>> 2];
         const height = memory.HEAP32[this.pHeight >>> 2];
         const picPtr = memory.HEAP32[this.pPicture >> 2];
+        if (!picPtr) {
+          return H264Decoder.RDY;
+        }
         const dataLen = (width * height * 3) >> 1;
         this.width = width;
         this.height = height;

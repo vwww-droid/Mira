@@ -651,32 +651,136 @@ final class MiraRemoteInputController: @unchecked Sendable {
             y: min(max(0, point.y), max(0, window.bounds.height - 1))
         )
         guard let hit = window.hitTest(bounded, with: nil) else { return .error("tap target unavailable") }
-        if activate(view: hit) { return .ok("tap dispatched") }
+        if positionTextCursor(from: hit, at: bounded, in: window) {
+            return .ok("text cursor positioned")
+        }
+        if activate(view: hit, at: bounded, in: window) { return .ok("tap dispatched") }
         if hit.becomeFirstResponder() { return .ok("focused") }
         return .error("tap not handled")
     }
 
-    private func activate(view: UIView) -> Bool {
+    private func positionTextCursor(from view: UIView, at windowPoint: CGPoint, in window: UIWindow) -> Bool {
+        guard let textInput = textInput(at: windowPoint, in: window, window: window) ?? nearestTextInput(from: view) else { return false }
+        let localPoint = textInput.convert(windowPoint, from: window)
+        textInput.becomeFirstResponder()
+        guard let position = textInput.closestPosition(to: localPoint),
+              let range = textInput.textRange(from: position, to: position) else {
+            return true
+        }
+        textInput.selectedTextRange = range
+        return true
+    }
+
+    private func nearestTextInput(from view: UIView) -> (UIView & UITextInput)? {
         var current: UIView? = view
         while let candidate = current {
-            if let textField = candidate as? UITextField {
-                textField.becomeFirstResponder()
-                return true
+            if let textInput = candidate as? (UIView & UITextInput) {
+                return textInput
             }
-            if let textView = candidate as? UITextView {
-                textView.becomeFirstResponder()
-                return true
+            current = candidate.superview
+        }
+        return nil
+    }
+
+    private func textInput(at windowPoint: CGPoint, in root: UIView, window: UIWindow) -> (UIView & UITextInput)? {
+        guard isInteractive(root) else { return nil }
+        let localPoint = root.convert(windowPoint, from: window)
+        guard root.point(inside: localPoint, with: nil) else { return nil }
+        for subview in root.subviews.reversed() {
+            if let match = textInput(at: windowPoint, in: subview, window: window) {
+                return match
             }
+        }
+        return root as? (UIView & UITextInput)
+    }
+
+    private func activate(view: UIView, at windowPoint: CGPoint, in window: UIWindow) -> Bool {
+        if let control = control(at: windowPoint, in: window, window: window) {
+            return dispatchControlTap(control)
+        }
+
+        let screenPoint = window.convert(windowPoint, to: nil)
+        if activateAccessibilityElement(in: window, at: screenPoint) {
+            return true
+        }
+
+        var current: UIView? = view
+        while let candidate = current {
             if let control = candidate as? UIControl {
-                control.sendActions(for: .touchDown)
-                control.sendActions(for: .touchUpInside)
-                control.sendActions(for: .valueChanged)
-                return true
+                return dispatchControlTap(control)
             }
             if candidate.accessibilityActivate() {
                 return true
             }
             current = candidate.superview
+        }
+        return false
+    }
+
+    private func control(at windowPoint: CGPoint, in root: UIView, window: UIWindow) -> UIControl? {
+        guard isInteractive(root) else { return nil }
+        let localPoint = root.convert(windowPoint, from: window)
+        guard root.point(inside: localPoint, with: nil) else { return nil }
+        for subview in root.subviews.reversed() {
+            if let match = control(at: windowPoint, in: subview, window: window) {
+                return match
+            }
+        }
+        return root as? UIControl
+    }
+
+    private func isInteractive(_ view: UIView) -> Bool {
+        view.isUserInteractionEnabled && !view.isHidden && view.alpha > 0.01
+    }
+
+    private func dispatchControlTap(_ control: UIControl) -> Bool {
+        guard control.isEnabled else { return false }
+        var dispatched = false
+        let events = control.allControlEvents
+        if events.contains(.touchDown) {
+            control.sendActions(for: .touchDown)
+        }
+        if events.contains(.touchUpInside) {
+            control.sendActions(for: .touchUpInside)
+            dispatched = true
+        }
+        if events.contains(.primaryActionTriggered) {
+            control.sendActions(for: .primaryActionTriggered)
+            dispatched = true
+        }
+        if events.contains(.valueChanged) {
+            control.sendActions(for: .valueChanged)
+            dispatched = true
+        }
+        return dispatched
+    }
+
+    private func activateAccessibilityElement(in view: UIView, at screenPoint: CGPoint) -> Bool {
+        guard !view.isHidden && view.alpha > 0.01 else { return false }
+        for subview in view.subviews.reversed() {
+            if activateAccessibilityElement(in: subview, at: screenPoint) {
+                return true
+            }
+        }
+        if view.isAccessibilityElement,
+           view.accessibilityFrame.contains(screenPoint),
+           view.accessibilityActivate() {
+            return true
+        }
+        let count = view.accessibilityElementCount()
+        guard count > 0 else { return false }
+        for index in 0..<count {
+            guard let element = view.accessibilityElement(at: index) as? NSObject else { continue }
+            if let elementView = element as? UIView {
+                if activateAccessibilityElement(in: elementView, at: screenPoint) {
+                    return true
+                }
+                continue
+            }
+            guard element.accessibilityFrame.contains(screenPoint) else { continue }
+            if element.accessibilityActivate() {
+                return true
+            }
         }
         return false
     }

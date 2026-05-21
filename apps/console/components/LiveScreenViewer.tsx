@@ -142,6 +142,7 @@ export function LiveScreenViewer({ device, fallback, className }: { device: Mira
     });
     closeDecoder();
     closeWasmDecoder();
+    renderModeRef.current = 'wasm';
     setRenderMode('wasm');
     setStatus('waiting');
     setStreamError(null);
@@ -239,6 +240,7 @@ export function LiveScreenViewer({ device, fallback, className }: { device: Mira
         setShowDebug(true);
         return;
       }
+      renderModeRef.current = 'canvas';
       setRenderMode('canvas');
       console.info('Mira screen decoder configure', config, support);
       decoder.configure(config);
@@ -327,11 +329,15 @@ export function LiveScreenViewer({ device, fallback, className }: { device: Mira
     return wasmDecoderRef.current;
   }, [browserLog]);
 
-  const renderWasmFrame = useCallback((yuv: Uint8Array, width: number, height: number) => {
-    if (!width || !height || !yuv || yuv.length < (width * height * 3) / 2) return;
+  const renderWasmFrame = useCallback((yuv: Uint8Array, codedWidth: number, codedHeight: number) => {
+    if (!codedWidth || !codedHeight || !yuv || yuv.length < (codedWidth * codedHeight * 3) / 2) return;
     const canvas = canvasRef.current;
     const context = canvas?.getContext('2d');
     if (!canvas || !context) return;
+    const visibleWidth = positiveInteger(infoRef.current?.width) || codedWidth;
+    const visibleHeight = positiveInteger(infoRef.current?.height) || codedHeight;
+    const width = Math.min(visibleWidth, codedWidth);
+    const height = Math.min(visibleHeight, codedHeight);
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
       canvas.height = height;
@@ -342,7 +348,7 @@ export function LiveScreenViewer({ device, fallback, className }: { device: Mira
     if (!wasmRgbaRef.current || wasmRgbaRef.current.length !== rgbaLength) {
       wasmRgbaRef.current = new Uint8ClampedArray(rgbaLength);
     }
-    convertYuv420ToRgba(yuv, width, height, wasmRgbaRef.current);
+    convertYuv420ToRgba(yuv, codedWidth, codedHeight, width, height, wasmRgbaRef.current);
     if (!wasmImageDataRef.current || wasmImageDataRef.current.width !== width || wasmImageDataRef.current.height !== height) {
       wasmImageDataRef.current = new ImageData(width, height);
     }
@@ -350,7 +356,7 @@ export function LiveScreenViewer({ device, fallback, className }: { device: Mira
     context.putImageData(wasmImageDataRef.current, 0, 0);
     if (!firstWasmFrameLoggedRef.current) {
       firstWasmFrameLoggedRef.current = true;
-      browserLog('screen.wasm', 'first frame rendered', { width, height });
+      browserLog('screen.wasm', 'first frame rendered', { width, height, codedWidth, codedHeight });
     }
     lastFrameAtRef.current = Date.now();
     setStatus('live');
@@ -485,6 +491,7 @@ export function LiveScreenViewer({ device, fallback, className }: { device: Mira
     closeWasmDecoder();
     infoRef.current = null;
     setInfo(null);
+    renderModeRef.current = 'canvas';
     setRenderMode('canvas');
     setStatus('connecting');
     setStreamError(null);
@@ -523,6 +530,9 @@ export function LiveScreenViewer({ device, fallback, className }: { device: Mira
           setStatus('waiting');
           setStreamError(null);
           setDebugInfo(null);
+          if (shouldPreferWasmDecoder(device, message) && switchToWasmMode()) {
+            return;
+          }
           if (!hasSecureWebCodecs() && switchToWasmMode()) {
             return;
           }
@@ -914,6 +924,13 @@ function inputLabel(kind: ScreenInputKind | string) {
   return 'input';
 }
 
+function shouldPreferWasmDecoder(device: MiraDevice, info: ScreenVideoInfo) {
+  const platform = `${device.platform || ''} ${device.osName || ''} ${device.packageName || ''}`.toLowerCase();
+  if (!platform.includes('ios') && !platform.includes('iphone') && !platform.includes('ipad')) return false;
+  if ((info.mime || '').toLowerCase() && !(info.mime || '').toLowerCase().includes('avc')) return false;
+  return true;
+}
+
 function claimKeyboardEvent(event: ReactKeyboardEvent<HTMLElement>) {
   event.preventDefault();
   event.stopPropagation();
@@ -977,15 +994,29 @@ function startCodeLength(data: Uint8Array, index: number) {
 }
 
 
-function convertYuv420ToRgba(yuv: Uint8Array, width: number, height: number, rgba: Uint8ClampedArray) {
-  const ySize = width * height;
+function positiveInteger(value: unknown): number | null {
+  const number = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return Math.floor(number);
+}
+
+function convertYuv420ToRgba(
+  yuv: Uint8Array,
+  codedWidth: number,
+  codedHeight: number,
+  visibleWidth: number,
+  visibleHeight: number,
+  rgba: Uint8ClampedArray,
+) {
+  const ySize = codedWidth * codedHeight;
   const uOffset = ySize;
   const vOffset = ySize + (ySize >> 2);
   let out = 0;
-  for (let y = 0; y < height; y += 1) {
-    const yRow = y * width;
-    const uvRow = (y >> 1) * (width >> 1);
-    for (let x = 0; x < width; x += 1) {
+  const chromaWidth = codedWidth >> 1;
+  for (let y = 0; y < visibleHeight; y += 1) {
+    const yRow = y * codedWidth;
+    const uvRow = (y >> 1) * chromaWidth;
+    for (let x = 0; x < visibleWidth; x += 1) {
       const yValue = yuv[yRow + x];
       const uvIndex = uvRow + (x >> 1);
       const uValue = yuv[uOffset + uvIndex] - 128;
