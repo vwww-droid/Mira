@@ -146,7 +146,7 @@ jobs:
           path: release-assets/ios
 
       - name: Publish assets to GitHub Releases
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.MIRA_RELEASE_TAG }}
           generate_release_notes: true
