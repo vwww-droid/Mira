@@ -33,6 +33,7 @@ const char *mira_ios_relay_install_id(void);
 int mira_ios_relay_send_control_json(const char *json);
 void mira_ios_relay_set_screen_input_callback(mira_ios_screen_input_callback_t callback, void *context);
 void mira_ios_relay_set_log_provider(mira_ios_log_provider_t provider);
+void mira_ios_log_hook_set_capture_fd(int fd);
 void mira_ios_install_log_hooks(void);
 void mira_ios_emit_log_smoke_test(void);
 

@@ -62,6 +62,7 @@ enum MiraDiagnostics {
             previousLogURL = previous
             installedAt = Date()
             miraDiagnosticsLogFD = Darwin.open(current.path, O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR)
+            mira_ios_log_hook_set_capture_fd(miraDiagnosticsLogFD)
 
             NSSetUncaughtExceptionHandler(miraDiagnosticsExceptionHandler)
             for signalNumber in [SIGABRT, SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGTRAP] {

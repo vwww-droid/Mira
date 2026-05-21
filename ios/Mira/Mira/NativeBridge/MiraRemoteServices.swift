@@ -731,6 +731,8 @@ final class MiraDeviceMetricsSampler: @unchecked Sendable {
 final class MiraRemoteInputController: @unchecked Sendable {
     private let screenState: MiraRemoteScreenState
     private var active = false
+    private let maxAccessibilityActivationDepth = 48
+    private let maxAccessibilityElementsPerContainer = 256
 
     init(screenState: MiraRemoteScreenState) {
         self.screenState = screenState
@@ -893,23 +895,61 @@ final class MiraRemoteInputController: @unchecked Sendable {
     }
 
     private func activateAccessibilityElement(in view: UIView, at screenPoint: CGPoint) -> Bool {
+        var visitedViews = Set<ObjectIdentifier>()
+        var visitedElements = Set<ObjectIdentifier>()
+        return activateAccessibilityElement(
+            in: view,
+            at: screenPoint,
+            depth: 0,
+            visitedViews: &visitedViews,
+            visitedElements: &visitedElements
+        )
+    }
+
+    private func activateAccessibilityElement(
+        in view: UIView,
+        at screenPoint: CGPoint,
+        depth: Int,
+        visitedViews: inout Set<ObjectIdentifier>,
+        visitedElements: inout Set<ObjectIdentifier>
+    ) -> Bool {
+        guard depth <= maxAccessibilityActivationDepth else { return false }
         guard !view.isHidden && view.alpha > 0.01 else { return false }
+        let viewId = ObjectIdentifier(view)
+        guard visitedViews.insert(viewId).inserted else { return false }
+
         for subview in view.subviews.reversed() {
-            if activateAccessibilityElement(in: subview, at: screenPoint) {
+            if activateAccessibilityElement(
+                in: subview,
+                at: screenPoint,
+                depth: depth + 1,
+                visitedViews: &visitedViews,
+                visitedElements: &visitedElements
+            ) {
                 return true
             }
         }
+
         if view.isAccessibilityElement,
            view.accessibilityFrame.contains(screenPoint),
            view.accessibilityActivate() {
             return true
         }
-        let count = view.accessibilityElementCount()
+
+        let count = min(view.accessibilityElementCount(), maxAccessibilityElementsPerContainer)
         guard count > 0 else { return false }
         for index in 0..<count {
             guard let element = view.accessibilityElement(at: index) as? NSObject else { continue }
+            let elementId = ObjectIdentifier(element)
+            guard visitedElements.insert(elementId).inserted else { continue }
             if let elementView = element as? UIView {
-                if activateAccessibilityElement(in: elementView, at: screenPoint) {
+                if activateAccessibilityElement(
+                    in: elementView,
+                    at: screenPoint,
+                    depth: depth + 1,
+                    visitedViews: &visitedViews,
+                    visitedElements: &visitedElements
+                ) {
                     return true
                 }
                 continue

@@ -40,7 +40,7 @@ Environment variables:
   MIRA_IOS_AUTO_OPEN_RELAY_CONSOLE  1 to open Relay console on computer. Default 1
   MIRA_IOS_AUTO_START_LOCAL_RELAY   1 to auto-start ./mira-local-web when localhost relay is missing. Default 1
   MIRA_IOS_AUTO_BUILD_ISH_LIBS      1 to build missing iSH static libraries before Xcode build. Default 1
-  MIRA_IOS_RELAY_URL    Relay URL to inject at launch time for automated connect. Default http://<host-lan-ip>:8765
+  MIRA_IOS_RELAY_URL    Relay URL to inject at launch time for automated connect. Default http://<host-lan-ip>:8765 on physical devices, http://127.0.0.1:8765 on Simulator
   MIRA_IOS_HOST_RELAY_PORT Relay port for local relay and browser. Default 8765
   MIRA_IOS_RELAY_LOG_PATH Log file for auto-started local relay
   MIRA_IOS_OPEN_URL     Browser URL to open on this computer. Default http://127.0.0.1:<relay-port>
@@ -223,7 +223,8 @@ for device in payload.get("devices", []):
         continue
     if bundle_id and device.get("packageName") not in ("", None, bundle_id):
         continue
-    if device.get("state") == "active":
+    screen = device.get("screen") or {}
+    if device.get("state") in ("active", "idle") or screen.get("live") is True:
         sys.exit(0)
 
 sys.exit(1)
@@ -601,6 +602,7 @@ MSG
 
 run_simulator() {
   local booted_device
+  local sim_relay_url
   booted_device="$(xcrun simctl list devices booted | awk -F '[()]' '/Booted/ {print $2; exit}')"
   if [[ -z "${booted_device}" ]]; then
     echo "Booting simulator: ${DEVICE_NAME}"
@@ -609,6 +611,7 @@ run_simulator() {
   open -a Simulator
 
   ensure_ish_static_libraries "iphonesimulator" "${ROOT_DIR}/build/ios-ish-libs" "arm64"
+  MIRA_ISH_SKIP_COMPILEALL="${MIRA_ISH_SKIP_COMPILEALL:-1}" \
   env -u SDKROOT -u LIBRARY_PATH xcodebuild \
     -project "${PROJECT_PATH}" \
     -scheme "${SCHEME}" \
@@ -616,6 +619,8 @@ run_simulator() {
     -destination "platform=iOS Simulator,name=${DEVICE_NAME}" \
     -derivedDataPath "${SIM_DERIVED_DATA}" \
     CODE_SIGNING_ALLOWED=NO \
+    ENABLE_DEBUG_DYLIB=NO \
+    ENABLE_PREVIEWS=NO \
     build
 
   if [[ ! -d "${SIM_APP_PATH}" ]]; then
@@ -623,9 +628,20 @@ run_simulator() {
     exit 1
   fi
 
+  sim_relay_url="${AUTO_CONNECT_RELAY_URL}"
+  if [[ -z "${MIRA_IOS_RELAY_URL:-}" ]]; then
+    sim_relay_url="http://127.0.0.1:${HOST_RELAY_PORT}"
+  fi
+
   xcrun simctl terminate booted "${BUNDLE_ID}" >/dev/null 2>&1 || true
   xcrun simctl install booted "${SIM_APP_PATH}"
-  xcrun simctl launch booted "${BUNDLE_ID}"
+  SIMCTL_CHILD_MIRA_RELAY_URL="${sim_relay_url}" \
+  SIMCTL_CHILD_MIRA_AUTO_CONNECT=1 \
+  xcrun simctl launch \
+    --terminate-running-process \
+    booted \
+    "${BUNDLE_ID}"
+  verify_ios_relay_registration "${BUNDLE_ID}"
 
   cat <<MSG
 
@@ -634,6 +650,7 @@ Project: ${PROJECT_PATH}
 Device: ${DEVICE_NAME}
 Bundle: ${BUNDLE_ID}
 App: ${SIM_APP_PATH}
+Relay: ${sim_relay_url}
 
 MSG
 

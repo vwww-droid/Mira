@@ -9,8 +9,6 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
-extern void mira_diagnostics_capture_write(int fd, const void *bytes, long count);
-
 static ssize_t (*mira_original_write)(int fd, const void *buf, size_t nbyte) = NULL;
 static ssize_t (*mira_original_write_nocancel)(int fd, const void *buf, size_t nbyte) = NULL;
 static ssize_t (*mira_original_writev)(int fd, const struct iovec *iov, int iovcnt) = NULL;
@@ -18,14 +16,38 @@ static ssize_t (*mira_original_writev_nocancel)(int fd, const struct iovec *iov,
 static int (*mira_original_vfprintf)(FILE *stream, const char *format, va_list args) = NULL;
 static int mira_write_hook_installed = 0;
 static __thread int mira_inside_write_hook = 0;
+static int mira_log_capture_fd = -1;
 
-static void mira_capture_standard_fd(int fd, const void *buf, size_t nbyte) {
-    if ((fd != STDOUT_FILENO && fd != STDERR_FILENO) || buf == NULL || nbyte == 0 || mira_inside_write_hook) {
+void mira_ios_log_hook_set_capture_fd(int fd) {
+    mira_log_capture_fd = fd;
+}
+
+static void mira_raw_log_write(const void *buf, size_t nbyte) {
+    if (mira_log_capture_fd < 0 || buf == NULL || nbyte == 0) {
         return;
     }
+
+    if (mira_original_write != NULL) {
+        (void) mira_original_write(mira_log_capture_fd, buf, nbyte);
+    } else {
+        (void) write(mira_log_capture_fd, buf, nbyte);
+    }
+}
+
+static void mira_capture_standard_fd(int fd, const void *buf, size_t nbyte) {
+    if ((fd != STDOUT_FILENO && fd != STDERR_FILENO) || buf == NULL || nbyte == 0 || mira_inside_write_hook || mira_log_capture_fd < 0) {
+        return;
+    }
+
     mira_inside_write_hook = 1;
     size_t captured = nbyte > 4096U ? 4096U : nbyte;
-    mira_diagnostics_capture_write(fd, buf, (long) captured);
+    const char *prefix = fd == STDERR_FILENO ? "stderr: " : "stdout: ";
+    mira_raw_log_write(prefix, strlen(prefix));
+    mira_raw_log_write(buf, captured);
+    const char *bytes = (const char *) buf;
+    if (captured == 0 || bytes[captured - 1] != '\n') {
+        mira_raw_log_write("\n", 1);
+    }
     mira_inside_write_hook = 0;
 }
 
