@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import OSLog
 
 nonisolated(unsafe) private var miraDiagnosticsLogFD: Int32 = -1
 
@@ -21,16 +22,18 @@ private func miraDiagnosticsExceptionHandler(_ exception: NSException) {
     MiraDiagnostics.recordUncaughtException(exception)
 }
 
-/// iOS LOGS 只收集当前 App 进程内主动写入的诊断行, stdout/stderr 的 write hook, 以及 crash 记录.
-/// 它不是 iOS unified log, 也不接收 Relay 的 server/control/device events.
+/// iOS LOGS 只收集当前 App 进程内主动写入的诊断行, stdout/stderr 的 write hook, crash 记录, 以及当前进程权限内可读的 unified log.
+/// unified log 读取仅使用 OSLogStore.currentProcessIdentifier scope, 不读取系统级 unified log, 也不接收 Relay 的 server/control/device events.
 /// 当前保持轻量文件 sink, 后续如需要可替换为 CocoaLumberjack 文件日志库, 但本阶段不引入完整日志框架.
 enum MiraDiagnostics {
     private static let queue = DispatchQueue(label: "MiraDiagnostics")
     private static let maxMessageCharacters = 2_000
     private static let maxDetailsCharacters = 2_000
+    private static let maxUnifiedLogEntries = 300
     nonisolated(unsafe) private static var installed = false
     nonisolated(unsafe) private static var currentLogURL: URL?
     nonisolated(unsafe) private static var previousLogURL: URL?
+    nonisolated(unsafe) private static var installedAt: Date?
 
     static func install() {
         queue.sync {
@@ -57,6 +60,7 @@ enum MiraDiagnostics {
 
             currentLogURL = current
             previousLogURL = previous
+            installedAt = Date()
             miraDiagnosticsLogFD = Darwin.open(current.path, O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR)
 
             NSSetUncaughtExceptionHandler(miraDiagnosticsExceptionHandler)
@@ -79,9 +83,20 @@ enum MiraDiagnostics {
     }
 
     static func logSnapshot(maxBytes: Int = 64_000) -> String {
-        queue.sync {
-            let current = readTailLocked(url: currentLogURL, maxBytes: maxBytes)
-            return current
+        let currentBudget = max(1, maxBytes / 2)
+        let unifiedBudget = max(1, maxBytes - currentBudget)
+        let current = queue.sync {
+            readTailLocked(url: currentLogURL, maxBytes: currentBudget)
+        }
+        let unified = unifiedLogSnapshot(maxBytes: unifiedBudget)
+        return [current, unified].filter { !$0.isEmpty }.joined()
+    }
+
+    static func emitUnifiedLogSmokeTest() {
+        if #available(iOS 15.0, *) {
+            let logger = Logger(subsystem: "com.vwww.mira.ios", category: "diagnostics")
+            logger.notice("mira-ios-log-smoke oslog notice")
+            logger.error("mira-ios-log-smoke oslog error")
         }
     }
 
@@ -122,6 +137,54 @@ enum MiraDiagnostics {
         return String(data: Data(tailData), encoding: .utf8) ?? ""
     }
 
+    private static func unifiedLogSnapshot(maxBytes: Int) -> String {
+        guard #available(iOS 15.0, *) else { return "" }
+        let startDate = queue.sync {
+            installedAt?.addingTimeInterval(-2) ?? Date().addingTimeInterval(-120)
+        }
+        do {
+            let store = try OSLogStore(scope: .currentProcessIdentifier)
+            let position = store.position(date: startDate)
+            let entries = try store.getEntries(at: position)
+            var lines: [String] = []
+            lines.reserveCapacity(64)
+            for entry in entries {
+                guard let log = entry as? OSLogEntryLog else { continue }
+                lines.append(formatUnifiedLogLine(log))
+                if lines.count > maxUnifiedLogEntries {
+                    lines.removeFirst(lines.count - maxUnifiedLogEntries)
+                }
+            }
+            return tailText(lines.joined(), maxBytes: maxBytes)
+        } catch {
+            return formatLine(level: "WARN", scope: "oslog", message: "unified log unavailable", details: [
+                "scope": "currentProcessIdentifier",
+                "error": String(describing: error),
+            ])
+        }
+    }
+
+    @available(iOS 15.0, *)
+    private static func formatUnifiedLogLine(_ entry: OSLogEntryLog) -> String {
+        let subsystem = singleLine(entry.subsystem)
+        let category = singleLine(entry.category)
+        let message = singleLine(entry.composedMessage)
+        let prefix = [subsystem, category].filter { !$0.isEmpty }.joined(separator: "/")
+        let decorated = prefix.isEmpty ? message : "[\(prefix)] \(message)"
+        return "\(timestamp(entry.date)) \(unifiedLogLevel(entry.level))/oslog(\(getpid())): \(truncated(decorated, maxCharacters: maxMessageCharacters))\n"
+    }
+
+    @available(iOS 15.0, *)
+    private static func unifiedLogLevel(_ level: OSLogEntryLog.Level) -> String {
+        switch level {
+        case .debug: return "D"
+        case .info, .notice, .undefined: return "I"
+        case .error: return "E"
+        case .fault: return "F"
+        @unknown default: return "I"
+        }
+    }
+
     private static func formatLine(level: String, scope: String, message: String, details: [String: Any]) -> String {
         var suffix = ""
         if !details.isEmpty,
@@ -131,14 +194,14 @@ enum MiraDiagnostics {
             suffix = " \(truncated(text, maxCharacters: maxDetailsCharacters))"
         }
         let tag = scope.isEmpty ? "Mira" : scope
-        return "\(timestamp()) \(logcatLevel(level))/\(tag)(\(getpid())): \(truncated(message, maxCharacters: maxMessageCharacters))\(suffix)\n"
+        return "\(timestamp()) \(logcatLevel(level))/\(tag)(\(getpid())): \(truncated(singleLine(message), maxCharacters: maxMessageCharacters))\(suffix)\n"
     }
 
-    private static func timestamp() -> String {
+    private static func timestamp(_ date: Date = Date()) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "MM-dd HH:mm:ss.SSS"
-        return formatter.string(from: Date())
+        return formatter.string(from: date)
     }
 
     private static func logcatLevel(_ level: String) -> String {
@@ -161,6 +224,20 @@ enum MiraDiagnostics {
     private static func truncated(_ text: String, maxCharacters: Int) -> String {
         guard text.count > maxCharacters else { return text }
         return String(text.prefix(maxCharacters)) + "...<truncated>"
+    }
+
+    private static func singleLine(_ text: String) -> String {
+        text.replacingOccurrences(of: "\r", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func tailText(_ text: String, maxBytes: Int) -> String {
+        guard maxBytes > 0, let data = text.data(using: .utf8), data.count > maxBytes else {
+            return text
+        }
+        let tailData = data.suffix(maxBytes)
+        return String(data: Data(tailData), encoding: .utf8) ?? String(text.suffix(maxBytes))
     }
 }
 

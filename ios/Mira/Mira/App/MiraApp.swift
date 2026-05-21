@@ -28,5 +28,6 @@ struct MiraApp: App {
     private func emitStandardStreamSmokeTestIfRequested() {
         guard ProcessInfo.processInfo.environment[EnvironmentKeys.logSmokeTest] == "1" else { return }
         mira_ios_emit_log_smoke_test()
+        MiraDiagnostics.emitUnifiedLogSmokeTest()
     }
 }
