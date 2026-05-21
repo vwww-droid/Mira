@@ -10,10 +10,12 @@ BUNDLE_ID="${MIRA_IOS_BUNDLE_ID:-com.vwww.mira.ios}"
 AUTO_LAUNCH_DEVICE="${MIRA_IOS_AUTO_LAUNCH_DEVICE:-1}"
 AUTO_OPEN_RELAY_CONSOLE="${MIRA_IOS_AUTO_OPEN_RELAY_CONSOLE:-1}"
 AUTO_START_LOCAL_RELAY="${MIRA_IOS_AUTO_START_LOCAL_RELAY:-1}"
+AUTO_BUILD_ISH_LIBS="${MIRA_IOS_AUTO_BUILD_ISH_LIBS:-1}"
 AUTO_CONNECT_RELAY_URL="${MIRA_IOS_RELAY_URL:-}"
 HOST_RELAY_PORT="${MIRA_IOS_HOST_RELAY_PORT:-8765}"
 RELAY_LOG_PATH="${MIRA_IOS_RELAY_LOG_PATH:-${ROOT_DIR}/build/mira-local-relay.log}"
 OPEN_URL="${MIRA_IOS_OPEN_URL:-http://127.0.0.1:${HOST_RELAY_PORT}}"
+VERIFY_RELAY_REGISTRATION="${MIRA_IOS_VERIFY_RELAY_REGISTRATION:-1}"
 SIM_DERIVED_DATA="${MIRA_IOS_SIM_DERIVED_DATA:-${ROOT_DIR}/build/ios/DerivedData}"
 SIM_APP_PATH="${SIM_DERIVED_DATA}/Build/Products/Debug-iphonesimulator/Mira.app"
 DEVICE_DERIVED_DATA="${MIRA_IOS_DEVICE_DERIVED_DATA:-${ROOT_DIR}/build/ios-mira-device-native-relay-derived}"
@@ -36,10 +38,12 @@ Environment variables:
   MIRA_IOS_AUTO_LAUNCH_DEVICE  1 to auto launch after physical-device install. Default 1
   MIRA_IOS_AUTO_OPEN_RELAY_CONSOLE  1 to open Relay console on computer. Default 1
   MIRA_IOS_AUTO_START_LOCAL_RELAY   1 to auto-start ./mira-local-web when localhost relay is missing. Default 1
+  MIRA_IOS_AUTO_BUILD_ISH_LIBS      1 to build missing iSH static libraries before Xcode build. Default 1
   MIRA_IOS_RELAY_URL    Relay URL to inject at launch time for automated connect. Default http://<host-lan-ip>:8765
   MIRA_IOS_HOST_RELAY_PORT Relay port for local relay and browser. Default 8765
   MIRA_IOS_RELAY_LOG_PATH Log file for auto-started local relay
   MIRA_IOS_OPEN_URL     Browser URL to open on this computer. Default http://127.0.0.1:<relay-port>
+  MIRA_IOS_VERIFY_RELAY_REGISTRATION  1 to check whether the iOS app registered with Relay after launch. Default 1
   MIRA_IOS_DEVICE       Simulator device name. Default iPhone 17 Pro
   MIRA_IOS_SCHEME       Xcode scheme. Default Mira
   MIRA_IOS_BUNDLE_ID    Bundle identifier. Default com.vwww.mira.ios
@@ -76,6 +80,46 @@ if [[ ! -d "${PROJECT_PATH}" ]]; then
   echo "Missing iOS project: ${PROJECT_PATH}" >&2
   exit 1
 fi
+
+ish_product_dir() {
+  local sdk_name="$1"
+  local build_dir="$2"
+  printf '%s/Debug-ApplePleaseFixFB19282108-%s/meson\n' "${build_dir}" "${sdk_name}"
+}
+
+ish_static_libraries_ready() {
+  local product_dir="$1"
+  [[ -f "${product_dir}/libish.a" && -f "${product_dir}/libish_emu.a" && -f "${product_dir}/libfakefs.a" ]]
+}
+
+ensure_ish_static_libraries() {
+  local sdk_name="$1"
+  local build_dir="$2"
+  local archs="$3"
+  local product_dir
+
+  product_dir="$(ish_product_dir "${sdk_name}" "${build_dir}")"
+  if ish_static_libraries_ready "${product_dir}"; then
+    return 0
+  fi
+
+  if [[ "${AUTO_BUILD_ISH_LIBS}" != "1" ]]; then
+    cat >&2 <<MSG
+Missing iSH static libraries in:
+  ${product_dir}
+Run:
+  MIRA_ISH_SDK=${sdk_name} MIRA_ISH_BUILD_DIR=${build_dir} MIRA_ISH_ARCHS=${archs} ./tools/ios/build-ish-libs.sh
+Or set MIRA_IOS_AUTO_BUILD_ISH_LIBS=1.
+MSG
+    exit 1
+  fi
+
+  echo "Missing iSH static libraries for ${sdk_name}. Building them first ..."
+  MIRA_ISH_SDK="${sdk_name}" \
+    MIRA_ISH_BUILD_DIR="${build_dir}" \
+    MIRA_ISH_ARCHS="${archs}" \
+    "${ROOT_DIR}/tools/ios/build-ish-libs.sh"
+}
 
 open_url() {
   local url="$1"
@@ -155,6 +199,58 @@ for host in (f"http://127.0.0.1:{port}", f"http://localhost:{port}"):
         pass
 sys.exit(1)
 PY
+}
+
+is_ios_device_registered_in_relay() {
+  python3 - "$1" "$2" <<'PY'
+import json
+import sys
+import urllib.request
+
+port = sys.argv[1]
+bundle_id = sys.argv[2]
+
+try:
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/devices", timeout=2.0) as response:
+        payload = json.load(response)
+except Exception:
+    sys.exit(1)
+
+for device in payload.get("devices", []):
+    if device.get("platform") != "ios":
+        continue
+    if bundle_id and device.get("packageName") not in ("", None, bundle_id):
+        continue
+    if device.get("state") == "active":
+        sys.exit(0)
+
+sys.exit(1)
+PY
+}
+
+verify_ios_relay_registration() {
+  local bundle_id="$1"
+  local i
+
+  if [[ "${VERIFY_RELAY_REGISTRATION}" != "1" ]]; then
+    return 0
+  fi
+
+  echo "Waiting for Mira iOS to register with Relay ..."
+  for i in {1..10}; do
+    if is_ios_device_registered_in_relay "${HOST_RELAY_PORT}" "${bundle_id}"; then
+      echo "Mira iOS registered with Relay."
+      return 0
+    fi
+    sleep 1
+  done
+
+  cat >&2 <<MSG
+Mira iOS did not register with Relay yet.
+If this is the first launch on this iPhone, approve Local Network access:
+  Settings -> Privacy & Security -> Local Network -> Mira
+Then rerun ./mira-ios --device, or tap Connect Relay in the app.
+MSG
 }
 
 start_local_relay_if_needed() {
@@ -375,6 +471,7 @@ launch_device_app_with_idb() {
 
   idb_bin="$(ensure_idb)"
   connect_idb_target "${idb_bin}" "${device_id}"
+  "${idb_bin}" terminate --udid "${device_id}" "${bundle_id}" >/dev/null 2>&1 || true
   if [[ -n "${relay_url}" ]]; then
     IDB_MIRA_RELAY_URL="${relay_url}" IDB_MIRA_AUTO_CONNECT=1 "${idb_bin}" launch --udid "${device_id}" "${bundle_id}"
   else
@@ -435,6 +532,7 @@ run_device() {
   fi
 
   echo "Building Mira for physical iOS device: ${device_id}"
+  ensure_ish_static_libraries "iphoneos" "${ROOT_DIR}/build/ios-ish-device-libs" "arm64"
   env -u SDKROOT -u LIBRARY_PATH xcodebuild \
     -project "${PROJECT_PATH}" \
     -scheme "${SCHEME}" \
@@ -466,6 +564,7 @@ run_device() {
   if [[ "${AUTO_LAUNCH_DEVICE}" == "1" ]]; then
     echo "Restarting Mira app ..."
     launch_device_app "${ios_deploy}" "${device_id}" "${DEVICE_APP_PATH}" "${BUNDLE_ID}" "${AUTO_CONNECT_RELAY_URL}"
+    verify_ios_relay_registration "${BUNDLE_ID}"
     launch_note="Auto launch attempted."
   else
     launch_note="Auto launch skipped on physical device by default. Open Mira manually, or set MIRA_IOS_AUTO_LAUNCH_DEVICE=1. If idb is installed, MIRA_IOS_RELAY_URL can be injected for auto connect."
@@ -496,6 +595,7 @@ run_simulator() {
   fi
   open -a Simulator
 
+  ensure_ish_static_libraries "iphonesimulator" "${ROOT_DIR}/build/ios-ish-libs" "arm64"
   env -u SDKROOT -u LIBRARY_PATH xcodebuild \
     -project "${PROJECT_PATH}" \
     -scheme "${SCHEME}" \
