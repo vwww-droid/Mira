@@ -52,7 +52,7 @@ jobs:
           ./mira-build --target python --target android --release-tag "${MIRA_RELEASE_TAG}"
 
       - name: Upload Python artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mira-python-${{ env.MIRA_RELEASE_TAG }}
           path: |
@@ -61,7 +61,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload Android artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mira-android-${{ env.MIRA_RELEASE_TAG }}
           path: |
@@ -112,7 +112,7 @@ jobs:
           MIRA_ISH_SKIP_COMPILEALL=1 ./mira-build --target ios --ios-destination-mode generic --release-tag "${MIRA_RELEASE_TAG}"
 
       - name: Upload iOS artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mira-ios-${{ env.MIRA_RELEASE_TAG }}
           path: |
