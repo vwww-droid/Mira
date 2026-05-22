@@ -289,7 +289,9 @@ AOSP SELinux docs state that SELinux denials enter `dmesg` and `logcat`, and tha
 
 ### ZN-AuditPatch
 
-[ZN-AuditPatch](https://github.com/aviraxp/ZN-AuditPatch) filters known root-related target contexts such as `magisk` and `su`, then rewrites them into a fixed `priv_app` context.
+Update on 2026-05-22 21:17:53.
+
+[ZN-AuditPatch](https://github.com/aviraxp/ZN-AuditPatch) rewrites known root-related target contexts. The relevant code is in [`hook.cpp#L36`](https://github.com/aviraxp/ZN-AuditPatch/blob/master/module/src/main/cpp/hook.cpp#L36):
 
 ```c
 constexpr std::string_view target_context = "tcontext=u:r:priv_app:s0:c512,c768";
@@ -299,58 +301,91 @@ constexpr std::string_view source_contexts[] = {
 };
 ```
 
-This works for a narrow root-domain detector, but it is weak once the detection surface is generalized. A third-party app can still look for other leaked domains, and the fixed replacement string can itself become a fingerprint.
+The patch only filters `magisk` and `su`, then replaces them with the fixed string `tcontext=u:r:priv_app:s0:c512,c768`.
 
-### PatchAudit
+My first reaction was that this had two problems:
 
-[PatchAudit](https://github.com/vwww-droid/PatchAudit) follows the same general direction, but changes the matching and replacement strategy.
+1. Matching only `tcontext=u:r:magisk:s0` and `tcontext=u:r:su:s0` does not cover the emulator and projection signals discussed in this article. Examples include `qemu_props`, `goldfish`, and `ranchu` in emulator scenarios, and high-PID `u:r:shell:s0` clusters in scrcpy-like scenarios. I therefore thought it would be better to rewrite all audit messages related to `path="/proc/..."` into `priv_app`.
+2. I also assumed that the hard-coded `tcontext=u:r:priv_app:s0:c512,c768` string was itself a fingerprint, and tried to replace it with a stable randomized value such as `u:r:priv_app:s0:c115,c371,c512,c768`.
 
-First, it does not only match `magisk` or `su`. Any audit message that has `tcontext=` and looks procfs-related through `dev="proc"` or `path="/proc/"` becomes a rewrite candidate.
+After feedback from [@mb_bvvcoitr](https://bbs.kanxue.com/homepage-1006272.htm), I realized that this conclusion was not rigorous. The key detail is that `c512,c768` is not an arbitrary hard-coded suffix. It comes from Android `libselinux` MLS/MCS category generation.
+
+The relevant AOSP code is [`external/selinux/libselinux/src/android/android_seapp.c`](https://android.googlesource.com/platform/external/selinux/+/main/libselinux/src/android/android_seapp.c#691), in `set_range_from_level()`:
 
 ```c
-static bool is_procfs_audit_with_target_context(const char *message) {
-    if (message == NULL) {
-        return false;
+/* Sets the categories of ctx based on the level request */
+int set_range_from_level(context_t ctx, enum levelFrom levelFrom, uid_t userid, uid_t appid)
+{
+    char level[255];
+    switch (levelFrom) {
+    case LEVELFROM_NONE:
+        strncpy(level, "s0", sizeof level);
+        break;
+    case LEVELFROM_APP:
+        snprintf(level, sizeof level, "s0:c%u,c%u",
+             appid & 0xff,
+             256 + (appid>>8 & 0xff));
+        break;
+    case LEVELFROM_USER:
+        snprintf(level, sizeof level, "s0:c%u,c%u",
+             512 + (userid & 0xff),
+             768 + (userid>>8 & 0xff));
+        break;
+    case LEVELFROM_ALL:
+        snprintf(level, sizeof level, "s0:c%u,c%u,c%u,c%u",
+             appid & 0xff,
+             256 + (appid>>8 & 0xff),
+             512 + (userid & 0xff),
+             768 + (userid>>8 & 0xff));
+        break;
+    default:
+        return -1;
     }
-
-    const bool has_tcontext = contains(message, "tcontext=");
-    const bool is_procfs =
-        contains(message, "dev=\"proc\"") ||
-        contains(message, "path=\"/proc/");
-
-    return has_tcontext && is_procfs;
+    if (context_range_set(ctx, level)) {
+        return -2;
+    }
+    return 0;
 }
 ```
 
-Second, the fake `priv_app` MLS categories are not hard-coded. They are generated once per `logd` lifecycle and remain stable during that lifecycle.
+In the `LEVELFROM_USER` branch, the range is formatted as `s0:c%u,c%u`. The two categories are computed as `512 + (userid & 0xff)` and `768 + (userid >> 8 & 0xff)`.
+
+The split from Linux UID to Android `userid` and `appid` happens in `seapp_context_lookup_internal()` in the same file:
 
 ```c
-static char g_fake_tcontext[64] = "u:r:priv_app:s0:c512,c768";
-
-static void init_fake_tcontext(void) {
-    const uint32_t low = make_seed() & 0xffU;
-    const uint32_t high = low + 256U;
-
-    snprintf(
-        g_fake_tcontext,
-        sizeof(g_fake_tcontext),
-        "u:r:priv_app:s0:c%u,c%u,c512,c768",
-        low,
-        high
-    );
-}
+userid = uid / AID_USER_OFFSET;
+appid = uid % AID_USER_OFFSET;
 ```
 
-The value is not randomized for every log line. It is stable for the current `logd` lifetime, which looks more natural than high-frequency per-line randomness.
+Therefore, when the Android `userId` is 0, `LEVELFROM_USER` produces `512 + 0 = c512` and `768 + 0 = c768`, resulting in `s0:c512,c768`.
 
-On an arm64 rooted test device, this hid the procfs audit side channels described in this article. However, in a scrcpy scenario without root-level intervention, the high-PID `u:r:shell:s0` cluster can still be detected. That is why the detection method remains useful as a practical risk signal.
+Why does `priv_app` use that branch? The common AOSP rule can be found in [`system/sepolicy/private/seapp_contexts`](https://android.googlesource.com/platform/system/sepolicy/+/refs/heads/android16-release/private/seapp_contexts#201):
+
+```text
+user=_app isPrivApp=true domain=priv_app type=privapp_data_file levelFrom=user
+```
+
+In other words, `priv_app` normally derives its MLS/MCS categories from the Android `userId`, not from the concrete app. For Android user 0, `u:r:priv_app:s0:c512,c768` is the natural-looking form.
+
+In multi-user, work-profile, or app-cloning environments, the Android `userId` may not be 0. In that case, the `priv_app` suffix should be recomputed from the actual `userId`. For example, `userId=10` produces `s0:c522,c768`. But this is still rule-based computation, not unconstrained randomization.
+
+So my earlier PatchAudit rewrite was semantically mismatched: it used the `priv_app` domain, but the MLS/MCS suffix looked closer to an `untrusted_app` `LEVELFROM_ALL` form.
 
 ```diff
 - tcontext=u:r:magisk:s0
 + tcontext=u:r:priv_app:s0:c115,c371,c512,c768
 ```
 
-Other device families have not been systematically tested. If there are issues, they can be reported to PatchAudit.
+This replacement may be syntactically valid, but it is semantically awkward. It looks like ordinary app-level categories were attached to the `priv_app` domain, which can become a new fingerprint under default AOSP rules.
+
+The more accurate conclusion is:
+
+1. ZN-AuditPatch is narrow because it only handles `magisk` and `su`.
+2. `tcontext=u:r:priv_app:s0:c512,c768` should not be treated as a fingerprint by default. It matches the common MLS/MCS form of `priv_app` under Android user 0.
+3. If procfs audit rewriting is generalized, the replacement must follow the target device's real `seapp_contexts` semantics and derive categories from the actual Android `userId`.
+4. For low-PID root-related processes such as `magisk`, `priv_app` may be a more natural replacement. For scrcpy-like shell chains, whether `priv_app` is a natural replacement needs separate analysis and should not be assumed.
+
+Thanks again to [@mb_bvvcoitr](https://bbs.kanxue.com/homepage-1006272.htm) for the correction.
 
 ## Source cases and scripts
 

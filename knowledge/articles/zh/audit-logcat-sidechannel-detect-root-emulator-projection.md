@@ -285,7 +285,9 @@ AOSP SELinux 文档说明, SELinux denial 会进入 `dmesg` 和 `logcat`, 并且
 
 ### ZN-AuditPatch
 
-[ZN-AuditPatch](https://github.com/aviraxp/ZN-AuditPatch) 的实现思路是对已知 root 相关 `tcontext` 做替换, 例如代码中针对 `magisk` 和 `su` 过滤, 并替换为固定的 `tcontext=u:r:priv_app:s0:c512,c768`.
+260522 21:17:53 更新.
+
+[ZN-AuditPatch](https://github.com/aviraxp/ZN-AuditPatch) 的实现思路是对已知 root 相关 `tcontext` 做替换. 代码位置见 [`hook.cpp#L36`](https://github.com/aviraxp/ZN-AuditPatch/blob/master/module/src/main/cpp/hook.cpp#L36):
 
 ```c
 constexpr std::string_view target_context = "tcontext=u:r:priv_app:s0:c512,c768";
@@ -295,58 +297,91 @@ constexpr std::string_view source_contexts[] = {
 };
 ```
 
-这种解法在检测面泛化之后不太够用. 第三方 App 仍然可以发现其他安全域特征, 也可以反过来把固定的 `tcontext=u:r:priv_app:s0:c512,c768` 当成检测特征.
+这段逻辑仅对 `magisk` 和 `su` 做过滤, 并替换为固定字符串 `tcontext=u:r:priv_app:s0:c512,c768`.
 
-### PatchAudit
+我最开始觉得这种写法有两个问题:
 
-[PatchAudit](https://github.com/vwww-droid/PatchAudit) 参考了 ZN-AuditPatch 的方向, 但做了两个调整.
+1. 只匹配 `tcontext=u:r:magisk:s0` 和 `tcontext=u:r:su:s0`, 无法覆盖本文提到的模拟器和投屏特征. 例如模拟器场景里的 `qemu_props`, `goldfish`, `ranchu`, 以及 scrcpy 类场景里的高 PID `u:r:shell:s0` 聚集. 所以我当时认为, 不如把 `path="/proc/..."` 相关 audit 都替换为 `priv_app`.
+2. 我误以为硬编码 `tcontext=u:r:priv_app:s0:c512,c768` 本身也是新的特征, 于是尝试改成稳定随机值, 例如 `u:r:priv_app:s0:c115,c371,c512,c768`.
 
-第一, 不再只匹配 `magisk` 和 `su`, 而是只要是带有 `tcontext=` 的 procfs audit, 并且满足 `dev="proc"` 或 `path="/proc/"`, 就统一改写目标上下文.
+后面经过作者 [@mb_bvvcoitr](https://bbs.kanxue.com/homepage-1006272.htm) 指正, 发现这里是我不够严谨, 随便下了结论. 关键点是: `c512,c768` 并不是随便写死的字符串, 它来自 Android `libselinux` 里的 MLS/MCS 计算逻辑.
+
+相关代码在 AOSP 的 [`external/selinux/libselinux/src/android/android_seapp.c`](https://android.googlesource.com/platform/external/selinux/+/main/libselinux/src/android/android_seapp.c#691), 函数是 `set_range_from_level()`:
 
 ```c
-static bool is_procfs_audit_with_target_context(const char *message) {
-    if (message == NULL) {
-        return false;
+/* Sets the categories of ctx based on the level request */
+int set_range_from_level(context_t ctx, enum levelFrom levelFrom, uid_t userid, uid_t appid)
+{
+    char level[255];
+    switch (levelFrom) {
+    case LEVELFROM_NONE:
+        strncpy(level, "s0", sizeof level);
+        break;
+    case LEVELFROM_APP:
+        snprintf(level, sizeof level, "s0:c%u,c%u",
+             appid & 0xff,
+             256 + (appid>>8 & 0xff));
+        break;
+    case LEVELFROM_USER:
+        snprintf(level, sizeof level, "s0:c%u,c%u",
+             512 + (userid & 0xff),
+             768 + (userid>>8 & 0xff));
+        break;
+    case LEVELFROM_ALL:
+        snprintf(level, sizeof level, "s0:c%u,c%u,c%u,c%u",
+             appid & 0xff,
+             256 + (appid>>8 & 0xff),
+             512 + (userid & 0xff),
+             768 + (userid>>8 & 0xff));
+        break;
+    default:
+        return -1;
     }
-
-    const bool has_tcontext = contains(message, "tcontext=");
-    const bool is_procfs =
-        contains(message, "dev=\"proc\"") ||
-        contains(message, "path=\"/proc/");
-
-    return has_tcontext && is_procfs;
+    if (context_range_set(ctx, level)) {
+        return -2;
+    }
+    return 0;
 }
 ```
 
-第二, 替换后的 `priv_app` MLS 类别不使用固定值, 而是在本次 `logd` 生命周期内生成一个稳定的随机组合.
+其中 `LEVELFROM_USER` 分支写的是 `s0:c%u,c%u`, 两个类别分别按 `512 + (userid & 0xff)` 和 `768 + (userid >> 8 & 0xff)` 计算.
+
+`userid` 和 `appid` 的拆分在同文件 `seapp_context_lookup_internal()` 中:
 
 ```c
-static char g_fake_tcontext[64] = "u:r:priv_app:s0:c512,c768";
-
-static void init_fake_tcontext(void) {
-    const uint32_t low = make_seed() & 0xffU;
-    const uint32_t high = low + 256U;
-
-    snprintf(
-        g_fake_tcontext,
-        sizeof(g_fake_tcontext),
-        "u:r:priv_app:s0:c%u,c%u,c512,c768",
-        low,
-        high
-    );
-}
+userid = uid / AID_USER_OFFSET;
+appid = uid % AID_USER_OFFSET;
 ```
 
-这个值不是每条日志都变, 而是本次 `logd` 生命周期内稳定. 这样比逐条随机更自然, 也避免制造高频变化特征.
+所以主用户 `userId` 为 0 时, `LEVELFROM_USER` 会算出 `512 + 0 = c512` 和 `768 + 0 = c768`, 最终得到 `s0:c512,c768`.
 
-实测在 arm64 root 机器上可以隐藏本文提到的 procfs audit 侧信道. 但如果 scrcpy 场景没有 root 介入, 仍然会暴露高 PID `u:r:shell:s0` 聚集特征, 所以这个检测方案仍然有实际价值.
+而 `priv_app` 为什么会走这个分支, 可以看 AOSP 的 [`system/sepolicy/private/seapp_contexts`](https://android.googlesource.com/platform/system/sepolicy/+/refs/heads/android16-release/private/seapp_contexts#201), 其中常见规则是:
+
+```text
+user=_app isPrivApp=true domain=priv_app type=privapp_data_file levelFrom=user
+```
+
+也就是说, `priv_app` 默认按 Android `userId` 生成类别, 而不是按具体 App 生成类别. 对主用户 `userId=0` 来说, `u:r:priv_app:s0:c512,c768` 反而是更正常的形态.
+
+当然, 如果是系统分身, 工作资料或多用户环境, UID 对应的 Android `userId` 可能不是 0, 这时 `priv_app` 后缀也应该按实际 `userId` 重新计算. 例如 `userId=10` 时会得到 `s0:c522,c768`. 但这仍然是按规则计算, 不是随便随机.
+
+所以我原来的 PatchAudit 写法属于驴唇不对马嘴: 域写成了 `priv_app`, 但 MLS/MCS 后缀却更像普通 `untrusted_app` 的 `LEVELFROM_ALL` 特征.
 
 ```diff
 - tcontext=u:r:magisk:s0
 + tcontext=u:r:priv_app:s0:c115,c371,c512,c768
 ```
 
-其他机器没有系统性测试, 如果有问题可以到 PatchAudit 提 issue.
+这个替换值语法上未必非法, 但语义上很别扭. 它像是把普通 App 的四分类别套到了 `priv_app` 域上, 在默认 AOSP 规则下反而可能形成新的指纹.
+
+更准确的结论应该是:
+
+1. ZN-AuditPatch 只处理 `magisk` 和 `su`, 覆盖面确实偏窄.
+2. `tcontext=u:r:priv_app:s0:c512,c768` 本身不应直接视为异常指纹, 它符合主用户 `priv_app` 的常见 MLS/MCS 形态.
+3. 如果要泛化改写 procfs audit, 改写值必须贴近目标设备上真实 `seapp_contexts` 的语义, 并按实际 Android `userId` 计算类别.
+4. 对 `magisk` 这类低 PID root 相关进程, 伪装成 `priv_app` 可能更自然. 对 scrcpy 这类 shell 链路, 直接伪装成 `priv_app` 是否自然还需要单独判断, 不能一概而论.
+
+再次感谢 [@mb_bvvcoitr](https://bbs.kanxue.com/homepage-1006272.htm) 大佬指正.
 
 ## 沉淀记录
 
