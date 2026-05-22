@@ -27,7 +27,7 @@ Compared with repeatedly packaging, installing, and triggering an app, Mira lets
 
 ## Reproduction
 
-### Fox Magisk
+### Magisk root environment
 
 I asked an AI to call Mira MCP and run a chunked scan. The scan started at PID `900`, touched `/proc/<pid>` in 25-PID windows, and stopped after a hit.
 
@@ -53,7 +53,7 @@ After the app sandbox touches procfs, the audit log directly exposes `tcontext=u
 
 AVD means the emulator bundled with Android Studio. This demo uses an Android 13 image from Android Studio on an Apple Silicon Mac.
 
-In the [Magisk section](#fox-magisk), I used AI-driven MCP calls to demonstrate how fast Mira can iterate. After understanding the mechanism, manually using the controlled third-party shell is often faster.
+In the [Magisk root environment section](#magisk-root-environment), I used AI-driven MCP calls to demonstrate how fast Mira can iterate. After understanding the mechanism, manually using the controlled third-party shell is often faster.
 
 First, use adb to inspect candidate processes and names.
 

@@ -24,7 +24,7 @@
 
 ## 复现
 
-### 狐妖 Magisk
+### Magisk 环境
 
 让 AI 调用 Mira 的 MCP 功能, AI 这里使用分块扫描, 从 `900` 开始按窗口触碰 `/proc/<pid>`, 每个窗口 25 个 PID, 发现命中后停止.
 
@@ -50,7 +50,7 @@ hit_window=1025-1049
 
 AVD 即 Android Studio 自带模拟器, 这里使用 M 芯片 Mac android studio 的 Android 13 镜像作为演示样本
 
-[Magisk检测](#狐妖-magisk) 中使用 AI 调用 MCP 用于展示 AI 快速微调的效率, 实际弄懂原理之后, 手动使用该受控三方权限 shell 会更快
+[Magisk 检测](#magisk-环境) 中使用 AI 调用 MCP 用于展示 AI 快速微调的效率, 实际弄懂原理之后, 手动使用该受控三方权限 shell 会更快
 
 先 adb 查看有什么进程, 进程名是什么
 
