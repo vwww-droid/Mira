@@ -203,7 +203,7 @@ async def handle_client(
 
         await serve_static(target, writer)
     except (asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError):
-        pass
+        return
     except Exception as exc:  # noqa: BLE001 - 最小服务端需要把错误落到 stderr。
         body = f"Internal Server Error: {exc}\n".encode("utf-8")
         writer.write(http_response("500 Internal Server Error", body))

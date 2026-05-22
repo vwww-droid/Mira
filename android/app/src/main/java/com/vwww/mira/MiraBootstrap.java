@@ -379,7 +379,7 @@ public final class MiraBootstrap {
                 String name = entry.getName();
                 if (!name.startsWith(prefix) || entry.isDirectory()) continue;
                 String relativePath = name.substring(prefix.length());
-                File targetFile = new File(destinationRoot, relativePath);
+                File targetFile = safeDestinationFile(destinationRoot, relativePath);
                 try (InputStream input = zipFile.getInputStream(entry)) {
                     copyInputToFile(input, targetFile, relativePath);
                 }
@@ -388,6 +388,20 @@ public final class MiraBootstrap {
             if (extractedAny) return;
         }
         extractAssetTree(assetRoot, destinationRoot, "");
+    }
+
+    private File safeDestinationFile(File destinationRoot, String relativePath) throws IOException {
+        if (relativePath == null || relativePath.isEmpty() || relativePath.startsWith("/") || relativePath.contains("\\")) {
+            throw new IOException("Unsafe bootstrap entry path: " + relativePath);
+        }
+        File root = destinationRoot.getCanonicalFile();
+        File target = new File(root, relativePath).getCanonicalFile();
+        String rootPath = root.getPath();
+        String targetPath = target.getPath();
+        if (!targetPath.equals(rootPath) && !targetPath.startsWith(rootPath + File.separator)) {
+            throw new IOException("Bootstrap entry escapes destination: " + relativePath);
+        }
+        return target;
     }
 
     private String selectBootstrapPrefixAssetRoot() throws IOException {

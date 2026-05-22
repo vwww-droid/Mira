@@ -13,6 +13,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -221,7 +223,22 @@ public final class MiraDiscoveryService extends Service {
         MiraTerminalServer server = new MiraTerminalServer(this, bootstrap, 0);
         server.start();
         terminalServer = server;
-        Log.i(TAG, "Mira Web Terminal listening on http://127.0.0.1:" + server.getPort() + "/?token=" + server.getToken());
+        writeTerminalTokenFile(server.getToken());
+        Log.i(TAG, "Mira Web Terminal listening on http://127.0.0.1:" + server.getPort() + "/?token=<redacted>");
+    }
+
+    private void writeTerminalTokenFile(String token) throws IOException {
+        File runDir = MiraLocalCommandServer.runDir(this);
+        if (!runDir.isDirectory() && !runDir.mkdirs() && !runDir.isDirectory()) {
+            throw new IOException("Unable to create run dir: " + runDir.getAbsolutePath());
+        }
+        File tokenFile = new File(runDir, "mira-terminal-token");
+        try (FileOutputStream output = new FileOutputStream(tokenFile, false)) {
+            output.write((token == null ? "" : token).getBytes(StandardCharsets.UTF_8));
+            output.write('\n');
+        }
+        if (!tokenFile.setReadable(true, true)) throw new IOException("Unable to make terminal token readable by owner");
+        if (!tokenFile.setWritable(true, true)) throw new IOException("Unable to make terminal token writable by owner");
     }
 
     private void stopDiscovery() {
@@ -365,7 +382,7 @@ public final class MiraDiscoveryService extends Service {
             Log.w(TAG, "Ignoring device.command for missing requestId");
             return;
         }
-        Log.i(TAG, "Device command scheduled command=" + command + " requestId=" + requestId);
+        Log.i(TAG, "Device command scheduled command=" + safeLogValue(command) + " requestId=" + safeLogValue(requestId));
         executor.execute(() -> runDeviceCommand(body, command));
     }
 
@@ -376,11 +393,11 @@ public final class MiraDiscoveryService extends Service {
             long startMs = SystemClock.elapsedRealtime();
             MiraCommandResult result = MiraCommandRouter.dispatch(this, command, args);
             long elapsedMs = SystemClock.elapsedRealtime() - startMs;
-            Log.i(TAG, "Device command finished requestId=" + requestId + " command=" + command + " exit=" + result.exitCode + " elapsedMs=" + elapsedMs);
             if (result == null) {
                 sendDeviceCommandResult(body, command, false, "", "command execution failed: empty result");
                 return;
             }
+            Log.i(TAG, "Device command finished requestId=" + safeLogValue(requestId) + " command=" + safeLogValue(command) + " exit=" + result.exitCode + " elapsedMs=" + elapsedMs);
             JSONObject response = new JSONObject();
             response.put("type", "device.command.result");
             response.put("protocol", 1);
@@ -399,10 +416,11 @@ public final class MiraDiscoveryService extends Service {
             }
             int stdoutBytes = result.stdout == null ? 0 : result.stdout.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
             int stderrBytes = result.stderr == null ? 0 : result.stderr.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-            Log.i(TAG, "Sending device command result requestId=" + requestId + " command=" + command + " stdoutBytes=" + stdoutBytes + " stderrBytes=" + stderrBytes);
+            Log.i(TAG, "Sending device command result requestId=" + safeLogValue(requestId) + " command=" + safeLogValue(command) + " stdoutBytes=" + stdoutBytes + " stderrBytes=" + stderrBytes);
             MiraControlClient client = controlClient;
             if (client != null) client.sendJsonDirect(response);
         } catch (Throwable throwable) {
+            Log.w(TAG, "Device command failed requestId=" + safeLogValue(requestId) + " command=" + safeLogValue(command), throwable);
             sendDeviceCommandResult(
                 body,
                 command,
@@ -445,7 +463,7 @@ public final class MiraDiscoveryService extends Service {
             response.put("stdout", stdout);
             response.put("stderr", error == null ? "" : error);
             if (!ok && error != null) response.put("error", error);
-            Log.i(TAG, "Sending device command error result requestId=" + requestId + " command=" + command + " error=" + error);
+            Log.i(TAG, "Sending device command error result requestId=" + safeLogValue(requestId) + " command=" + safeLogValue(command) + " error=" + safeLogValue(error));
             MiraControlClient client = controlClient;
             if (client != null) client.sendJsonDirect(response);
         } catch (Throwable throwable) {
@@ -466,9 +484,11 @@ public final class MiraDiscoveryService extends Service {
             if (Double.isNaN(x) || Double.isInfinite(x) || Double.isNaN(y) || Double.isInfinite(y)) {
                 result = MiraSelfScreenCapture.InputResult.error("invalid tap coordinates");
             } else {
-                boolean accepted = MiraSelfScreenCapture.getInstance().dispatchTapFromFrame((float) x, (float) y);
+                float frameX = clampTapCoordinate(x);
+                float frameY = clampTapCoordinate(y);
+                boolean accepted = MiraSelfScreenCapture.getInstance().dispatchTapFromFrame(frameX, frameY);
                 result = accepted ? MiraSelfScreenCapture.InputResult.ok("tap dispatched") : MiraSelfScreenCapture.InputResult.error("tap not handled");
-                Log.i(TAG, "screen tap accepted=" + accepted + " x=" + x + " y=" + y);
+                Log.i(TAG, "screen tap accepted=" + accepted + " x=" + frameX + " y=" + frameY);
             }
         } else if ("text".equals(kind)) {
             result = MiraSelfScreenCapture.getInstance().dispatchTextInput(body.optString("text", ""));
@@ -617,13 +637,41 @@ public final class MiraDiscoveryService extends Service {
             int index = line.indexOf(':');
             if (index <= 0) continue;
             String key = line.substring(0, index).trim().toLowerCase(Locale.ROOT);
-            if ("content-length".equals(key)) contentLength = Integer.parseInt(line.substring(index + 1).trim());
+            if ("content-length".equals(key)) contentLength = parseContentLength(line.substring(index + 1).trim());
         }
         byte[] body = readExactly(input, contentLength);
         String target = parts[1];
         int queryIndex = target.indexOf('?');
         String path = queryIndex >= 0 ? target.substring(0, queryIndex) : target;
         return new HttpRequest(parts[0], path, body);
+    }
+
+    private static float clampTapCoordinate(double value) {
+        double clamped = Math.max(0d, Math.min(value, 100000d));
+        return (float) clamped;
+    }
+
+    private static int parseContentLength(String value) throws IOException {
+        try {
+            int length = Integer.parseInt(value);
+            if (length < 0 || length > 1024 * 1024) throw new IOException("Invalid Content-Length: " + value);
+            return length;
+        } catch (NumberFormatException exception) {
+            throw new IOException("Invalid Content-Length: " + value, exception);
+        }
+    }
+
+    private static String safeLogValue(String value) {
+        if (value == null) return "";
+        StringBuilder builder = new StringBuilder(Math.min(value.length(), 128));
+        int limit = Math.min(value.length(), 128);
+        for (int i = 0; i < limit; i++) {
+            char ch = value.charAt(i);
+            if (ch == '\r' || ch == '\n' || ch == '\t' || Character.isISOControl(ch)) builder.append('_');
+            else builder.append(ch);
+        }
+        if (value.length() > limit) builder.append("...");
+        return builder.toString();
     }
 
     private byte[] readExactly(InputStream input, int length) throws IOException {

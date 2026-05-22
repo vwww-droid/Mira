@@ -56,9 +56,9 @@ public final class MiraLocalCommandServer implements Closeable {
             throw new IOException("Unable to create command socket dir: " + dir.getAbsolutePath());
         }
         if (dir != null) {
-            dir.setReadable(true, true);
-            dir.setWritable(true, true);
-            dir.setExecutable(true, true);
+            if (!dir.setReadable(true, true)) throw new IOException("Unable to make command socket dir readable: " + dir.getAbsolutePath());
+            if (!dir.setWritable(true, true)) throw new IOException("Unable to make command socket dir writable: " + dir.getAbsolutePath());
+            if (!dir.setExecutable(true, true)) throw new IOException("Unable to make command socket dir executable: " + dir.getAbsolutePath());
         }
         if (socketFile.exists() && !socketFile.delete()) {
             throw new IOException("Unable to replace command socket: " + socketFile.getAbsolutePath());

@@ -308,6 +308,13 @@ static const char *mira_builtin_rest_after_command(const char *line) {
     return line;
 }
 
+static int mira_builtin_path_under_home(mira_builtin_shell_t *shell, const char *path) {
+    if (shell == NULL || path == NULL) return -1;
+    size_t home_len = strlen(shell->home);
+    if (home_len == 0 || strncmp(path, shell->home, home_len) != 0) return -1;
+    return path[home_len] == '\0' || path[home_len] == '/' ? 0 : -1;
+}
+
 static void mira_builtin_write_text_file(mira_builtin_shell_t *shell, const char *command_line, int argc, char **argv, const char *mode) {
     if (argc < 3) {
         mira_builtin_printf_locked(shell, "%s: missing file or text\r\n", argv[0]);
@@ -316,6 +323,10 @@ static void mira_builtin_write_text_file(mira_builtin_shell_t *shell, const char
     char path[PATH_MAX];
     if (mira_builtin_resolve_path(shell, argv[1], path, sizeof(path), 0) != 0) {
         mira_builtin_printf_locked(shell, "%s: %s: %s\r\n", argv[0], argv[1], strerror(errno));
+        return;
+    }
+    if (mira_builtin_path_under_home(shell, path) != 0) {
+        mira_builtin_printf_locked(shell, "%s: %s: permission denied outside home\r\n", argv[0], path);
         return;
     }
     FILE *file = fopen(path, mode);
@@ -393,6 +404,8 @@ static void mira_builtin_execute_line(mira_builtin_shell_t *shell, const char *r
             char path[PATH_MAX];
             if (mira_builtin_resolve_path(shell, argv[1], path, sizeof(path), 0) != 0) {
                 mira_builtin_printf_locked(shell, "touch: %s: %s\r\n", argv[1], strerror(errno));
+            } else if (mira_builtin_path_under_home(shell, path) != 0) {
+                mira_builtin_printf_locked(shell, "touch: %s: permission denied outside home\r\n", path);
             } else {
                 int fd = open(path, O_CREAT | O_WRONLY, 0644);
                 if (fd < 0) mira_builtin_printf_locked(shell, "touch: %s: %s\r\n", path, strerror(errno));

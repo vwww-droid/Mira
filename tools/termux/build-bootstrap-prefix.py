@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import contextlib
 import os
 import re
 import shlex
@@ -285,10 +286,10 @@ def extract_deb(deb_path: Path, destination: Path) -> None:
         archive_path = Path(handle.name)
     try:
         try:
-            run(["tar", "-xf", str(archive_path), "-C", str(destination)])
+            run(["tar", "--no-same-owner", "--no-same-permissions", "-xf", str(archive_path), "-C", str(destination)])
         except subprocess.CalledProcessError:
             with tarfile.open(archive_path, mode="r:*") as archive:
-                archive.extractall(destination)
+                safe_extract_tar(archive, destination)
     finally:
         archive_path.unlink(missing_ok=True)
 
@@ -409,10 +410,52 @@ def download_source_distribution(destination: Path, package_spec: str) -> Path:
     return after[-1]
 
 
+def safe_extract_tar_member(archive: tarfile.TarFile, member: tarfile.TarInfo, destination: Path) -> None:
+    root = destination.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    target = (root / member.name).resolve()
+    if target != root and root not in target.parents:
+        raise RuntimeError(f"tar 成员越界: {member.name}")
+    if member.isdir():
+        target.mkdir(parents=True, exist_ok=True)
+        return
+    if member.issym():
+        link_target = (target.parent / member.linkname).resolve()
+        if link_target != root and root not in link_target.parents:
+            raise RuntimeError(f"tar 符号链接越界: {member.name} -> {member.linkname}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(FileNotFoundError):
+            target.unlink()
+        target.symlink_to(member.linkname)
+        return
+    if member.islnk():
+        link_target = (root / member.linkname).resolve()
+        if link_target != root and root not in link_target.parents:
+            raise RuntimeError(f"tar 硬链接越界: {member.name} -> {member.linkname}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(FileNotFoundError):
+            target.unlink()
+        target.hardlink_to(link_target)
+        return
+    if not member.isfile():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    source = archive.extractfile(member)
+    if source is None:
+        return
+    with source, target.open("wb") as output:
+        shutil.copyfileobj(source, output)
+    target.chmod(member.mode & 0o777)
+
+def safe_extract_tar(archive: tarfile.TarFile, destination: Path) -> None:
+    for member in archive.getmembers():
+        safe_extract_tar_member(archive, member, destination)
+
+
 def extract_tarball(archive_path: Path, destination: Path) -> Path:
     reset_directory(destination)
     with tarfile.open(archive_path, "r:*") as archive:
-        archive.extractall(destination)
+        safe_extract_tar(archive, destination)
     directories = [path for path in destination.iterdir() if path.is_dir()]
     if len(directories) == 1:
         return directories[0]

@@ -183,22 +183,30 @@ import sys
 import time
 
 adb = sys.argv[1:]
-pattern = re.compile(r"Mira Web Terminal listening on (http://127\.0\.0\.1:(\d+)/\?token=([A-Za-z0-9_\-+/=]+))")
+pattern = re.compile(r"Mira Web Terminal listening on http://127\.0\.0\.1:(\d+)/\?token=<redacted>")
 deadline = time.time() + 25
 while time.time() < deadline:
     proc = subprocess.run(adb + ["logcat", "-d", "-s", "MiraDiscovery:I"], capture_output=True, text=True)
     text = (proc.stdout or "") + "\n" + (proc.stderr or "")
     match = pattern.search(text)
-    if match:
-      print(match.group(1))
-      print(match.group(2))
-      print(match.group(3))
-      sys.exit(0)
+    if not match:
+        time.sleep(1)
+        continue
+    token_proc = subprocess.run(
+        adb + ["shell", "run-as", "com.vwww.mira", "cat", "files/run/mira-terminal-token"],
+        capture_output=True,
+        text=True,
+    )
+    token = (token_proc.stdout or "").strip()
+    if token:
+        print(f"http://127.0.0.1:{match.group(1)}/?token={token}")
+        print(match.group(1))
+        print(token)
+        sys.exit(0)
     time.sleep(1)
 sys.exit(1)
 PY
 }
-
 require_cmd adb
 require_cmd python3
 
@@ -277,17 +285,17 @@ if [[ "${SETUP_DEVICE_FORWARD}" == "1" ]]; then
   fi
 
   if [[ "${#TERMINAL_INFO[@]}" -lt 3 ]]; then
-    echo "Unable to parse device-local terminal URL from logcat." >&2
-    echo "Expected MiraDiscovery log line like: Mira Web Terminal listening on http://127.0.0.1:<port>/?token=<token>" >&2
+    echo "Unable to parse device-local terminal URL from logcat and app-private token file." >&2
+    echo "Expected redacted MiraDiscovery log line plus files/run/mira-terminal-token readable via adb run-as." >&2
     exit 1
   fi
 
-  DEVICE_LOCAL_URL="${TERMINAL_INFO[0]}"
   DEVICE_LOCAL_PORT="${TERMINAL_INFO[1]}"
   DEVICE_LOCAL_TOKEN="${TERMINAL_INFO[2]}"
 
   echo "Configuring adb forward tcp:${FORWARD_HOST_PORT} -> tcp:${DEVICE_LOCAL_PORT} ..."
   adb_cmd forward "tcp:${FORWARD_HOST_PORT}" "tcp:${DEVICE_LOCAL_PORT}"
+  DEVICE_LOCAL_URL="http://127.0.0.1:${FORWARD_HOST_PORT}/?token=${DEVICE_LOCAL_TOKEN}"
 fi
 
 cat <<MSG

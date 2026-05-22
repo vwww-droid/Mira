@@ -119,7 +119,7 @@ public final class MiraDeviceMetrics {
 
     private static double round1(double value) {
         if (value < 0d || Double.isNaN(value) || Double.isInfinite(value)) return -1d;
-        return Double.parseDouble(String.format(Locale.US, "%.1f", value));
+        return Math.round(value * 10d) / 10d;
     }
 
     private static final class CpuSample {

@@ -526,10 +526,15 @@ static void mira_load_install_id(const char *home_dir, char *out, size_t out_siz
              "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
              random[0], random[1], random[2], random[3], random[4], random[5], random[6], random[7],
              random[8], random[9], random[10], random[11], random[12], random[13], random[14], random[15]);
-    file = fopen(path, "wb");
-    if (file != NULL) {
-        fprintf(file, "%s\n", out);
-        fclose(file);
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd >= 0) {
+        file = fdopen(fd, "wb");
+        if (file != NULL) {
+            fprintf(file, "%s\n", out);
+            fclose(file);
+        } else {
+            close(fd);
+        }
     }
 }
 
