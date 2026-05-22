@@ -309,7 +309,6 @@ def scan_lan_blocking(server_url: str, target: str, discovery_port: int, timeout
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         sock.settimeout(0.2)
-        sock.bind((udp_bind_host_for_advertise_url(server_url), 0))
         sock.sendto(payload, (target, discovery_port))
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:

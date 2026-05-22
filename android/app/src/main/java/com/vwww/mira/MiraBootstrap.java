@@ -395,13 +395,20 @@ public final class MiraBootstrap {
             throw new IOException("Unsafe bootstrap entry path: " + relativePath);
         }
         File root = destinationRoot.getCanonicalFile();
-        File target = new File(root, relativePath).getCanonicalFile();
+        File target = root;
+        for (String part : relativePath.split("/")) {
+            if (part.isEmpty() || ".".equals(part) || "..".equals(part)) {
+                throw new IOException("Unsafe bootstrap entry path: " + relativePath);
+            }
+            target = new File(target, part);
+        }
+        File canonicalTarget = target.getCanonicalFile();
         String rootPath = root.getPath();
-        String targetPath = target.getPath();
+        String targetPath = canonicalTarget.getPath();
         if (!targetPath.equals(rootPath) && !targetPath.startsWith(rootPath + File.separator)) {
             throw new IOException("Bootstrap entry escapes destination: " + relativePath);
         }
-        return target;
+        return canonicalTarget;
     }
 
     private String selectBootstrapPrefixAssetRoot() throws IOException {

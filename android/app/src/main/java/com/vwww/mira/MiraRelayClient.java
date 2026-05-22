@@ -160,9 +160,23 @@ public final class MiraRelayClient implements Closeable {
         } else if ("session.close".equals(type)) {
             running.set(false);
         } else if ("error".equals(type)) {
-            Log.w(TAG, "Relay server error: " + json.optString("error"));
+            Log.w(TAG, "Relay server error: " + safeLogValue(json.optString("error")));
         }
     }
+
+    private static String safeLogValue(String value) {
+        if (value == null) return "";
+        StringBuilder builder = new StringBuilder(Math.min(value.length(), 128));
+        int limit = Math.min(value.length(), 128);
+        for (int i = 0; i < limit; i++) {
+            char ch = value.charAt(i);
+            if (ch == '\r' || ch == '\n' || ch == '\t' || Character.isISOControl(ch)) builder.append('_');
+            else builder.append(ch);
+        }
+        if (value.length() > limit) builder.append("...");
+        return builder.toString();
+    }
+
 
     private void pumpPtyToServer() {
         byte[] buffer = new byte[8192];
