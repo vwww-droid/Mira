@@ -14,6 +14,7 @@ import java.security.SecureRandom;
 import java.util.UUID;
 
 public final class MiraIdentity {
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final String PREFS = "mira_identity";
     private static final String KEY_INSTALL_ID = "install_id";
     private static final String KEY_DEVICE_SECRET = "device_secret";
@@ -75,7 +76,7 @@ public final class MiraIdentity {
         String secret = preferences.getString(KEY_DEVICE_SECRET, null);
         if (installId != null && secret != null) return;
         byte[] secretBytes = new byte[32];
-        new SecureRandom().nextBytes(secretBytes);
+        SECURE_RANDOM.nextBytes(secretBytes);
         preferences.edit()
             .putString(KEY_INSTALL_ID, installId == null ? UUID.randomUUID().toString() : installId)
             .putString(KEY_DEVICE_SECRET, secret == null ? Base64.encodeToString(secretBytes, Base64.NO_WRAP | Base64.URL_SAFE) : secret)

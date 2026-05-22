@@ -321,11 +321,13 @@ public final class MiraSelfScreenCapture {
             if (root == null || root.getWidth() <= 0 || root.getHeight() <= 0) return false;
 
             CaptureGeometry geometry = lastGeometry;
-            float x = frameX;
-            float y = frameY;
+            float safeFrameX = Math.max(0f, Math.min(frameX, 100000f));
+            float safeFrameY = Math.max(0f, Math.min(frameY, 100000f));
+            float x = safeFrameX;
+            float y = safeFrameY;
             if (geometry != null && geometry.outputWidth > 0 && geometry.outputHeight > 0) {
-                x = frameX * geometry.sourceWidth / (float) geometry.outputWidth;
-                y = frameY * geometry.sourceHeight / (float) geometry.outputHeight;
+                x = safeFrameX * geometry.sourceWidth / (float) geometry.outputWidth;
+                y = safeFrameY * geometry.sourceHeight / (float) geometry.outputHeight;
             }
             x = Math.max(0f, Math.min(x, Math.max(0, root.getWidth() - 1)));
             y = Math.max(0f, Math.min(y, Math.max(0, root.getHeight() - 1)));

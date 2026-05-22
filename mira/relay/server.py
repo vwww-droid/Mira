@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import base64
 import json
+import math
 import mimetypes
 import posixpath
 import socket
@@ -285,6 +286,16 @@ def static_response(path: str) -> bytes | None:
     return None
 
 
+def udp_bind_host_for_advertise_url(server_url: str) -> str:
+    try:
+        host = urlparse(server_url).hostname or ""
+    except ValueError:
+        return ""
+    if host in {"", "0.0.0.0", "::", "localhost"} or host.startswith("127."):
+        return ""
+    return host
+
+
 def scan_lan_blocking(server_url: str, target: str, discovery_port: int, timeout: float) -> list[dict[str, Any]]:
     payload = json.dumps(
         {
@@ -298,7 +309,7 @@ def scan_lan_blocking(server_url: str, target: str, discovery_port: int, timeout
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         sock.settimeout(0.2)
-        sock.bind(("", 0))
+        sock.bind((udp_bind_host_for_advertise_url(server_url), 0))
         sock.sendto(payload, (target, discovery_port))
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -326,7 +337,8 @@ async def broadcast_session(session: RelaySession, message: dict[str, Any]) -> N
     for browser in list(session.browsers):
         try:
             await send_json(browser.writer, browser.lock, message)
-        except Exception:
+        except Exception as exc:
+            relay_log(f"Broadcast to terminal browser failed sessionId={session.session_id} error={relay_exc_text(exc)}")
             dead.append(browser)
     for browser in dead:
         session.browsers.discard(browser)
@@ -365,8 +377,8 @@ async def broadcast_screen_clients(record: DeviceRecord, payload: dict[str, Any]
         record.screen_clients.discard(browser)
         try:
             browser.writer.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            relay_log(f"Screen browser close failed: {relay_exc_text(exc)}")
     return {"sent": sent, "timeouts": timeouts}
 
 
@@ -661,7 +673,7 @@ def float_field(body: dict[str, Any], name: str) -> float | None:
         value = float(body.get(name))
     except (TypeError, ValueError):
         return None
-    if not value == value or value in {float("inf"), float("-inf")}:
+    if math.isnan(value) or math.isinf(value):
         return None
     return value
 
@@ -1036,13 +1048,13 @@ async def close_session(state: RelayState, session_id: str) -> None:
     if session.device_writer is not None:
         try:
             await send_json(session.device_writer, session.device_lock, message)
-        except Exception:
-            pass
+        except Exception as exc:
+            relay_log(f"Session device close notify failed: {relay_exc_text(exc)}")
     elif control_writer is not None and control_lock is not None and not control_writer.is_closing():
         try:
             await send_json(control_writer, control_lock, message)
-        except Exception:
-            pass
+        except Exception as exc:
+            relay_log(f"Session control close notify failed: {relay_exc_text(exc)}")
     await broadcast_session(session, message)
 
 
@@ -1099,7 +1111,8 @@ async def handle_device_ws(state: RelayState, reader: asyncio.StreamReader, writ
             if message.get("type") == "terminal.output" and message.get("sessionId") == session.session_id:
                 try:
                     chunk = base64.b64decode(str(message.get("dataBase64") or ""))
-                except Exception:
+                except Exception as exc:
+                    relay_log(f"Invalid terminal output payload: {relay_exc_text(exc)}")
                     chunk = b""
                 session.append_output(chunk)
                 await broadcast_session(session, message)
@@ -1107,7 +1120,7 @@ async def handle_device_ws(state: RelayState, reader: asyncio.StreamReader, writ
                 await close_session(state, session.session_id)
                 break
     except (WebSocketClosed, asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError):
-        pass
+        return
     finally:
         if session is not None:
             if session.device_writer is writer:
@@ -1319,7 +1332,7 @@ async def handle_browser_ws(state: RelayState, reader: asyncio.StreamReader, wri
                     continue
                 await send_json(session.device_writer, session.device_lock, message)
     except (WebSocketClosed, asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError):
-        pass
+        return
     finally:
         if session is not None:
             session.browsers.discard(client)
@@ -1611,7 +1624,7 @@ async def handle_client(state: RelayState, reader: asyncio.StreamReader, writer:
             writer.write(json_response("404 Not Found", {"error": "not found"}))
         await writer.drain()
     except (asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError):
-        pass
+        return
     except Exception as exc:  # noqa: BLE001
         relay_log(f"HTTP handler error: {traceback.format_exc().rstrip()}")
         writer.write(json_response("500 Internal Server Error", {"error": str(exc)}))

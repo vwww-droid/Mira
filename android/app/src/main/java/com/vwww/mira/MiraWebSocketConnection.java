@@ -18,12 +18,14 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Locale;
 
+import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
 public final class MiraWebSocketConnection implements Closeable {
     private static final String TAG = "MiraWebSocket";
     private static final int MAX_FRAME_SIZE = 1024 * 1024;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final Object writeLock = new Object();
     private volatile Socket socket;
@@ -57,7 +59,7 @@ public final class MiraWebSocketConnection implements Closeable {
         String path = uri.getRawPath() == null || uri.getRawPath().isEmpty() ? "/" : uri.getRawPath();
         if (uri.getRawQuery() != null) path += "?" + uri.getRawQuery();
 
-        Log.i(TAG, "Connecting websocket " + url);
+        Log.i(TAG, "Connecting websocket host=" + host + " port=" + port + " tls=" + tls);
         Socket connected = openSocket(host, port, tls);
         connected.setSoTimeout(15000);
         connected.setTcpNoDelay(true);
@@ -65,7 +67,7 @@ public final class MiraWebSocketConnection implements Closeable {
         OutputStream output = connected.getOutputStream();
 
         byte[] nonce = new byte[16];
-        new SecureRandom().nextBytes(nonce);
+        SECURE_RANDOM.nextBytes(nonce);
         String key = Base64.encodeToString(nonce, Base64.NO_WRAP);
         String hostHeader = port == defaultPort ? host : host + ":" + port;
         String request = "GET " + path + " HTTP/1.1\r\n" +
@@ -91,6 +93,9 @@ public final class MiraWebSocketConnection implements Closeable {
         if (!tls) return raw;
         SSLSocketFactory factory = (SSLSocketFactory) SSLSocketFactory.getDefault();
         SSLSocket sslSocket = (SSLSocket) factory.createSocket(raw, host, port, true);
+        SSLParameters parameters = sslSocket.getSSLParameters();
+        parameters.setEndpointIdentificationAlgorithm("HTTPS");
+        sslSocket.setSSLParameters(parameters);
         sslSocket.startHandshake();
         return sslSocket;
     }
@@ -110,7 +115,7 @@ public final class MiraWebSocketConnection implements Closeable {
             frameOutput.write(0x80 | opcode);
             int length = payload.length;
             byte[] mask = new byte[4];
-            new SecureRandom().nextBytes(mask);
+            SECURE_RANDOM.nextBytes(mask);
             if (length < 126) {
                 frameOutput.write(0x80 | length);
             } else if (length <= 0xFFFF) {

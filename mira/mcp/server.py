@@ -91,7 +91,9 @@ class BrowserWebSocket:
         host, port, path, tls = self.relay.websocket_target("/ws/browser")
         sock = socket.create_connection((host, port), timeout=8.0)
         if tls:
-            sock = ssl.create_default_context().wrap_socket(sock, server_hostname=host)
+            context = ssl.create_default_context()
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            sock = context.wrap_socket(sock, server_hostname=host)
         sock.settimeout(10.0)
         key = base64.b64encode(os.urandom(16)).decode("ascii")
         request = (
@@ -152,7 +154,7 @@ class BrowserWebSocket:
             try:
                 sock.close()
             except OSError:
-                pass
+                self.socket = None
 
     def _recv_exact(self, length: int) -> bytes:
         if self.socket is None:
@@ -259,8 +261,8 @@ class TerminalSession:
         self.active = False
         try:
             self.relay.request("/api/close", {"sessionId": self.session_id}, timeout=5.0)
-        except ToolError:
-            pass
+        except ToolError as exc:
+            self.status = f"close request failed: {exc}"
         self.ws.close()
         with self.lock:
             self.lock.notify_all()

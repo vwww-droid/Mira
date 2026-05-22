@@ -204,8 +204,13 @@ def resolve_packages(packages: dict[str, AlpinePackage], root_packages: tuple[st
 
 def extract_apk(apk_path: Path, destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
+    root = destination.resolve()
     with tarfile.open(apk_path, "r:gz") as archive:
         members = [member for member in archive.getmembers() if not Path(member.name).name.startswith(".")]
+        for member in members:
+            target = (root / member.name).resolve()
+            if target != root and root not in target.parents:
+                raise RuntimeError(f"apk 成员越界: {member.name}")
         archive.extractall(destination, members=members)
 
 
@@ -328,12 +333,21 @@ def download_source_distribution(destination: Path, spec: str) -> Path:
     return tarballs[0]
 
 
+def safe_extract_tar(archive: tarfile.TarFile, destination: Path) -> None:
+    root = destination.resolve()
+    for member in archive.getmembers():
+        target = (root / member.name).resolve()
+        if target != root and root not in target.parents:
+            raise RuntimeError(f"tar 成员越界: {member.name}")
+    archive.extractall(destination)
+
+
 def extract_tarball(archive_path: Path, destination: Path) -> Path:
     if destination.exists():
         shutil.rmtree(destination)
     destination.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive_path, "r:gz") as archive:
-        archive.extractall(destination)
+        safe_extract_tar(archive, destination)
     children = [path for path in destination.iterdir() if path.is_dir()]
     if len(children) == 1:
         return children[0]

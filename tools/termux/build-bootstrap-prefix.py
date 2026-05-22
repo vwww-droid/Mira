@@ -285,10 +285,10 @@ def extract_deb(deb_path: Path, destination: Path) -> None:
         archive_path = Path(handle.name)
     try:
         try:
-            run(["tar", "-xf", str(archive_path), "-C", str(destination)])
+            run(["tar", "--no-same-owner", "--no-same-permissions", "-xf", str(archive_path), "-C", str(destination)])
         except subprocess.CalledProcessError:
             with tarfile.open(archive_path, mode="r:*") as archive:
-                archive.extractall(destination)
+                safe_extract_tar(archive, destination)
     finally:
         archive_path.unlink(missing_ok=True)
 
@@ -409,10 +409,19 @@ def download_source_distribution(destination: Path, package_spec: str) -> Path:
     return after[-1]
 
 
+def safe_extract_tar(archive: tarfile.TarFile, destination: Path) -> None:
+    root = destination.resolve()
+    for member in archive.getmembers():
+        target = (root / member.name).resolve()
+        if target != root and root not in target.parents:
+            raise RuntimeError(f"tar 成员越界: {member.name}")
+    archive.extractall(destination)
+
+
 def extract_tarball(archive_path: Path, destination: Path) -> Path:
     reset_directory(destination)
     with tarfile.open(archive_path, "r:*") as archive:
-        archive.extractall(destination)
+        safe_extract_tar(archive, destination)
     directories = [path for path in destination.iterdir() if path.is_dir()]
     if len(directories) == 1:
         return directories[0]

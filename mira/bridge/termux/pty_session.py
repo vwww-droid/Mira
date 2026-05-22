@@ -7,6 +7,7 @@ PTY slave 侧, 服务端持有 PTY master 侧并与 WebSocket 转发字节流。
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import fcntl
 import os
 import pty
@@ -145,31 +146,25 @@ class PtySession:
 
         loop = asyncio.get_running_loop()
         if self._master_fd is not None:
-            try:
+            with contextlib.suppress(ValueError, RuntimeError):
                 loop.remove_reader(self._master_fd)
-            except (ValueError, RuntimeError):
-                pass
 
         if self._process and self._process.poll() is None:
             try:
                 os.killpg(os.getpgid(self._process.pid), signal.SIGHUP)
             except ProcessLookupError:
-                pass
+                self._process = None
             except PermissionError:
                 self._process.terminate()
 
         if self._master_fd is not None:
-            try:
+            with contextlib.suppress(OSError):
                 os.close(self._master_fd)
-            except OSError:
-                pass
             self._master_fd = None
 
         if self._slave_fd is not None:
-            try:
+            with contextlib.suppress(OSError):
                 os.close(self._slave_fd)
-            except OSError:
-                pass
             self._slave_fd = None
 
         current_task = asyncio.current_task()

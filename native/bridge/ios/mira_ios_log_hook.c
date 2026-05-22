@@ -45,7 +45,7 @@ static void mira_capture_standard_fd(int fd, const void *buf, size_t nbyte) {
     mira_raw_log_write(prefix, strlen(prefix));
     mira_raw_log_write(buf, captured);
     const char *bytes = (const char *) buf;
-    if (captured == 0 || bytes[captured - 1] != '\n') {
+    if (bytes[captured - 1] != '\n') {
         mira_raw_log_write("\n", 1);
     }
     mira_inside_write_hook = 0;

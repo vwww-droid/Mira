@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class MiraTerminalServer implements Closeable {
     private static final String WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final Context context;
     private final MiraBootstrap bootstrap;
@@ -80,11 +81,12 @@ public final class MiraTerminalServer implements Closeable {
             HttpRequest request = readHttpRequest(input);
             if (request == null) return;
 
+            if (!isAuthorized(request)) {
+                writeHttp(output, "403 Forbidden", "text/plain; charset=utf-8", "Forbidden\n".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
             if ("/ws/terminal".equals(request.path) && isWebSocketUpgrade(request)) {
-                if (!isAuthorized(request)) {
-                    writeHttp(output, "403 Forbidden", "text/plain; charset=utf-8", "Forbidden\n".getBytes(StandardCharsets.UTF_8));
-                    return;
-                }
                 handleTerminalWebSocket(input, output, request.headers);
                 return;
             }
@@ -371,7 +373,7 @@ public final class MiraTerminalServer implements Closeable {
 
     private String createToken() {
         byte[] bytes = new byte[24];
-        new SecureRandom().nextBytes(bytes);
+        SECURE_RANDOM.nextBytes(bytes);
         return Base64.encodeToString(bytes, Base64.NO_WRAP | Base64.URL_SAFE);
     }
 
