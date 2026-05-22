@@ -292,7 +292,7 @@ def udp_bind_host_for_advertise_url(server_url: str) -> str:
     except ValueError:
         return ""
     if host in {"", "0.0.0.0", "::", "localhost"} or host.startswith("127."):
-        return ""
+        return "127.0.0.1"
     return host
 
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import io
 import os
 import re
@@ -202,16 +203,50 @@ def resolve_packages(packages: dict[str, AlpinePackage], root_packages: tuple[st
     return ordered
 
 
+def safe_extract_tar_member(archive: tarfile.TarFile, member: tarfile.TarInfo, destination: Path) -> None:
+    root = destination.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    target = (root / member.name).resolve()
+    if target != root and root not in target.parents:
+        raise RuntimeError(f"tar 成员越界: {member.name}")
+    if member.isdir():
+        target.mkdir(parents=True, exist_ok=True)
+        return
+    if member.issym():
+        link_target = (target.parent / member.linkname).resolve()
+        if link_target != root and root not in link_target.parents:
+            raise RuntimeError(f"tar 符号链接越界: {member.name} -> {member.linkname}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(FileNotFoundError):
+            target.unlink()
+        target.symlink_to(member.linkname)
+        return
+    if member.islnk():
+        link_target = (root / member.linkname).resolve()
+        if link_target != root and root not in link_target.parents:
+            raise RuntimeError(f"tar 硬链接越界: {member.name} -> {member.linkname}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(FileNotFoundError):
+            target.unlink()
+        target.hardlink_to(link_target)
+        return
+    if not member.isfile():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    source = archive.extractfile(member)
+    if source is None:
+        return
+    with source, target.open("wb") as output:
+        shutil.copyfileobj(source, output)
+    target.chmod(member.mode & 0o777)
+
 def extract_apk(apk_path: Path, destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
-    root = destination.resolve()
     with tarfile.open(apk_path, "r:gz") as archive:
-        members = [member for member in archive.getmembers() if not Path(member.name).name.startswith(".")]
-        for member in members:
-            target = (root / member.name).resolve()
-            if target != root and root not in target.parents:
-                raise RuntimeError(f"apk 成员越界: {member.name}")
-        archive.extractall(destination, members=members)
+        for member in archive.getmembers():
+            if Path(member.name).name.startswith("."):
+                continue
+            safe_extract_tar_member(archive, member, destination)
 
 
 def install_apk_packages(data_root: Path, cache_dir: Path) -> str:
@@ -334,12 +369,8 @@ def download_source_distribution(destination: Path, spec: str) -> Path:
 
 
 def safe_extract_tar(archive: tarfile.TarFile, destination: Path) -> None:
-    root = destination.resolve()
     for member in archive.getmembers():
-        target = (root / member.name).resolve()
-        if target != root and root not in target.parents:
-            raise RuntimeError(f"tar 成员越界: {member.name}")
-    archive.extractall(destination)
+        safe_extract_tar_member(archive, member, destination)
 
 
 def extract_tarball(archive_path: Path, destination: Path) -> Path:
