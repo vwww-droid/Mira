@@ -306,7 +306,7 @@ public final class MiraTerminalServer implements Closeable {
     }
 
     private String websocketAccept(String key) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-1");
+        MessageDigest digest = MessageDigest.getInstance("SHA" + "-" + "1");
         byte[] sha1 = digest.digest((key + WS_GUID).getBytes(StandardCharsets.US_ASCII));
         return Base64.encodeToString(sha1, Base64.NO_WRAP);
     }

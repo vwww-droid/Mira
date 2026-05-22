@@ -6,10 +6,7 @@ import android.util.Log;
 import org.json.JSONObject;
 
 import java.io.Closeable;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
 import java.net.URI;
-import java.net.URL;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
@@ -150,7 +147,7 @@ public final class MiraControlClient implements Closeable {
             if (!running.get() || current == null) return;
             current.sendJson(json);
         } catch (Throwable throwable) {
-            Log.w(TAG, "Control send failed mode=" + mode + " type=" + json.optString("type", ""), throwable);
+            Log.w(TAG, "Control send failed mode=" + safeLogValue(mode) + " type=" + safeLogValue(json.optString("type", "")), throwable);
         }
     }
 
@@ -182,11 +179,11 @@ public final class MiraControlClient implements Closeable {
             message.put("capturedAt", System.currentTimeMillis());
             message.put("outline", outline);
             int bytes = message.toString().getBytes(StandardCharsets.UTF_8).length;
-            Log.i(TAG, "posting outline trigger=" + trigger + " available=" + outline.optBoolean("available", false) + " nodes=" + nodes + " bytes=" + bytes);
-            postOutline(message);
-            Log.i(TAG, "outline posted trigger=" + trigger + " nodes=" + nodes);
+            Log.i(TAG, "posting outline trigger=" + safeLogValue(trigger) + " available=" + outline.optBoolean("available", false) + " nodes=" + nodes + " bytes=" + bytes);
+            current.sendJson(message);
+            Log.i(TAG, "outline posted trigger=" + safeLogValue(trigger) + " nodes=" + nodes);
         } catch (Throwable throwable) {
-            Log.w(TAG, "Outline send failed trigger=" + trigger, throwable);
+            Log.w(TAG, "Outline send failed trigger=" + safeLogValue(trigger), throwable);
         }
     }
 
@@ -216,34 +213,6 @@ public final class MiraControlClient implements Closeable {
         return json;
     }
 
-    private void postOutline(JSONObject message) throws Exception {
-        byte[] data = message.toString().getBytes(StandardCharsets.UTF_8);
-        HttpURLConnection connection = (HttpURLConnection) new URL(outlinePostUrl(relayUrl)).openConnection();
-        connection.setConnectTimeout(5000);
-        connection.setReadTimeout(5000);
-        connection.setRequestMethod("POST");
-        connection.setDoOutput(true);
-        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-        connection.setFixedLengthStreamingMode(data.length);
-        try (OutputStream output = connection.getOutputStream()) {
-            output.write(data);
-        }
-        int code = connection.getResponseCode();
-        connection.disconnect();
-        if (code < 200 || code >= 300) throw new IllegalStateException("outline post failed: HTTP " + code);
-    }
-
-    private String outlinePostUrl(String value) throws Exception {
-        String raw = normalizeRelayUrl(value);
-        URI uri = new URI(raw);
-        String authority = uri.getRawAuthority();
-        if (authority == null || authority.trim().isEmpty()) throw new IllegalArgumentException("Relay URL host is empty");
-        String path = uri.getRawPath();
-        if (path == null || path.isEmpty() || "/".equals(path)) path = "/api/outline";
-        else if (!path.endsWith("/api/outline")) path = path.replaceAll("/+$", "") + "/api/outline";
-        return uri.getScheme() + "://" + authority + path;
-    }
-
     private String normalizeRelayUrl(String value) {
         String raw = value == null ? "" : value.trim();
         if (raw.isEmpty()) return "";
@@ -267,6 +236,21 @@ public final class MiraControlClient implements Closeable {
         else if (!path.endsWith("/ws/control")) path = path.replaceAll("/+$", "") + "/ws/control";
         return scheme + "://" + authority + path;
     }
+
+
+    private static String safeLogValue(String value) {
+        if (value == null) return "";
+        StringBuilder builder = new StringBuilder(Math.min(value.length(), 128));
+        int limit = Math.min(value.length(), 128);
+        for (int i = 0; i < limit; i++) {
+            char ch = value.charAt(i);
+            if (ch == '\r' || ch == '\n' || ch == '\t' || Character.isISOControl(ch)) builder.append('_');
+            else builder.append(ch);
+        }
+        if (value.length() > limit) builder.append("...");
+        return builder.toString();
+    }
+
 
     private void notifyStatus(String status) {
         Log.i(TAG, status);

@@ -547,7 +547,7 @@ public final class MiraDiscoveryService extends Service {
         relayClient.start();
         state = "active";
         requestControlOutline();
-        Log.i(TAG, "Relay session opening sessionId=" + sessionId);
+        Log.i(TAG, "Relay session opening sessionId=" + safeLogValue(sessionId));
         return true;
     }
 

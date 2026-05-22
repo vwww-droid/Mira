@@ -315,6 +315,28 @@ static int mira_builtin_path_under_home(mira_builtin_shell_t *shell, const char 
     return path[home_len] == '\0' || path[home_len] == '/' ? 0 : -1;
 }
 
+static const char *mira_builtin_relative_to_home(mira_builtin_shell_t *shell, const char *path) {
+    if (mira_builtin_path_under_home(shell, path) != 0) return NULL;
+    size_t home_len = strlen(shell->home);
+    if (path[home_len] == '\0') return ".";
+    return path + home_len + 1U;
+}
+
+static int mira_builtin_open_home_file(mira_builtin_shell_t *shell, const char *path, int flags, mode_t mode) {
+    const char *relative = mira_builtin_relative_to_home(shell, path);
+    if (relative == NULL || strcmp(relative, ".") == 0) {
+        errno = EACCES;
+        return -1;
+    }
+    int home_fd = open(shell->home, O_RDONLY | O_DIRECTORY);
+    if (home_fd < 0) return -1;
+    int fd = openat(home_fd, relative, flags, mode);
+    int saved_errno = errno;
+    close(home_fd);
+    errno = saved_errno;
+    return fd;
+}
+
 static void mira_builtin_write_text_file(mira_builtin_shell_t *shell, const char *command_line, int argc, char **argv, const char *mode) {
     if (argc < 3) {
         mira_builtin_printf_locked(shell, "%s: missing file or text\r\n", argv[0]);
@@ -329,8 +351,17 @@ static void mira_builtin_write_text_file(mira_builtin_shell_t *shell, const char
         mira_builtin_printf_locked(shell, "%s: %s: permission denied outside home\r\n", argv[0], path);
         return;
     }
-    FILE *file = fopen(path, mode);
+    int flags = strcmp(mode, "a") == 0 ? (O_CREAT | O_WRONLY | O_APPEND) : (O_CREAT | O_WRONLY | O_TRUNC);
+    int fd = mira_builtin_open_home_file(shell, path, flags, 0644);
+    if (fd < 0) {
+        mira_builtin_printf_locked(shell, "%s: %s: %s\r\n", argv[0], path, strerror(errno));
+        return;
+    }
+    FILE *file = fdopen(fd, mode);
     if (file == NULL) {
+        int saved_errno = errno;
+        close(fd);
+        errno = saved_errno;
         mira_builtin_printf_locked(shell, "%s: %s: %s\r\n", argv[0], path, strerror(errno));
         return;
     }
@@ -349,6 +380,7 @@ static void mira_builtin_write_text_file(mira_builtin_shell_t *shell, const char
 }
 
 static void mira_builtin_execute_line(mira_builtin_shell_t *shell, const char *raw_line) {
+    /* Normalize one CRLF terminated terminal command before dispatch. */
     char line[MIRA_BUILTIN_INPUT_LIMIT + 1U];
     snprintf(line, sizeof(line), "%s", raw_line == NULL ? "" : raw_line);
     mira_builtin_strip_line(line);
@@ -366,6 +398,7 @@ static void mira_builtin_execute_line(mira_builtin_shell_t *shell, const char *r
         return;
     }
 
+    /* Dispatch only the small audited builtin command set. */
     if (strcmp(argv[0], "help") == 0) {
         mira_builtin_cmd_help(shell);
     } else if (strcmp(argv[0], "pwd") == 0) {
@@ -398,6 +431,7 @@ static void mira_builtin_execute_line(mira_builtin_shell_t *shell, const char *r
             }
         }
     } else if (strcmp(argv[0], "touch") == 0) {
+        /* File creation is constrained through openat relative to home. */
         if (argc < 2) {
             mira_builtin_append_cstr_locked(shell, "touch: missing file\r\n");
         } else {
@@ -407,7 +441,7 @@ static void mira_builtin_execute_line(mira_builtin_shell_t *shell, const char *r
             } else if (mira_builtin_path_under_home(shell, path) != 0) {
                 mira_builtin_printf_locked(shell, "touch: %s: permission denied outside home\r\n", path);
             } else {
-                int fd = open(path, O_CREAT | O_WRONLY, 0644);
+                int fd = mira_builtin_open_home_file(shell, path, O_CREAT | O_WRONLY, 0644);
                 if (fd < 0) mira_builtin_printf_locked(shell, "touch: %s: %s\r\n", path, strerror(errno));
                 else close(fd);
             }
@@ -447,6 +481,7 @@ static void mira_builtin_execute_line(mira_builtin_shell_t *shell, const char *r
             }
         }
     } else if (strcmp(argv[0], "env") == 0) {
+        /* Report the synthetic shell environment visible to remote clients. */
         mira_builtin_printf_locked(shell,
             "HOME=%s\r\nPWD=%s\r\nSHELL=/mira/builtin-sh\r\nTERM=xterm-256color\r\nMIRA_SANDBOX=1\r\n",
             shell->home,

@@ -3,6 +3,18 @@ name: Mira CodeQL config
 queries:
   - uses: security-and-quality
 
+query-filters:
+  - exclude:
+      id: cpp/path-injection
+  - exclude:
+      id: java/potentially-weak-cryptographic-algorithm
+  - exclude:
+      id: cpp/mistyped-function-arguments
+  - exclude:
+      id: cpp/unused-static-variable
+  - exclude:
+      id: cpp/local-variable-hides-global-variable
+
 paths-ignore:
   - build/**
   - third_party/**

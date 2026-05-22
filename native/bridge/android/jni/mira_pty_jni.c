@@ -8,17 +8,17 @@
 #include "mira/pty.h"
 #include "pty/pty_trace.h"
 
-JNIEXPORT jlong JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeOpen(JNIEnv *env, jobject thiz, jstring shell_path, jstring cwd, jobjectArray args, jobjectArray env_vars, jint rows, jint columns, jint cell_width, jint cell_height);
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeResize(JNIEnv *env, jobject thiz, jlong handle, jint columns, jint rows, jint cell_width, jint cell_height);
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeSetUtf8Mode(JNIEnv *env, jobject thiz, jlong handle);
-JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeRead(JNIEnv *env, jobject thiz, jlong handle, jbyteArray buffer, jint length);
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWrite(JNIEnv *env, jobject thiz, jlong handle, jbyteArray data, jint length);
-JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWaitFor(JNIEnv *env, jobject thiz, jlong handle);
-JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativePid(JNIEnv *env, jobject thiz, jlong handle);
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeKill(JNIEnv *env, jobject thiz, jlong handle, jint signal_number);
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeClose(JNIEnv *env, jobject thiz, jlong handle);
+JNIEXPORT jlong JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeOpen(JNIEnv *jni_env, jobject thiz, jstring shell_path, jstring cwd, jobjectArray args, jobjectArray env_vars, jint rows, jint columns, jint cell_width, jint cell_height);
+JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeResize(JNIEnv *jni_env, jobject thiz, jlong handle, jint columns, jint rows, jint cell_width, jint cell_height);
+JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeSetUtf8Mode(JNIEnv *jni_env, jobject thiz, jlong handle);
+JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeRead(JNIEnv *jni_env, jobject thiz, jlong handle, jbyteArray buffer, jint length);
+JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWrite(JNIEnv *jni_env, jobject thiz, jlong handle, jbyteArray data, jint length);
+JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWaitFor(JNIEnv *jni_env, jobject thiz, jlong handle);
+JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativePid(JNIEnv *jni_env, jobject thiz, jlong handle);
+JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeKill(JNIEnv *jni_env, jobject thiz, jlong handle, jint signal_number);
+JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeClose(JNIEnv *jni_env, jobject thiz, jlong handle);
 
-static JNINativeMethod g_mira_pty_methods[] = {
+static JNINativeMethod mira_pty_methods[] = {
     { "nativeOpen", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;IIII)J", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeOpen },
     { "nativeRead", "(J[BI)I", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeRead },
     { "nativeWrite", "(J[BI)V", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeWrite },
@@ -30,21 +30,21 @@ static JNINativeMethod g_mira_pty_methods[] = {
     { "nativeClose", "(J)V", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeClose },
 };
 
-static void mira_jni_throw_runtime_exception(JNIEnv *env, const char *message) {
-    jclass exception_class = (*env)->FindClass(env, "java/lang/RuntimeException");
+static void mira_jni_throw_runtime_exception(JNIEnv *jni_env, const char *message) {
+    jclass exception_class = (*jni_env)->FindClass(jni_env, "java/lang/RuntimeException");
     if (exception_class != NULL) {
-        (*env)->ThrowNew(env, exception_class, message == NULL ? "native PTY error" : message);
+        (*jni_env)->ThrowNew(jni_env, exception_class, message == NULL ? "native PTY error" : message);
     }
 }
 
-static void mira_jni_throw_io_exception(JNIEnv *env, const char *message) {
-    jclass exception_class = (*env)->FindClass(env, "java/io/IOException");
+static void mira_jni_throw_io_exception(JNIEnv *jni_env, const char *message) {
+    jclass exception_class = (*jni_env)->FindClass(jni_env, "java/io/IOException");
     if (exception_class != NULL) {
-        (*env)->ThrowNew(env, exception_class, message == NULL ? "native PTY I/O error" : message);
+        (*jni_env)->ThrowNew(jni_env, exception_class, message == NULL ? "native PTY I/O error" : message);
     }
 }
 
-static void mira_jni_throw_runtime_errno(JNIEnv *env, const char *operation, int saved_errno) {
+static void mira_jni_throw_runtime_errno(JNIEnv *jni_env, const char *operation, int saved_errno) {
     char message[512];
     snprintf(message,
              sizeof(message),
@@ -52,10 +52,10 @@ static void mira_jni_throw_runtime_errno(JNIEnv *env, const char *operation, int
              operation == NULL ? "native PTY error" : operation,
              saved_errno,
              strerror(saved_errno));
-    mira_jni_throw_runtime_exception(env, message);
+    mira_jni_throw_runtime_exception(jni_env, message);
 }
 
-static void mira_jni_throw_io_errno(JNIEnv *env, const char *operation, int saved_errno) {
+static void mira_jni_throw_io_errno(JNIEnv *jni_env, const char *operation, int saved_errno) {
     char message[512];
     snprintf(message,
              sizeof(message),
@@ -63,44 +63,47 @@ static void mira_jni_throw_io_errno(JNIEnv *env, const char *operation, int save
              operation == NULL ? "native PTY I/O error" : operation,
              saved_errno,
              strerror(saved_errno));
-    mira_jni_throw_io_exception(env, message);
+    mira_jni_throw_io_exception(jni_env, message);
 }
 
-static char **mira_jni_copy_string_array(JNIEnv *env, jobjectArray array) {
+static void mira_jni_free_string_array_items(char **array, jsize count) {
+    if (array == NULL) {
+        return;
+    }
+    for (jsize index = 0; index < count; ++index) {
+        free(array[index]);
+    }
+}
+
+static char **mira_jni_copy_string_array(JNIEnv *jni_env, jobjectArray array) {
     if (array == NULL) {
         return NULL;
     }
 
-    jsize length = (*env)->GetArrayLength(env, array);
+    jsize length = (*jni_env)->GetArrayLength(jni_env, array);
     char **result = (char **) calloc((size_t) length + 1U, sizeof(char *));
     if (result == NULL) {
         return NULL;
     }
 
     for (jsize i = 0; i < length; ++i) {
-        jstring item = (jstring) (*env)->GetObjectArrayElement(env, array, i);
+        jstring item = (jstring) (*jni_env)->GetObjectArrayElement(jni_env, array, i);
         if (item == NULL) {
-            for (jsize j = 0; j < i; ++j) {
-                free(result[j]);
-            }
+            mira_jni_free_string_array_items(result, i);
             free(result);
             return NULL;
         }
-        const char *utf8 = (*env)->GetStringUTFChars(env, item, NULL);
+        const char *utf8 = (*jni_env)->GetStringUTFChars(jni_env, item, NULL);
         if (utf8 == NULL) {
-            for (jsize j = 0; j < i; ++j) {
-                free(result[j]);
-            }
+            mira_jni_free_string_array_items(result, i);
             free(result);
             return NULL;
         }
         result[i] = strdup(utf8);
-        (*env)->ReleaseStringUTFChars(env, item, utf8);
-        (*env)->DeleteLocalRef(env, item);
+        (*jni_env)->ReleaseStringUTFChars(jni_env, item, utf8);
+        (*jni_env)->DeleteLocalRef(jni_env, item);
         if (result[i] == NULL) {
-            for (jsize j = 0; j <= i; ++j) {
-                free(result[j]);
-            }
+            mira_jni_free_string_array_items(result, i + 1);
             free(result);
             return NULL;
         }
@@ -119,16 +122,16 @@ static void mira_jni_free_string_array(char **array) {
     free(array);
 }
 
-static char *mira_jni_copy_string(JNIEnv *env, jstring value) {
+static char *mira_jni_copy_string(JNIEnv *jni_env, jstring value) {
     if (value == NULL) {
         return NULL;
     }
-    const char *utf8 = (*env)->GetStringUTFChars(env, value, NULL);
+    const char *utf8 = (*jni_env)->GetStringUTFChars(jni_env, value, NULL);
     if (utf8 == NULL) {
         return NULL;
     }
     char *copy = strdup(utf8);
-    (*env)->ReleaseStringUTFChars(env, value, utf8);
+    (*jni_env)->ReleaseStringUTFChars(jni_env, value, utf8);
     return copy;
 }
 
@@ -139,31 +142,31 @@ static mira_pty_process_t *mira_jni_handle_to_pty(jlong handle) {
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void) reserved;
 
-    JNIEnv *env = NULL;
-    if ((*vm)->GetEnv(vm, (void **) &env, JNI_VERSION_1_6) != JNI_OK || env == NULL) {
+    JNIEnv *jni_env = NULL;
+    if ((*vm)->GetEnv(vm, (void **) &jni_env, JNI_VERSION_1_6) != JNI_OK || jni_env == NULL) {
         return JNI_ERR;
     }
 
-    jclass klass = (*env)->FindClass(env, "com/vwww/mira/MiraPtyProcess");
+    jclass klass = (*jni_env)->FindClass(jni_env, "com/vwww/mira/MiraPtyProcess");
     if (klass == NULL) {
         return JNI_ERR;
     }
 
-    if ((*env)->RegisterNatives(
-            env,
+    if ((*jni_env)->RegisterNatives(
+            jni_env,
             klass,
-            g_mira_pty_methods,
-            (jint) (sizeof(g_mira_pty_methods) / sizeof(g_mira_pty_methods[0]))
+            mira_pty_methods,
+            (jint) (sizeof(mira_pty_methods) / sizeof(mira_pty_methods[0]))
         ) != JNI_OK) {
-        (*env)->DeleteLocalRef(env, klass);
+        (*jni_env)->DeleteLocalRef(jni_env, klass);
         return JNI_ERR;
     }
 
-    (*env)->DeleteLocalRef(env, klass);
+    (*jni_env)->DeleteLocalRef(jni_env, klass);
     return JNI_VERSION_1_6;
 }
 
-JNIEXPORT jlong JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeOpen(JNIEnv *env,
+JNIEXPORT jlong JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeOpen(JNIEnv *jni_env,
                                                                            jobject thiz,
                                                                            jstring shell_path,
                                                                            jstring cwd,
@@ -176,10 +179,10 @@ JNIEXPORT jlong JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeOpen(JNIEnv *env
     (void) thiz;
     MIRA_PTY_LOGI("jni nativeOpen enter rows=%d cols=%d cell=%dx%d", (int) rows, (int) columns, (int) cell_width, (int) cell_height);
 
-    char *shell_path_copy = mira_jni_copy_string(env, shell_path);
-    char *cwd_copy = mira_jni_copy_string(env, cwd);
-    char **args_copy = mira_jni_copy_string_array(env, args);
-    char **env_copy = mira_jni_copy_string_array(env, env_vars);
+    char *shell_path_copy = mira_jni_copy_string(jni_env, shell_path);
+    char *cwd_copy = mira_jni_copy_string(jni_env, cwd);
+    char **args_copy = mira_jni_copy_string_array(jni_env, args);
+    char **env_copy = mira_jni_copy_string_array(jni_env, env_vars);
 
     if (shell_path_copy == NULL ||
         (cwd != NULL && cwd_copy == NULL) ||
@@ -190,12 +193,12 @@ JNIEXPORT jlong JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeOpen(JNIEnv *env
         free(shell_path_copy);
         free(cwd_copy);
         MIRA_PTY_LOGE("jni nativeOpen alloc failed");
-        mira_jni_throw_runtime_exception(env, "Failed to allocate PTY arguments");
+        mira_jni_throw_runtime_exception(jni_env, "Failed to allocate PTY arguments");
         return 0;
     }
     MIRA_PTY_LOGI("jni nativeOpen args ready shell=%s cwd=%s argv0=%s", shell_path_copy, cwd_copy == NULL ? "(null)" : cwd_copy, (args_copy != NULL && args_copy[0] != NULL) ? args_copy[0] : "(null)");
 
-    mira_pty_process_t *pty = mira_pty_open(shell_path_copy,
+    mira_pty_process_t *pty_process = mira_pty_open(shell_path_copy,
                                             cwd_copy,
                                             args_copy,
                                             env_copy,
@@ -210,17 +213,17 @@ JNIEXPORT jlong JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeOpen(JNIEnv *env
     free(shell_path_copy);
     free(cwd_copy);
 
-    if (pty == NULL) {
+    if (pty_process == NULL) {
         MIRA_PTY_PERROR("jni mira_pty_open");
-        mira_jni_throw_runtime_errno(env, "Failed to create PTY subprocess", saved_errno);
+        mira_jni_throw_runtime_errno(jni_env, "Failed to create PTY subprocess", saved_errno);
         return 0;
     }
 
-    MIRA_PTY_LOGI("jni nativeOpen ok handle=%p", (void *) pty);
-    return (jlong) (uintptr_t) pty;
+    MIRA_PTY_LOGI("jni nativeOpen ok handle=%p", (void *) pty_process);
+    return (jlong) (uintptr_t) pty_process;
 }
 
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeResize(JNIEnv *env,
+JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeResize(JNIEnv *jni_env,
                                                                             jobject thiz,
                                                                             jlong handle,
                                                                             jint columns,
@@ -229,43 +232,43 @@ JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeResize(JNIEnv *en
                                                                             jint cell_height) {
     (void) thiz;
 
-    mira_pty_process_t *pty = mira_jni_handle_to_pty(handle);
-    if (pty == NULL) {
+    mira_pty_process_t *pty_process = mira_jni_handle_to_pty(handle);
+    if (pty_process == NULL) {
         return;
     }
-    if (mira_pty_resize(pty, (int) columns, (int) rows, (int) cell_width, (int) cell_height) != 0) {
-        mira_jni_throw_runtime_errno(env, "PTY resize failed", errno);
+    if (mira_pty_resize(pty_process, (int) columns, (int) rows, (int) cell_width, (int) cell_height) != 0) {
+        mira_jni_throw_runtime_errno(jni_env, "PTY resize failed", errno);
     }
 }
 
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeSetUtf8Mode(JNIEnv *env,
+JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeSetUtf8Mode(JNIEnv *jni_env,
                                                                                   jobject thiz,
                                                                                   jlong handle) {
     (void) thiz;
 
-    mira_pty_process_t *pty = mira_jni_handle_to_pty(handle);
-    if (pty == NULL) {
+    mira_pty_process_t *pty_process = mira_jni_handle_to_pty(handle);
+    if (pty_process == NULL) {
         return;
     }
-    if (mira_pty_set_utf8_mode(pty) != 0) {
-        mira_jni_throw_runtime_errno(env, "PTY UTF-8 mode update failed", errno);
+    if (mira_pty_set_utf8_mode(pty_process) != 0) {
+        mira_jni_throw_runtime_errno(jni_env, "PTY UTF-8 mode update failed", errno);
     }
 }
 
-JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeRead(JNIEnv *env,
+JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeRead(JNIEnv *jni_env,
                                                                           jobject thiz,
                                                                           jlong handle,
                                                                           jbyteArray buffer,
                                                                           jint length) {
     (void) thiz;
 
-    mira_pty_process_t *pty = mira_jni_handle_to_pty(handle);
-    if (pty == NULL || buffer == NULL || length < 0) {
-        mira_jni_throw_io_exception(env, "Invalid PTY read arguments");
+    mira_pty_process_t *pty_process = mira_jni_handle_to_pty(handle);
+    if (pty_process == NULL || buffer == NULL || length < 0) {
+        mira_jni_throw_io_exception(jni_env, "Invalid PTY read arguments");
         return -1;
     }
 
-    jsize buffer_length = (*env)->GetArrayLength(env, buffer);
+    jsize buffer_length = (*jni_env)->GetArrayLength(jni_env, buffer);
     if (length > buffer_length) {
         length = buffer_length;
     }
@@ -273,17 +276,17 @@ JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeRead(JNIEnv *env,
         return 0;
     }
 
-    jbyte *bytes = (*env)->GetByteArrayElements(env, buffer, NULL);
+    jbyte *bytes = (*jni_env)->GetByteArrayElements(jni_env, buffer, NULL);
     if (bytes == NULL) {
-        mira_jni_throw_io_exception(env, "Unable to access read buffer");
+        mira_jni_throw_io_exception(jni_env, "Unable to access read buffer");
         return -1;
     }
 
-    ssize_t result = mira_pty_read(pty, bytes, (size_t) length);
+    ssize_t result = mira_pty_read(pty_process, bytes, (size_t) length);
     int saved_errno = errno;
-    (*env)->ReleaseByteArrayElements(env, buffer, bytes, result < 0 ? JNI_ABORT : 0);
+    (*jni_env)->ReleaseByteArrayElements(jni_env, buffer, bytes, result < 0 ? JNI_ABORT : 0);
     if (result < 0) {
-        mira_jni_throw_io_errno(env, "PTY read failed", saved_errno);
+        mira_jni_throw_io_errno(jni_env, "PTY read failed", saved_errno);
         return -1;
     }
     if (result == 0) {
@@ -292,20 +295,20 @@ JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeRead(JNIEnv *env,
     return (jint) result;
 }
 
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWrite(JNIEnv *env,
+JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWrite(JNIEnv *jni_env,
                                                                            jobject thiz,
                                                                            jlong handle,
                                                                            jbyteArray data,
                                                                            jint length) {
     (void) thiz;
 
-    mira_pty_process_t *pty = mira_jni_handle_to_pty(handle);
-    if (pty == NULL || data == NULL || length < 0) {
-        mira_jni_throw_io_exception(env, "Invalid PTY write arguments");
+    mira_pty_process_t *pty_process = mira_jni_handle_to_pty(handle);
+    if (pty_process == NULL || data == NULL || length < 0) {
+        mira_jni_throw_io_exception(jni_env, "Invalid PTY write arguments");
         return;
     }
 
-    jsize data_length = (*env)->GetArrayLength(env, data);
+    jsize data_length = (*jni_env)->GetArrayLength(jni_env, data);
     if (length > data_length) {
         length = data_length;
     }
@@ -313,71 +316,71 @@ JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWrite(JNIEnv *env
         return;
     }
 
-    jbyte *bytes = (*env)->GetByteArrayElements(env, data, NULL);
+    jbyte *bytes = (*jni_env)->GetByteArrayElements(jni_env, data, NULL);
     if (bytes == NULL) {
-        mira_jni_throw_io_exception(env, "Unable to access write buffer");
+        mira_jni_throw_io_exception(jni_env, "Unable to access write buffer");
         return;
     }
 
-    ssize_t result = mira_pty_write(pty, bytes, (size_t) length);
+    ssize_t result = mira_pty_write(pty_process, bytes, (size_t) length);
     int saved_errno = errno;
-    (*env)->ReleaseByteArrayElements(env, data, bytes, JNI_ABORT);
+    (*jni_env)->ReleaseByteArrayElements(jni_env, data, bytes, JNI_ABORT);
     if (result < 0) {
-        mira_jni_throw_io_errno(env, "PTY write failed", saved_errno);
+        mira_jni_throw_io_errno(jni_env, "PTY write failed", saved_errno);
     } else if (result != (ssize_t) length) {
-        mira_jni_throw_io_exception(env, "PTY write failed: short write");
+        mira_jni_throw_io_exception(jni_env, "PTY write failed: short write");
     }
 }
 
-JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWaitFor(JNIEnv *env,
+JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWaitFor(JNIEnv *jni_env,
                                                                               jobject thiz,
                                                                              jlong handle) {
-    (void) env;
+    (void) jni_env;
     (void) thiz;
 
-    mira_pty_process_t *pty = mira_jni_handle_to_pty(handle);
-    if (pty == NULL) {
+    mira_pty_process_t *pty_process = mira_jni_handle_to_pty(handle);
+    if (pty_process == NULL) {
         return -EINVAL;
     }
-    return (jint) mira_pty_wait_for(pty);
+    return (jint) mira_pty_wait_for(pty_process);
 }
 
-JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativePid(JNIEnv *env,
+JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativePid(JNIEnv *jni_env,
                                                                           jobject thiz,
                                                                          jlong handle) {
-    (void) env;
+    (void) jni_env;
     (void) thiz;
 
-    mira_pty_process_t *pty = mira_jni_handle_to_pty(handle);
-    if (pty == NULL) {
+    mira_pty_process_t *pty_process = mira_jni_handle_to_pty(handle);
+    if (pty_process == NULL) {
         return -1;
     }
-    return (jint) mira_pty_pid(pty);
+    return (jint) mira_pty_pid(pty_process);
 }
 
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeKill(JNIEnv *env,
+JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeKill(JNIEnv *jni_env,
                                                                            jobject thiz,
                                                                            jlong handle,
                                                                            jint signal_number) {
-    (void) env;
+    (void) jni_env;
     (void) thiz;
 
-    mira_pty_process_t *pty = mira_jni_handle_to_pty(handle);
-    if (pty == NULL) {
+    mira_pty_process_t *pty_process = mira_jni_handle_to_pty(handle);
+    if (pty_process == NULL) {
         return;
     }
-    (void) mira_pty_kill(pty, (int) signal_number);
+    (void) mira_pty_kill(pty_process, (int) signal_number);
 }
 
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeClose(JNIEnv *env,
+JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeClose(JNIEnv *jni_env,
                                                                            jobject thiz,
                                                                             jlong handle) {
-    (void) env;
+    (void) jni_env;
     (void) thiz;
 
-    mira_pty_process_t *pty = mira_jni_handle_to_pty(handle);
-    if (pty == NULL) {
+    mira_pty_process_t *pty_process = mira_jni_handle_to_pty(handle);
+    if (pty_process == NULL) {
         return;
     }
-    (void) mira_pty_close(pty);
+    (void) mira_pty_close(pty_process);
 }

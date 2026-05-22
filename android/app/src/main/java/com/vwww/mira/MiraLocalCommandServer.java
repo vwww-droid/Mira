@@ -96,20 +96,21 @@ public final class MiraLocalCommandServer implements Closeable {
                 return;
             }
 
-            PushbackInputStream input = new PushbackInputStream(socket.getInputStream(), 4);
-            byte[] prefix = readPrefix(input);
-            if (isTextProtocol(prefix)) {
-                String line = readTextLine(input, prefix);
-                TextRequest request = parseTextRequest(line);
-                MiraCommandResult result = MiraCommandRouter.dispatch(context, request.tool, request.argv);
-                MiraCommandProtocol.writeTextResult(socket.getOutputStream(), result);
-            } else {
-                input.unread(prefix);
-                JSONObject request = MiraCommandProtocol.readJson(input);
-                String tool = request.optString("tool", "");
-                List<String> argv = toStringList(request.optJSONArray("argv"));
-                MiraCommandResult result = MiraCommandRouter.dispatch(context, tool, argv);
-                MiraCommandProtocol.writeJson(socket.getOutputStream(), MiraCommandProtocol.resultJson(result));
+            try (PushbackInputStream input = new PushbackInputStream(socket.getInputStream(), 4)) {
+                byte[] prefix = readPrefix(input);
+                if (isTextProtocol(prefix)) {
+                    String line = readTextLine(input, prefix);
+                    TextRequest request = parseTextRequest(line);
+                    MiraCommandResult result = MiraCommandRouter.dispatch(context, request.tool, request.argv);
+                    MiraCommandProtocol.writeTextResult(socket.getOutputStream(), result);
+                } else {
+                    input.unread(prefix);
+                    JSONObject request = MiraCommandProtocol.readJson(input);
+                    String tool = request.optString("tool", "");
+                    List<String> argv = toStringList(request.optJSONArray("argv"));
+                    MiraCommandResult result = MiraCommandRouter.dispatch(context, tool, argv);
+                    MiraCommandProtocol.writeJson(socket.getOutputStream(), MiraCommandProtocol.resultJson(result));
+                }
             }
         } catch (Throwable failure) {
             Log.w(TAG, "Command client failed", failure);

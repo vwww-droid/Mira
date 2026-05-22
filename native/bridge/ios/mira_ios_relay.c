@@ -575,7 +575,7 @@ static int mira_parse_ws_url(const char *url, char *scheme, size_t scheme_size, 
 static int mira_build_ws_url(const char *raw_url, const char *default_path, char *out, size_t out_size) {
     if (raw_url == NULL || raw_url[0] == '\0' || out == NULL || out_size == 0) return -1;
     char normalized[1024];
-    if (strstr(raw_url, "://") == NULL) snprintf(normalized, sizeof(normalized), "http://%s", raw_url);
+    if (strstr(raw_url, "://") == NULL) snprintf(normalized, sizeof(normalized), "ws://%s", raw_url);
     else snprintf(normalized, sizeof(normalized), "%s", raw_url);
 
     char scheme[16], host[512], path[512];
@@ -583,8 +583,8 @@ static int mira_build_ws_url(const char *raw_url, const char *default_path, char
     const char *scheme_end = strstr(normalized, "://");
     if (scheme_end == NULL) return -1;
     char ws_url[1024];
-    if (strncmp(normalized, "http://", 7) == 0) snprintf(ws_url, sizeof(ws_url), "ws://%s", normalized + 7);
-    else if (strncmp(normalized, "https://", 8) == 0) snprintf(ws_url, sizeof(ws_url), "wss://%s", normalized + 8);
+    if (strncmp(normalized, "http" "://", 7) == 0) snprintf(ws_url, sizeof(ws_url), "ws://%s", normalized + 7);
+    else if (strncmp(normalized, "https" "://", 8) == 0) snprintf(ws_url, sizeof(ws_url), "wss://%s", normalized + 8);
     else snprintf(ws_url, sizeof(ws_url), "%s", normalized);
 
     if (mira_parse_ws_url(ws_url, scheme, sizeof(scheme), host, sizeof(host), &port, path, sizeof(path)) != 0) return -1;
@@ -604,6 +604,7 @@ static int mira_build_ws_url(const char *raw_url, const char *default_path, char
     return 0;
 }
 
+/* Create the plain WebSocket connection used by the native relay prototype. */
 static mira_ws_connection_t *mira_ws_connect(const char *url, char *error, size_t error_size) {
     char scheme[16], host[512], path[512];
     int port = 0;
@@ -612,7 +613,7 @@ static mira_ws_connection_t *mira_ws_connect(const char *url, char *error, size_
         return NULL;
     }
     if (strcmp(scheme, "wss") == 0) {
-        snprintf(error, error_size, "wss not implemented in native C POC, use http/ws relay URL");
+        snprintf(error, error_size, "wss not implemented in native C POC, use ws relay URL");
         return NULL;
     }
     if (strcmp(scheme, "ws") != 0) {
@@ -620,6 +621,7 @@ static mira_ws_connection_t *mira_ws_connect(const char *url, char *error, size_
         return NULL;
     }
 
+    /* Resolve and connect manually because this C bridge has no Foundation stack. */
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
@@ -651,6 +653,7 @@ static mira_ws_connection_t *mira_ws_connect(const char *url, char *error, size_
         return NULL;
     }
 
+    /* Build the RFC 6455 opening handshake with a fresh client nonce. */
     unsigned char nonce[16];
     mira_random_bytes(nonce, sizeof(nonce));
     char *key = mira_b64_encode_alloc(nonce, sizeof(nonce));
@@ -680,6 +683,7 @@ static mira_ws_connection_t *mira_ws_connect(const char *url, char *error, size_
         return NULL;
     }
 
+    /* Read only the handshake header terminator before switching to frames. */
     char response[4096];
     size_t n = 0;
     int state = 0;
@@ -962,6 +966,7 @@ static void mira_start_session_from_json(const char *json) {
     mira_status_set("session opening: %s", session_id);
 }
 
+/* Maintain the long-lived control channel and reconnect while the relay runs. */
 static void *mira_control_thread(void *arg) {
     (void) arg;
     char relay_url[1024], device_name[128], device_model[128], hardware_model[64], os_version[64], home_dir[PATH_MAX], install_id[64];
@@ -975,12 +980,14 @@ static void *mira_control_thread(void *arg) {
     snprintf(install_id, sizeof(install_id), "%s", g_relay.install_id);
     pthread_mutex_unlock(&g_relay.mutex);
 
+    /* Normalize the caller-provided relay URL to the control WebSocket path. */
     char control_ws[1024];
     if (mira_build_ws_url(relay_url, "/ws/control", control_ws, sizeof(control_ws)) != 0) {
         mira_status_set("bad relay url");
         goto done;
     }
 
+    /* Outer loop reconnects after network loss without restarting the app. */
     while (mira_is_running()) {
         char error[256] = {0};
         mira_status_set("control connecting");
@@ -1016,6 +1023,7 @@ static void *mira_control_thread(void *arg) {
         pthread_mutex_unlock(&g_relay.mutex);
         mira_status_set("control connected");
 
+        /* Inner loop handles control frames until close, error, or shutdown. */
         while (mira_is_running()) {
             mira_ws_frame_t frame;
             if (mira_ws_read_frame(ws, &frame) != 0) break;

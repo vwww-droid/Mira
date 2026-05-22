@@ -141,6 +141,7 @@ static void mira_pty_apply_environment(char *const envp[]) {
     }
 }
 
+/* Spawn a PTY child while keeping parent-side descriptor ownership explicit. */
 int mira_pty_platform_spawn(const char *shell_path,
                             const char *cwd,
                             char *const argv[],
@@ -165,6 +166,7 @@ int mira_pty_platform_spawn(const char *shell_path,
         return -1;
     }
 
+    /* Allocate the platform PTY pair before forking so failures stay in parent. */
     mira_pty_platform_pair_t pair;
     if (mira_pty_platform_open_pair(&pair) != 0) {
         MIRA_PTY_PERROR("open_pair");
@@ -200,6 +202,7 @@ int mira_pty_platform_spawn(const char *shell_path,
         return -1;
     }
 
+    /* Parent owns only the master side and returns the child pid to callers. */
     if (child > 0) {
         *master_fd = pair.master_fd;
         *pid = child;
@@ -210,6 +213,7 @@ int mira_pty_platform_spawn(const char *shell_path,
         return 0;
     }
 
+    /* Child becomes a session leader and wires the slave side to stdio. */
     MIRA_PTY_LOGI("fork child enter");
     sigset_t signals_to_unblock;
     sigfillset(&signals_to_unblock);
@@ -252,6 +256,7 @@ int mira_pty_platform_spawn(const char *shell_path,
     }
     MIRA_PTY_LOGI("child cwd ready cwd=%s", cwd == NULL ? "(null)" : cwd);
 
+    /* Exec is the final step: every failure after this point exits the child. */
     char *const *exec_argv = argv;
     if (exec_argv == NULL || exec_argv[0] == NULL) {
         char *default_argv[] = { (char *) shell_path, NULL };
