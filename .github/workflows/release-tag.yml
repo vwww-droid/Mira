@@ -128,19 +128,19 @@ jobs:
       - build-ios-generic
     steps:
       - name: Download Python artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: mira-python-${{ env.MIRA_RELEASE_TAG }}
           path: release-assets/python
 
       - name: Download Android artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: mira-android-${{ env.MIRA_RELEASE_TAG }}
           path: release-assets/android
 
       - name: Download iOS artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: mira-ios-${{ env.MIRA_RELEASE_TAG }}
           path: release-assets/ios
