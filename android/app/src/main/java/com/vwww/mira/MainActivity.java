@@ -9,6 +9,7 @@ import android.content.SharedPreferences;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -55,6 +56,12 @@ public final class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         applyLaunchIntent(intent);
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        MiraMotionEventLogger.log(event);
+        return super.dispatchTouchEvent(event);
     }
 
     @Override

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mira Risk Collect"
+  short_description: "Collect Mira device risk signals for review"
+  default_prompt: "Use $mira-risk-collect to run /collect and summarize environment risks."

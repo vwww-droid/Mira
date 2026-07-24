@@ -18,7 +18,8 @@
 4. `NATIVE-ARCHITECTURE.md`: shared native PTY architecture for Android and iOS.
 5. `TOOLBOX.md`: built-in Android toolbox guide.
 6. `REPO-ARCHITECTURE.md`: current repository layering and directory layout.
-7. `THIRD-PARTY-NOTICES.md`: third-party licenses and source notes.
+7. `ANDROID-MOTION-EVENT-LOGGING.md`: Android MotionEvent structured logging guide.
+8. `THIRD-PARTY-NOTICES.md`: third-party licenses and source notes.
 
 ## Drafts
 
