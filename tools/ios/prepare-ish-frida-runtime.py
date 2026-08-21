@@ -203,16 +203,18 @@ def resolve_packages(packages: dict[str, AlpinePackage], root_packages: tuple[st
 
 
 def safe_extract_tar_member(archive: tarfile.TarFile, member: tarfile.TarInfo, destination: Path) -> None:
-    root = destination.resolve()
+    # Validate archive paths lexically so a symlink loop inside the archive
+    # cannot make Path.resolve() fail before the member is extracted.
+    root = destination.absolute()
     root.mkdir(parents=True, exist_ok=True)
-    target = (root / member.name).resolve()
+    target = Path(os.path.normpath(root / member.name))
     if target != root and root not in target.parents:
         raise RuntimeError(f"tar 成员越界: {member.name}")
     if member.isdir():
         target.mkdir(parents=True, exist_ok=True)
         return
     if member.issym():
-        link_target = (target.parent / member.linkname).resolve()
+        link_target = Path(os.path.normpath(target.parent / member.linkname))
         if link_target != root and root not in link_target.parents:
             raise RuntimeError(f"tar 符号链接越界: {member.name} -> {member.linkname}")
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -221,13 +223,13 @@ def safe_extract_tar_member(archive: tarfile.TarFile, member: tarfile.TarInfo, d
         target.symlink_to(member.linkname)
         return
     if member.islnk():
-        link_target = (root / member.linkname).resolve()
+        link_target = Path(os.path.normpath(root / member.linkname))
         if link_target != root and root not in link_target.parents:
             raise RuntimeError(f"tar 硬链接越界: {member.name} -> {member.linkname}")
         target.parent.mkdir(parents=True, exist_ok=True)
         with contextlib.suppress(FileNotFoundError):
             target.unlink()
-        target.hardlink_to(link_target)
+        os.link(link_target, target)
         return
     if not member.isfile():
         return
