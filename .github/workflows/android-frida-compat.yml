@@ -1,0 +1,103 @@
+name: android-frida-compat-build
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/android-frida-compat.yml'
+      - 'android/**'
+      - 'mira/mcp/**'
+      - 'third_party/frida-tools/**'
+      - 'tools/android/**'
+      - 'tools/termux/**'
+      - 'build.gradle'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'settings.gradle'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-frida-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Android 10-15 Frida compatibility APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          lfs: true
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Install Android SDK components
+        run: |
+          sdkmanager 'platforms;android-36' 'build-tools;36.1.0' 'ndk;29.0.14206865'
+
+      - name: Create ephemeral debug signing key
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname 'CN=Android Debug,O=Android,C=US'
+
+      - name: Build compatibility APK
+        env:
+          MIRA_FRIDA_COMPAT_OUTPUT_DIR: ${{ github.workspace }}/dist/android-frida-compat
+          MIRA_FRIDA_COMPAT_OUTPUT_APK: ${{ github.workspace }}/dist/android-frida-compat/mira-app-android10-15-frida-16.7.19-single-runner-binary-debug.apk
+        run: |
+          chmod +x ./gradlew ./tools/android/build-frida-16.7-compat-apk.sh ./tools/android/prepare-frida-gadget.sh
+          ./tools/android/build-frida-16.7-compat-apk.sh
+
+      - name: Verify and describe artifact
+        env:
+          APK: ${{ github.workspace }}/dist/android-frida-compat/mira-app-android10-15-frida-16.7.19-single-runner-binary-debug.apk
+        run: |
+          test -s "$APK"
+          "$ANDROID_SDK_ROOT/build-tools/36.1.0/zipalign" -c -P 16 4 "$APK"
+          "$ANDROID_SDK_ROOT/build-tools/36.1.0/apksigner" verify --verbose --print-certs "$APK" \
+            > dist/android-frida-compat/signing-certificate.txt
+          sha256sum "$APK" > dist/android-frida-compat/SHA256SUMS
+          python3 tools/android/check-apk-compression.py \
+            android/app/build/outputs/apk/debug/mira-app-debug-unsigned.apk "$APK" \
+            > dist/android-frida-compat/compression-report.json
+          cat > dist/android-frida-compat/BUILD-INFO.txt <<EOF
+          Compatibility target: Android 10-15
+          Frida version: 16.7.19
+          Bootstrap state: 17
+          Signing: ephemeral GitHub Actions debug key; it may not update an APK signed elsewhere
+          Commit: ${GITHUB_SHA}
+          EOF
+
+      - name: Upload compatibility APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: mira-android10-15-frida-16.7.19-${{ github.sha }}
+          path: |
+            dist/android-frida-compat/mira-app-android10-15-frida-16.7.19-single-runner-binary-debug.apk
+            dist/android-frida-compat/SHA256SUMS
+            dist/android-frida-compat/BUILD-INFO.txt
+            dist/android-frida-compat/signing-certificate.txt
+            dist/android-frida-compat/compression-report.json
+          if-no-files-found: error
+          retention-days: 14
