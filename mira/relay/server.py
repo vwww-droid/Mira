@@ -35,6 +35,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 CONSOLE_OUT_DIR = ROOT_DIR / "apps" / "console" / "out"
 RING_LIMIT = 1024 * 1024
 PROTOCOL_VERSION = 1
+SERVER_INSTANCE_ID = uuid.uuid4().hex
 MAX_SCREEN_FRAME_BASE64 = 2_500_000
 MAX_SCREEN_FRAME_BYTES = 2_000_000
 MAX_SCREEN_FRAME_DIMENSION = 8192
@@ -1590,7 +1591,10 @@ async def handle_client(state: RelayState, reader: asyncio.StreamReader, writer:
             writer.write(response)
             await writer.drain()
             return
-        if path == "/api/devices" and method.upper() == "GET":
+        if path == "/api/health" and method.upper() == "GET":
+            writer.write(json_response("200 OK", {"service": "mira-relay", "protocol": PROTOCOL_VERSION,
+                                                  "instanceId": SERVER_INSTANCE_ID}))
+        elif path == "/api/devices" and method.upper() == "GET":
             writer.write(await api_devices(state))
         elif path in {"/api/outline", "/api/device/outline"} and method.upper() == "POST":
             writer.write(await api_outline(state, parse_json_body(body)))
