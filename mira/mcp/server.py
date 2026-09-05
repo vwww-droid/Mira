@@ -188,6 +188,9 @@ class TerminalSession:
     relay: RelayHttpClient
     buffer: bytearray = field(default_factory=bytearray)
     lock: threading.Condition = field(default_factory=threading.Condition)
+    output_offset: int = 0
+    command_lock: threading.Lock = field(default_factory=threading.Lock)
+    command_uncertain: bool = False
     active: bool = True
     status: str = "opening"
     read_thread: threading.Thread | None = None
@@ -224,7 +227,9 @@ class TerminalSession:
                 text = bytes(self.buffer).decode("utf-8", errors="replace")
                 if pattern in text:
                     return text
-                current_size = len(self.buffer)
+                if not self.active or self.status.startswith("reader stopped:"):
+                    raise ToolError(f"session ended while waiting for command: {self.status}")
+                current_size = self.output_offset + len(self.buffer)
                 now = time.monotonic()
                 if current_size != last_size:
                     last_size = current_size
@@ -271,7 +276,9 @@ class TerminalSession:
         with self.lock:
             self.buffer.extend(chunk)
             if len(self.buffer) > MAX_BUFFER_BYTES:
-                del self.buffer[: len(self.buffer) - MAX_BUFFER_BYTES]
+                dropped = len(self.buffer) - MAX_BUFFER_BYTES
+                del self.buffer[:dropped]
+                self.output_offset += dropped
             self.lock.notify_all()
 
     def _set_status(self, status: str) -> None:
@@ -804,6 +811,7 @@ class MiraMcpServer:
                     "mode": "list_processes",
                     "host": "127.0.0.1:27042",
                     "limit": limit,
+                    "operationTimeout": max(1.0, timeout - 2.0),
                 }
             )
             command = self.wrap_python_command(python_source)
@@ -831,7 +839,7 @@ class MiraMcpServer:
         rpc_args = arguments.get("rpcArgs") or []
         if not isinstance(rpc_args, list):
             raise ToolError("rpcArgs must be an array when provided")
-        wait_seconds = float(arguments.get("waitSeconds") or 0.5)
+        wait_seconds = float(arguments.get("waitSeconds", 0.5))
         if wait_seconds < 0:
             raise ToolError("waitSeconds must be >= 0")
         session, opened = self.ensure_session(arguments)
@@ -857,6 +865,7 @@ class MiraMcpServer:
                     "rpcMethod": str(arguments.get("rpcMethod") or ""),
                     "rpcArgs": rpc_args,
                     "waitSeconds": wait_seconds,
+                    "operationTimeout": max(1.0, timeout - 2.0),
                 }
             )
             command = self.wrap_python_command(python_source)
@@ -945,16 +954,29 @@ class MiraMcpServer:
         return self.get_session(session_id), opened, reused_shared
 
     def execute_command(self, session: TerminalSession, command: str, timeout: float) -> dict[str, Any]:
-        session.wait_until_active(max(5.0, min(timeout, 20.0)))
-        marker = f"__MIRA_MCP_DONE_{uuid.uuid4().hex}__"
-        before = len(session.buffer)
-        session.send_input(command.rstrip("\n") + "\nprintf '\\n%s:%s\\n' " + shlex.quote(marker) + " \"$?\"\n")
-        transcript = session.wait_for_text(marker + ":", timeout)
-        new_text = transcript[before:]
-        match = re.search(re.escape(marker) + r":(\d+)", new_text)
-        exit_code = int(match.group(1)) if match else None
-        cleaned = re.sub(r"\r?\n?" + re.escape(marker) + r":\d+\r?\n?", "\n", new_text)
-        return {"sessionId": session.session_id, "exitCode": exit_code, "output": cleaned, "status": session.status}
+        with session.command_lock:
+            if session.command_uncertain:
+                raise ToolError("previous command timed out; close this terminal and open a new session before running more commands")
+            session.wait_until_active(max(5.0, min(timeout, 20.0)))
+            marker = f"__MIRA_MCP_DONE_{uuid.uuid4().hex}__"
+            with session.lock:
+                before = session.output_offset + len(session.buffer)
+            session.send_input(command.rstrip("\n") + "\nprintf '\\n%s:%s\\n' " + shlex.quote(marker) + " \"$?\"\n")
+            try:
+                session.wait_for_text(marker + ":", timeout)
+            except ToolError:
+                # An unknown foreground command must not consume the next request.
+                session.command_uncertain = True
+                raise
+            with session.lock:
+                start = max(0, before - session.output_offset)
+                new_text = bytes(session.buffer[start:]).decode("utf-8", errors="replace")
+                truncated = before < session.output_offset
+            match = re.search(re.escape(marker) + r":(\d+)", new_text)
+            exit_code = int(match.group(1)) if match else None
+            cleaned = re.sub(r"\r?\n?" + re.escape(marker) + r":\d+\r?\n?", "\n", new_text)
+            return {"sessionId": session.session_id, "exitCode": exit_code, "output": cleaned,
+                    "outputTruncated": truncated, "status": session.status}
 
     def execute_json_command(self, session: TerminalSession, command: str, timeout: float, label: str) -> dict[str, Any]:
         begin = f"__MIRA_JSON_BEGIN_{uuid.uuid4().hex}__"
@@ -978,18 +1000,18 @@ class MiraMcpServer:
             error = str(payload.get("error") or result["output"].strip() or f"{label} failed")
             raise ToolError(error)
         if payload.get("ok") is False:
-            raise ToolError(str(payload.get("error") or f"{label} failed"))
+            raise ToolError(f"{label}: " + json.dumps(payload, ensure_ascii=False))
         return payload
 
     @staticmethod
     def extract_marked_block(output: str, begin: str, end: str, label: str) -> str:
         pattern = re.compile(
-            rf"(?:^|\r?\n){re.escape(begin)}\r?\n(.*?)(?:\r?\n){re.escape(end)}(?:\r?\n|$)",
+            rf"(?:^|\r*\n){re.escape(begin)}\r*\n(.*?)(?:\r*\n){re.escape(end)}(?:\r*\n|$)",
             re.S,
         )
         match = pattern.search(output)
         if not match:
-            raise ToolError(f"{label} did not return expected markers")
+            raise ToolError(f"{label} did not return expected markers; outputTail={output[-2000:]!r}")
         return match.group(1).strip()
 
     @staticmethod
@@ -1146,6 +1168,8 @@ import frida
 import json
 import traceback
 import time
+import threading
+import os
 
 spec = json.loads(base64.b64decode({encoded!r}).decode("utf-8"))
 
@@ -1161,6 +1185,33 @@ def to_jsonable(value):
     return str(value)
 
 payload = {{"ok": False}}
+session = None
+script = None
+messages = []
+phase = "connect"
+
+def expired():
+    # Diagnostics must not prevent a hard exit when the PTY is backpressured.
+    previous_blocking = None
+    try:
+        report = {{"ok": False, "error": "Frida operation timed out", "phase": phase[:160],
+                   "messageCount": len(messages), "messagesOmitted": bool(messages), "clientTerminated": True}}
+        previous_blocking = os.get_blocking(1)
+        os.set_blocking(1, False)
+        os.write(1, (json.dumps(report) + "\\n").encode("utf-8"))
+    except (OSError, ValueError):
+        pass
+    finally:
+        if previous_blocking is not None:
+            try:
+                os.set_blocking(1, previous_blocking)
+            except OSError:
+                pass
+        os._exit(124)
+
+watchdog = threading.Timer(float(spec.get("operationTimeout", 20)), expired)
+watchdog.daemon = True
+watchdog.start()
 
 try:
     device = frida.get_device_manager().add_remote_device(spec.get("host") or "127.0.0.1:27042")
@@ -1183,12 +1234,14 @@ try:
         }}
     elif mode == "run_script":
         target = spec.get("target") or "Gadget"
-        wait_seconds = float(spec.get("waitSeconds") or 0.5)
+        wait_seconds = float(spec.get("waitSeconds", 0.5))
         rpc_method = spec.get("rpcMethod") or ""
         rpc_args = spec.get("rpcArgs") or []
         script_source = base64.b64decode(spec.get("scriptBase64") or "").decode("utf-8")
         messages = []
+        phase = "attach"
         session = device.attach(target)
+        phase = "create_script"
         script = session.create_script(script_source)
 
         def on_message(message, data):
@@ -1198,14 +1251,18 @@ try:
             messages.append(entry)
 
         script.on("message", on_message)
+        phase = "load"
         script.load()
         rpc_result = None
         if rpc_method:
-            rpc_result = getattr(script.exports_sync, rpc_method)(*rpc_args)
+            phase = "rpc:" + rpc_method
+            exports = getattr(script, "exports_sync", None)
+            if exports is None:
+                exports = script.exports
+            rpc_result = getattr(exports, rpc_method)(*rpc_args)
         else:
+            phase = "wait_messages"
             time.sleep(wait_seconds)
-        script.unload()
-        session.detach()
         payload = {{
             "ok": True,
             "fridaVersion": getattr(frida, "__version__", ""),
@@ -1215,6 +1272,9 @@ try:
             "messageCount": len(messages),
             "messages": messages,
         }}
+        script_errors = [entry for entry in messages if isinstance(entry, dict) and entry.get("type") == "error"]
+        if script_errors:
+            payload.update(ok=False, error="Frida JavaScript error", phase="script.message")
     else:
         processes = device.enumerate_processes()
         first = processes[0] if processes else None
@@ -1230,8 +1290,22 @@ except Exception as exc:
     payload = {{
         "ok": False,
         "error": str(exc),
+        "phase": phase,
+        "messages": messages,
         "traceback": traceback.format_exc().splitlines(),
     }}
+
+finally:
+    for resource, method in ((script, "unload"), (session, "detach")):
+        if resource is not None:
+            phase = method
+            try:
+                getattr(resource, method)()
+            except Exception as cleanup_error:
+                payload.setdefault("cleanupErrors", []).append(str(cleanup_error))
+                if payload.get("ok"):
+                    payload.update(ok=False, error="Frida cleanup failed", phase=phase)
+    watchdog.cancel()
 
 print(json.dumps(payload, ensure_ascii=False))
 raise SystemExit(0 if payload.get("ok") else 1)
