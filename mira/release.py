@@ -13,6 +13,7 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+from zipfile import BadZipFile, ZipFile
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DIST_DIR = ROOT_DIR / "dist"
@@ -310,10 +311,26 @@ def make_zip_from_directory(source_dir: Path, output_path: Path, root_name: str)
         )
 
 
+def validate_archive_root(archive_path: Path, expected_root: str) -> None:
+    prefix = expected_root.rstrip("/") + "/"
+    try:
+        with ZipFile(archive_path) as archive:
+            names = [
+                entry.filename
+                for entry in archive.infolist()
+                if not entry.filename.startswith("__MACOSX/") and entry.filename != "__MACOSX/"
+            ]
+    except BadZipFile as exc:
+        raise ReleaseError(f"归档格式无效: {archive_path}") from exc
+    if not names or any(name != prefix and not name.startswith(prefix) for name in names):
+        raise ReleaseError(f"归档根目录无效: {archive_path}, 预期 {prefix}")
+
+
 def package_ios_outputs(app_path: Path) -> list[ArtifactRecord]:
     ensure_directory(IOS_DIST_DIR)
     app_zip = IOS_DIST_DIR / f"{app_path.name}.zip"
     make_zip_from_directory(app_path, app_zip, app_path.name)
+    validate_archive_root(app_zip, app_path.name)
 
     ipa_path = IOS_DIST_DIR / "Mira-unsigned.ipa"
     payload_dir = Path(tempfile.mkdtemp(prefix="mira-payload-"))
@@ -329,6 +346,7 @@ def package_ios_outputs(app_path: Path) -> list[ArtifactRecord]:
                 "-c",
                 "-k",
                 "--sequesterRsrc",
+                "--keepParent",
                 str(payload_root),
                 str(ipa_path),
             ],
@@ -337,6 +355,7 @@ def package_ios_outputs(app_path: Path) -> list[ArtifactRecord]:
         )
     finally:
         shutil.rmtree(payload_dir, ignore_errors=True)
+    validate_archive_root(ipa_path, "Payload")
 
     return [
         ArtifactRecord(target="ios", path=str(app_zip), kind="app-zip"),
