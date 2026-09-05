@@ -9,6 +9,7 @@ import argparse
 import base64
 import json
 import os
+from pathlib import Path
 import re
 import shlex
 import socket
@@ -21,6 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import zlib
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -324,6 +326,7 @@ class MiraMcpServer:
         self.relay = RelayHttpClient(relay_url)
         self.broadcast_target = broadcast_target
         self.sessions: dict[str, TerminalSession] = {}
+        self.frida_operation_lock = threading.Lock()
         self.tools: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
             "mira_discover_devices": self.tool_discover_devices,
             "mira_list_devices": self.tool_list_devices,
@@ -393,11 +396,20 @@ class MiraMcpServer:
         tool = self.tools.get(name)
         if tool is None:
             return self.tool_result({"error": f"unknown tool: {name}"}, is_error=True)
+        frida_locked = name.startswith("mira_frida_")
+        if frida_locked and not self.frida_operation_lock.acquire(blocking=False):
+            return self.tool_result(
+                {"error": "another Frida operation is active; request was not run or replayed"},
+                is_error=True,
+            )
         try:
             data = tool(arguments)
             return self.tool_result(data)
         except ToolError as exc:
             return self.tool_result({"error": str(exc)}, is_error=True)
+        finally:
+            if frida_locked:
+                self.frida_operation_lock.release()
 
     def tool_definitions(self) -> list[dict[str, Any]]:
         return [
@@ -564,16 +576,19 @@ class MiraMcpServer:
             {
                 "name": "mira_frida_run_script",
                 "title": "Run Frida JavaScript inside Mira",
-                "description": "Attach to the built-in Frida Gadget target, load a JavaScript snippet, collect send() messages, and optionally call an exported RPC method. On iOS, prefer running multiple Frida operations in one reused session.",
+                "description": "AI-facing primitive for one bounded Frida task inside Mira. The AI should generate rpc.exports with a task method and an idempotent cleanup method, call it once, and let Mira run cleanup in finally. Android 14/15 reuse one long-lived framework Script while isolating each task source; on this single-runner path ordinary JSON is unchanged and ArrayBuffer or TypedArray values are returned inline as {type:'bytes',encoding:'base64',dataBase64:'...'}, which the AI should decode, inspect, or save for the user. This interface is intended for install/use/cleanup tasks, not managed long-running listeners.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "script": {"type": "string", "description": "Frida JavaScript source code. Use send(...) or rpc.exports for structured output."},
+                        "script": {"type": "string", "description": "AI-generated Frida JavaScript. Define rpc.exports with the named task method and idempotent cleanup method; the user should not need to author this source."},
                         "sessionId": {"type": "string"},
                         "installId": {"type": "string"},
                         "target": {"type": "string", "default": "Gadget"},
-                        "rpcMethod": {"type": "string", "description": "Optional rpc.exports method name to invoke after script.load()."},
-                        "rpcArgs": {"type": "array", "description": "Optional positional arguments for rpcMethod."},
+                        "rpcMethod": {"type": "string", "description": "AI-selected rpc.exports task method. Required on Android 14/15."},
+                        "rpcArgs": {"type": "array", "description": "JSON positional arguments for rpcMethod."},
+                        "persistentId": {"type": "string", "description": "Optional diagnostic request label. Android 14/15 still use one shared runner and do not cache task sources by this label."},
+                        "cleanupMethod": {"type": "string", "description": "AI-generated idempotent rpc.exports method called in finally after success, RPC failure, or result-normalization failure. Required on Android 14/15; restore Java implementations, detach native listeners, cancel timers, and release task objects."},
+                        "allowUnsafeOneShot": {"type": "boolean", "default": False, "description": "Android 14/15 only: explicitly opt into the legacy load/unload path. Repeated use is known to crash the Frida 16.7.19 compatibility build."},
                         "waitSeconds": {"type": "number", "default": 0.5, "description": "When rpcMethod is omitted, how long to wait after script.load() before collecting messages."},
                         "timeoutSeconds": {"type": "number", "default": 12},
                         "cols": {"type": "integer", "default": 120},
@@ -842,9 +857,26 @@ class MiraMcpServer:
         wait_seconds = float(arguments.get("waitSeconds", 0.5))
         if wait_seconds < 0:
             raise ToolError("waitSeconds must be >= 0")
+        persistent_id = str(arguments.get("persistentId") or "")
+        cleanup_method = str(arguments.get("cleanupMethod") or "")
+        if persistent_id and not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", persistent_id):
+            raise ToolError("persistentId must contain 1-80 letters, digits, dot, underscore or dash")
         session, opened = self.ensure_session(arguments)
         device = self.device_for_session(session)
         platform = self.device_platform(device)
+        sdk = int((device or {}).get("sdk") or 0)
+        rpc_method = str(arguments.get("rpcMethod") or "")
+        compatibility_runtime = platform == "android" and 34 <= sdk <= 35
+        if compatibility_runtime and not cleanup_method and not bool(arguments.get("allowUnsafeOneShot")):
+            raise ToolError(
+                "Android 14/15 scripts require rpcMethod and cleanupMethod so Mira can reuse a "
+                "persistent Frida script safely; the cleanup export must restore hooks, listeners "
+                "and timers. Set allowUnsafeOneShot=true only to opt into the legacy path known to crash"
+            )
+        if cleanup_method and not persistent_id:
+            persistent_id = "auto-" + __import__("hashlib").sha256(script.encode("utf-8")).hexdigest()[:24]
+        if persistent_id and (not rpc_method or not cleanup_method):
+            raise ToolError("persistent Frida scripts require rpcMethod and cleanupMethod")
         timeout = float(arguments.get("timeoutSeconds") or (30.0 if platform == "ios" else 12.0))
         if platform == "ios":
             python_source = self.build_ios_frida_run_script_python_source(
@@ -855,6 +887,18 @@ class MiraMcpServer:
                 wait_seconds=wait_seconds,
             )
             command = self.wrap_ios_python_command(python_source)
+        elif persistent_id:
+            command = self.build_persistent_frida_command(
+                {
+                    "executionMode": "runner",
+                    "persistentId": persistent_id,
+                    "script": script,
+                    "rpcMethod": rpc_method,
+                    "rpcArgs": rpc_args,
+                    "cleanupMethod": cleanup_method,
+                    "operationTimeout": max(1.0, timeout - 2.0),
+                }
+            )
         else:
             python_source = self.build_frida_python_source(
                 {
@@ -862,7 +906,7 @@ class MiraMcpServer:
                     "host": "127.0.0.1:27042",
                     "target": str(arguments.get("target") or "Gadget"),
                     "scriptBase64": base64.b64encode(script.encode("utf-8")).decode("ascii"),
-                    "rpcMethod": str(arguments.get("rpcMethod") or ""),
+                    "rpcMethod": rpc_method,
                     "rpcArgs": rpc_args,
                     "waitSeconds": wait_seconds,
                     "operationTimeout": max(1.0, timeout - 2.0),
@@ -885,6 +929,21 @@ class MiraMcpServer:
             self.tool_close_terminal({"sessionId": session.session_id})
             payload["closed"] = True
         return payload
+
+    @staticmethod
+    def build_persistent_frida_command(spec: dict[str, Any]) -> str:
+        agent_path = Path(__file__).with_name("frida_agent.py")
+        agent_digest = __import__("hashlib").sha256(agent_path.read_bytes()).hexdigest()
+        encoded_spec = base64.urlsafe_b64encode(
+            zlib.compress(json.dumps(spec, separators=(",", ":")).encode("utf-8"), level=9)
+        ).decode("ascii")
+        timeout = float(spec.get("operationTimeout") or 20)
+        socket_name = "mira-frida-agent-" + agent_digest[:12] + ".sock"
+        return (
+            'python3 "$PREFIX/bin/mira-frida-agent.py" --client '
+            + '"${TMPDIR:-/data/local/tmp}/' + socket_name + '" '
+            + shlex.quote(encoded_spec) + " " + shlex.quote(str(timeout))
+        )
 
     def list_devices(self) -> list[dict[str, Any]]:
         data = self.relay.request("/api/devices", timeout=10.0)

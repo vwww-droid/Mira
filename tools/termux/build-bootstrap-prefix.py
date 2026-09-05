@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import contextlib
+import hashlib
 import os
 import re
 import shlex
@@ -68,6 +69,20 @@ FRIDA_DEVKIT_TAR = FRIDA_DEVKIT_DIR / f"frida-core-devkit-{FRIDA_VERSION}-androi
 FRIDA_DEVKIT_URL = (
     f"https://github.com/frida/frida/releases/download/{FRIDA_VERSION}/frida-core-devkit-{FRIDA_VERSION}-android-arm64.tar.xz"
 )
+FRIDA_DEVKIT_SHA256 = {
+    "16.0.7": "a77fe0caabeadaa3ee053b1b24a91968b9a3854fba3b9e39bb3886911a18207b",
+    "16.7.19": "219250c50c3894386793945bfc46a26d85d2c2b38454db682dadba2a0b3288b1",
+}
+FRIDA_SDIST_SHA256 = {
+    "16.0.7": "8e6e285fd9846aa045d6827b90b5ad2fe2e42117c4bb0e453bd825da0ad825a1",
+    "16.7.19": "3f266fd01b61f4c0c7079435f8e44d0789abca36c326b97925df98d61eb3dc9c",
+}
+
+
+def verify_sha256(path: Path, expected: str, label: str) -> None:
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual != expected:
+        raise RuntimeError(f"{label} SHA-256 不匹配: expected={expected}, actual={actual}, path={path}")
 
 
 def resolve_toolchain_dir() -> Path:
@@ -403,8 +418,13 @@ def download_source_distribution(destination: Path, package_spec: str) -> Path:
     )
     after = sorted({path.resolve() for path in destination.glob("*")} - before)
     if not after:
-        prefix = package_spec.split("==", 1)[0].replace("-", "_")
-        after = sorted(path.resolve() for path in destination.glob(f"{prefix}-*"))
+        if "==" in package_spec:
+            package, version = package_spec.split("==", 1)
+            normalized = package.replace("-", "_")
+            after = sorted(path.resolve() for path in destination.glob(f"{normalized}-{version}.*"))
+        else:
+            prefix = package_spec.replace("-", "_")
+            after = sorted(path.resolve() for path in destination.glob(f"{prefix}-*"))
     if not after:
         raise FileNotFoundError(f"未下载到源码包: {package_spec}")
     return after[-1]
@@ -506,10 +526,16 @@ def install_vendored_frida_tools(site_packages: Path) -> None:
 
 
 def ensure_frida_devkit() -> Path:
+    expected = FRIDA_DEVKIT_SHA256.get(FRIDA_VERSION)
+    if expected is None:
+        raise RuntimeError(f"Frida {FRIDA_VERSION} 没有固定 devkit SHA-256")
     FRIDA_DEVKIT_DIR.mkdir(parents=True, exist_ok=True)
     if not (FRIDA_DEVKIT_DIR / "frida-core.h").exists() or not (FRIDA_DEVKIT_DIR / "libfrida-core.a").exists():
         fetch(FRIDA_DEVKIT_URL, FRIDA_DEVKIT_TAR)
+        verify_sha256(FRIDA_DEVKIT_TAR, expected, "Frida devkit")
         run(["tar", "-xJf", str(FRIDA_DEVKIT_TAR), "-C", str(FRIDA_DEVKIT_DIR)])
+    elif FRIDA_DEVKIT_TAR.exists():
+        verify_sha256(FRIDA_DEVKIT_TAR, expected, "Frida devkit cache")
     return FRIDA_DEVKIT_DIR
 
 
@@ -539,6 +565,11 @@ def build_frida_extension(prefix_root: Path, python_version: str, source_root: P
         raise FileNotFoundError(f"缺少 Android clang: {clang}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    extension_source = source_root / "src" / "_frida.c"
+    if not extension_source.exists():
+        extension_source = source_root / "frida" / "_frida" / "extension.c"
+    if not extension_source.exists():
+        raise FileNotFoundError(f"缺少 Frida Python 扩展源码: {source_root}")
     run(
         [
             str(clang),
@@ -549,7 +580,7 @@ def build_frida_extension(prefix_root: Path, python_version: str, source_root: P
             "-fdata-sections",
             f"-I{devkit_dir}",
             f"-I{prefix_root / 'include' / f'python{python_version}'}",
-            str(source_root / "src" / "_frida.c"),
+            str(extension_source),
             "-o",
             str(output_path),
             f"-L{devkit_dir}",
@@ -570,10 +601,20 @@ def build_frida_extension(prefix_root: Path, python_version: str, source_root: P
 
 def install_frida_python_binding(prefix_root: Path, python_version: str, site_packages: Path) -> str:
     sdist_path = download_source_distribution(SDIST_CACHE_DIR, f"frida=={FRIDA_VERSION}")
+    expected = FRIDA_SDIST_SHA256.get(FRIDA_VERSION)
+    if expected is None:
+        raise RuntimeError(f"Frida {FRIDA_VERSION} 没有固定 sdist SHA-256")
+    verify_sha256(sdist_path, expected, "Frida Python sdist")
     source_root = extract_tarball(sdist_path, BUILD_ROOT / "frida-python-src")
     copytree_replace(source_root / "frida", site_packages / "frida")
-    copytree_replace(source_root / "_frida", site_packages / "_frida")
-    build_frida_extension(prefix_root, python_version, source_root, site_packages / "_frida.abi3.so")
+    legacy_stubs = source_root / "_frida"
+    if legacy_stubs.is_dir():
+        copytree_replace(legacy_stubs, site_packages / "_frida")
+        extension_path = site_packages / "_frida.abi3.so"
+    else:
+        # Frida >= 16.5 imports the extension relatively from the package.
+        extension_path = site_packages / "frida" / "_frida.abi3.so"
+    build_frida_extension(prefix_root, python_version, source_root, extension_path)
     return sdist_path.name
 
 
@@ -673,11 +714,13 @@ def validate_layout(prefix_root: Path, python_version: str) -> None:
         site_packages / "frida" / "__init__.py",
         site_packages / "frida_tools" / "__init__.py",
         site_packages / "pip" / "__init__.py",
-        site_packages / "_frida.abi3.so",
     )
     for path in required_paths:
         if not path.exists():
             raise FileNotFoundError(f"构建结果缺少必需文件: {path}")
+    extension_candidates = (site_packages / "_frida.abi3.so", site_packages / "frida" / "_frida.abi3.so")
+    if not any(path.is_file() and path.stat().st_size > 0 for path in extension_candidates):
+        raise FileNotFoundError(f"构建结果缺少非空 Frida 扩展: {extension_candidates}")
 
     import_program = (
         "import sys; "
@@ -744,6 +787,10 @@ def build(out_root: Path) -> Path:
     frida_sdist_name = install_frida_python_binding(asset_root, python_version, site_packages)
     ensure_python_entrypoints(asset_root, python_version)
     ensure_frida_entrypoint(asset_root)
+    agent_source = ROOT_DIR / "mira" / "mcp" / "frida_agent.py"
+    agent_target = asset_root / "bin" / "mira-frida-agent.py"
+    shutil.copy2(agent_source, agent_target)
+    agent_target.chmod(agent_target.stat().st_mode | stat.S_IXUSR)
     relocated_files = relocate_text_prefixes(asset_root)
     log(f"relocated text files: {relocated_files}")
     write_source_manifest(asset_root, packages, wheels, python_version, frida_sdist_name)

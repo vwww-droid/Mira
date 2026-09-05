@@ -23,12 +23,17 @@ Mobile runtime detection workbench for iOS and Android.
   <strong>Mira is built in the open as a long-term project for turning real runtime cases into reusable detection knowledge, analysis workflows, and cross-platform tooling.</strong>
 </div>
 
+## Download Android APK
+
+[**Download the latest Android APK**](https://github.com/vwww-droid/Mira/releases/latest/download/mira-app-debug.apk) · [Release notes and other assets](https://github.com/vwww-droid/Mira/releases/latest)
+
+The published APK includes arm64-v8a and armeabi-v7a JNI libraries. The bundled offline Python/Frida runtime requires arm64-v8a. Separate ABI downloads will be listed here when published.
+
+The unreleased Frida compatibility changes support Android 10 through 15. Android 16 Java hooks remain unsupported, and no confirmed official Frida fix is available. See the [build script](./tools/android/build-frida-16.7-compat-apk.sh) and [compatibility notes](./docs/notes/android-frida-gadget-compatibility-2026-09-05.md).
+
 ## Why follow Mira
 
-- Mira grows with real runtime work, not just planned features.
-- Each field case can become a new workflow, tool capability, or detection note.
-- The project is designed to accumulate practical mobile runtime knowledge over time.
-- Following Mira means following how that knowledge turns into working tooling.
+Mira turns real runtime cases into reusable workflows, tools, and detection notes.
 
 ## Research Updates
 
@@ -49,7 +54,7 @@ Mobile runtime detection workbench for iOS and Android.
 
 - **Relay**: `PYTHONPATH=. python3 -m mira.relay.server --host 0.0.0.0 --port 8765 --advertise-url http://<your-lan-ip>:8765`
 - **Browser**: Open `http://127.0.0.1:8765` on your desktop.
-- **Android**: Download the APK from [Releases](https://github.com/vwww-droid/Mira/releases), install it, then enter `http://<your-lan-ip>:8765` in the app.
+- **Android**: [Download the APK directly](https://github.com/vwww-droid/Mira/releases/latest/download/mira-app-debug.apk), install it, then enter `http://<your-lan-ip>:8765` in the app.
 - **iOS**: Verified on a real device running iOS 16.7.10. See [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md).
 - **AI**: `PYTHONPATH=. python3 -m mira.mcp.server --relay http://127.0.0.1:8765`. MCP config: [`docs/MCP.md`](./docs/MCP.md).
 

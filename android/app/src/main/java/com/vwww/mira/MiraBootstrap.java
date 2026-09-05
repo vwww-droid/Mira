@@ -6,6 +6,7 @@ import android.os.Build;
 import android.os.SystemClock;
 import android.util.Log;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -15,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Enumeration;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -28,7 +30,7 @@ public final class MiraBootstrap {
     private static final String MANAGED_MARKER = "# Managed by MiraBootstrap";
     private static final String BOOTSTRAP_PREFIX_ASSET_ROOT = "bootstrap/prefix";
     private static final String INSTALL_STATE_FILE_NAME = ".mira-bootstrap-state";
-    private static final int INSTALL_STATE_VERSION = 9;
+    private static final int INSTALL_STATE_VERSION = BuildConfig.MIRA_BOOTSTRAP_STATE_VERSION;
     private static final AtomicBoolean INSTALL_COMPLETED = new AtomicBoolean(false);
     private static final Object INSTALL_LOCK = new Object();
 
@@ -70,6 +72,10 @@ public final class MiraBootstrap {
             long startedAt = SystemClock.elapsedRealtime();
             Log.i(TAG, "Bootstrap install begin prefix=" + prefixDir.getAbsolutePath());
             try {
+                // Invalidate a stale marker before changing any runtime files.
+                if (installStateFile.exists() && !installStateFile.delete()) {
+                    throw new IOException("Cannot invalidate bootstrap state: " + installStateFile);
+                }
                 ensureRuntimeDirectories();
                 installBootstrapPrefixIfAvailable();
                 mkdir(new File(prefixDir, "bin"));
@@ -129,20 +135,27 @@ public final class MiraBootstrap {
     private boolean isBootstrapCurrent() throws IOException {
         if (!installStateFile.isFile()) return false;
         String state = readText(installStateFile);
-        if (!state.contains("version=" + INSTALL_STATE_VERSION)) return false;
+        if (!state.equals(MANAGED_MARKER + "\nversion=" + INSTALL_STATE_VERSION + "\n")) return false;
         return prefixDir.isDirectory()
             && homeDir.isDirectory()
             && new File(prefixDir, "bin/sh").isFile()
             && new File(prefixDir, "bin/frida").isFile()
             && new File(prefixDir, "bin/python3").isFile()
             && new File(prefixDir, "bin/frida-official").isFile()
+            && new File(prefixDir, "bin/mira-frida-agent.py").isFile()
+            && (new File(prefixDir, "lib/python3.13/site-packages/_frida.abi3.so").isFile()
+                || new File(prefixDir, "lib/python3.13/site-packages/frida/_frida.abi3.so").isFile())
             && new File(prefixDir, "lib/python3.13/zipfile/_path/__init__.py").isFile()
             && new File(prefixDir, "etc/profile").isFile()
             && new File(homeDir, ".profile").isFile();
     }
 
     private void writeInstallState() throws IOException {
-        writeText(installStateFile, MANAGED_MARKER + "\nversion=" + INSTALL_STATE_VERSION + "\n");
+        byte[] state = (MANAGED_MARKER + "\nversion=" + INSTALL_STATE_VERSION + "\n").getBytes(StandardCharsets.UTF_8);
+        CRC32 crc = new CRC32();
+        crc.update(state);
+        MiraVerifiedExtraction.extract(() -> new ByteArrayInputStream(state),
+            installStateFile, state.length, crc.getValue(), false);
     }
 
     private void writeExecutable(File file, String content) throws IOException {
@@ -415,13 +428,30 @@ public final class MiraBootstrap {
             return;
         }
         extractBootstrapPrefixFromApk(assetRoot, prefixDir);
-        extractAssetTree(assetRoot, prefixDir, "");
         Log.i(TAG, "Installed bootstrap prefix assets from " + assetRoot);
     }
 
     private void extractBootstrapPrefixFromApk(String assetRoot, File destinationRoot) throws IOException {
         String prefix = "assets/" + assetRoot + "/";
         try (ZipFile zipFile = new ZipFile(packageCodePath)) {
+            for (String required : new String[] {
+                "bin/python3", "bin/pip", "bin/frida-official", "bin/mira-frida-agent.py",
+                "lib/python3.13/site-packages/frida/__init__.py",
+                "lib/python3.13/site-packages/pip/__init__.py"
+            }) {
+                ZipEntry entry = zipFile.getEntry(prefix + required);
+                if (entry == null || entry.isDirectory() || entry.getSize() <= 0) {
+                    throw new IOException("Missing or empty bootstrap entry: " + prefix + required);
+                }
+            }
+            ZipEntry topLevelFrida = zipFile.getEntry(prefix
+                + "lib/python3.13/site-packages/_frida.abi3.so");
+            ZipEntry packagedFrida = zipFile.getEntry(prefix
+                + "lib/python3.13/site-packages/frida/_frida.abi3.so");
+            if ((topLevelFrida == null || topLevelFrida.isDirectory() || topLevelFrida.getSize() <= 0)
+                && (packagedFrida == null || packagedFrida.isDirectory() || packagedFrida.getSize() <= 0)) {
+                throw new IOException("Missing or empty Frida extension in " + prefix);
+            }
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
             boolean extractedAny = false;
             while (entries.hasMoreElements()) {
@@ -430,14 +460,13 @@ public final class MiraBootstrap {
                 if (!name.startsWith(prefix) || entry.isDirectory()) continue;
                 String relativePath = name.substring(prefix.length());
                 File targetFile = safeDestinationFile(destinationRoot, relativePath);
-                try (InputStream input = zipFile.getInputStream(entry)) {
-                    copyInputToFile(input, targetFile, relativePath);
-                }
+                MiraVerifiedExtraction.extract(() -> zipFile.getInputStream(entry),
+                    targetFile, entry.getSize(), entry.getCrc(), shouldBeExecutable(relativePath));
                 extractedAny = true;
             }
             if (extractedAny) return;
         }
-        extractAssetTree(assetRoot, destinationRoot, "");
+        throw new IOException("No bootstrap ZIP entries found for " + assetRoot);
     }
 
     private File safeDestinationFile(File destinationRoot, String relativePath) throws IOException {
@@ -483,47 +512,6 @@ public final class MiraBootstrap {
     private boolean assetDirectoryExists(String assetPath) throws IOException {
         String[] children = assets.list(assetPath);
         return children != null && children.length > 0;
-    }
-
-    private void extractAssetTree(String assetRoot, File destinationRoot, String relativePath) throws IOException {
-        String assetPath = relativePath.isEmpty() ? assetRoot : assetRoot + "/" + relativePath;
-        String[] children = assets.list(assetPath);
-        if (children == null || children.length == 0) {
-            File targetFile = relativePath.isEmpty() ? destinationRoot : new File(destinationRoot, relativePath);
-            copyAsset(assetPath, targetFile, relativePath);
-            return;
-        }
-        File targetDir = relativePath.isEmpty() ? destinationRoot : new File(destinationRoot, relativePath);
-        mkdir(targetDir);
-        for (String child : children) {
-            String childRelativePath = relativePath.isEmpty() ? child : relativePath + "/" + child;
-            extractAssetTree(assetRoot, destinationRoot, childRelativePath);
-        }
-    }
-
-    private void copyAsset(String assetPath, File destination, String relativePath) throws IOException {
-        File parent = destination.getParentFile();
-        if (parent != null) mkdir(parent);
-        try (InputStream input = assets.open(assetPath)) {
-            copyInputToFile(input, destination, relativePath);
-        }
-    }
-
-    private void copyInputToFile(InputStream input, File destination, String relativePath) throws IOException {
-        File parent = destination.getParentFile();
-        if (parent != null) mkdir(parent);
-        try (FileOutputStream output = new FileOutputStream(destination, false)) {
-            byte[] buffer = new byte[64 * 1024];
-            int read;
-            while ((read = input.read(buffer)) != -1) {
-                output.write(buffer, 0, read);
-            }
-        }
-        if (shouldBeExecutable(relativePath)) {
-            if (!destination.setReadable(true, true)) throw new IOException("无法设置可读权限: " + destination.getAbsolutePath());
-            if (!destination.setWritable(true, true)) throw new IOException("无法设置可写权限: " + destination.getAbsolutePath());
-            if (!destination.setExecutable(true, true)) throw new IOException("无法设置可执行权限: " + destination.getAbsolutePath());
-        }
     }
 
     private boolean shouldBeExecutable(String relativePath) {

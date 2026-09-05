@@ -4,6 +4,11 @@ plugins {
 
 def generatedToolboxAssetsDir = file("${buildDir}/generated/mira-toolbox-assets")
 def bootstrapPython = System.getenv("MIRA_PYTHON3") ?: "python3"
+def fridaVersion = System.getenv("MIRA_FRIDA_VERSION") ?: "16.0.7"
+// Opt in to three standalone APKs without changing mira-android's default APK path.
+def buildAbiSplits = providers.gradleProperty("miraAbiSplits").map { it.toBoolean() }.getOrElse(false)
+def bootstrapStateVersion = providers.gradleProperty("miraBootstrapStateVersion").map { it.toInteger() }.getOrElse(9)
+def unsignedDebug = providers.gradleProperty("miraUnsignedDebug").map { it.toBoolean() }.getOrElse(false)
 
 android {
     namespace "com.vwww.mira"
@@ -14,15 +19,36 @@ android {
         ignoreAssetsPattern ""
     }
 
+    packaging {
+        jniLibs {
+            // Compress the directly distributed APK; Android extracts JNI libraries
+            // and libdynamic.config.so together. AGP 9.3 also removes the global
+            // .so no-compress rule, allowing bootstrap assets to use DEFLATE.
+            useLegacyPackaging = true
+        }
+    }
+
     defaultConfig {
         applicationId "com.vwww.mira"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
         versionCode 110
         versionName "1.1.0"
+        buildConfigField "int", "MIRA_BOOTSTRAP_STATE_VERSION", bootstrapStateVersion.toString()
 
         ndk {
-            abiFilters "arm64-v8a", "armeabi-v7a"
+            if (!buildAbiSplits) {
+                abiFilters "arm64-v8a", "armeabi-v7a"
+            }
+        }
+    }
+
+    splits {
+        abi {
+            enable buildAbiSplits
+            reset()
+            include "arm64-v8a", "armeabi-v7a"
+            universalApk true
         }
     }
 
@@ -33,6 +59,14 @@ android {
 
     buildFeatures {
         buildConfig true
+    }
+
+    buildTypes {
+        debug {
+            if (unsignedDebug) {
+                signingConfig null
+            }
+        }
     }
 
     externalNativeBuild {
@@ -62,8 +96,11 @@ tasks.register("buildTermuxPrefixAssets", Exec) {
     description = "Build relocatable Termux bootstrap prefix assets"
     workingDir rootDir
     inputs.file("${rootDir}/tools/termux/build-bootstrap-prefix.py")
+    inputs.file("${rootDir}/mira/mcp/frida_agent.py")
     inputs.dir("${rootDir}/third_party/frida-tools")
+    inputs.property("miraFridaVersion", fridaVersion)
     outputs.dir("${generatedToolboxAssetsDir}/bootstrap/prefix/arm64-v8a")
+    environment "MIRA_FRIDA_VERSION", fridaVersion
     commandLine bootstrapPython, "${rootDir}/tools/termux/build-bootstrap-prefix.py", generatedToolboxAssetsDir.absolutePath
 }
 

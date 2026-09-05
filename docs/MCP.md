@@ -4,115 +4,96 @@
 
 # Mira MCP Server
 
-## Goal
-
-The MCP server lets external AI clients such as Codex connect to Mira Relay through standard JSON-RPC tool calls.
-
-It does not replace Relay Server. It is the adapter layer between the AI client and Relay:
+Mira MCP lets AI clients such as Codex and Claude operate a connected Mira device through Relay. Relay owns device transport and sessions. The MCP server exposes them as stdio JSON-RPC tools.
 
 ```text
-Codex
-  -> MCP stdio(JSON-RPC)
-  -> mira.mcp.server
-  -> Mira Relay HTTP API + WebSocket
-  -> Android or iOS Mira runtime
-  -> PTY and runtime actions
+AI client -> Mira MCP -> Relay -> Android or iOS Mira -> PTY and runtime actions
 ```
 
-## Startup order
+## Start
 
-Start Relay Server first:
+Start Relay first:
 
 ```bash
-python3 -m mira.relay.server   --host 0.0.0.0   --port 8765   --advertise-url http://<your-lan-ip>:8765
+python3 -m mira.relay.server \
+  --host 0.0.0.0 \
+  --port 8765 \
+  --advertise-url http://<your-lan-ip>:8765
 ```
 
-Then let the MCP client launch the MCP server:
+Then configure the client to launch:
 
 ```bash
-python3 -m mira.mcp.server   --relay http://127.0.0.1:8765
+python3 -m mira.mcp.server --relay http://127.0.0.1:8765
 ```
 
-You can also use an environment variable:
+You can set `MIRA_RELAY_URL` instead of passing `--relay`. Run from the repository root with `PYTHONPATH` pointing to that root.
 
-```bash
-MIRA_RELAY_URL=http://127.0.0.1:8765 python3 -m mira.mcp.server
+Claude Desktop commonly reads `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "mira": {
+      "command": "<path-to-python>",
+      "args": ["-m", "mira.mcp.server", "--relay", "http://127.0.0.1:8765"],
+      "cwd": "<path-to-mira-repo>",
+      "env": { "PYTHONPATH": "<path-to-mira-repo>" }
+    }
+  }
+}
 ```
 
-## Client configuration overview
+Codex reads `~/.codex/config.toml`:
 
-The repo mainly validates two MCP clients:
-
-1. Claude Desktop, which uses JSON config, usually through `claude_desktop_config.json`.
-2. Codex, which uses TOML config, usually through `~/.codex/config.toml`.
-
-Use placeholders in shared examples:
-
-1. `<path-to-mira-repo>`: your Mira repository root.
-2. `<path-to-python>`: the Python interpreter used to launch Mira MCP Server.
-
-Both clients ultimately launch the same module over stdio:
-
-```text
-python -m mira.mcp.server --relay http://127.0.0.1:8765
+```toml
+[mcp_servers.mira]
+command = "<path-to-python>"
+args = ["-m", "mira.mcp.server", "--relay", "http://127.0.0.1:8765"]
+cwd = "<path-to-mira-repo>"
+env = { PYTHONPATH = "<path-to-mira-repo>" }
+default_tools_approval_mode = "approve"
 ```
 
-Main differences:
+Restart or reconnect the MCP client after changing MCP Python code or configuration. The running MCP process does not reload source files.
 
-1. Claude uses `mcpServers` in JSON.
-2. Codex uses `mcp_servers` in TOML.
-3. For non-interactive Codex `exec` flows, it is safer to set each Mira tool `approval_mode` to `approve`.
+## Typical analysis flow
 
-## Claude Desktop config
+1. Use `mira_list_devices` and select the exact `installId`.
+2. Use `mira_open_terminal` or let a command tool open one.
+3. Reuse the returned `sessionId` for commands and Frida tasks.
+4. Read additional output when an interactive command needs it.
+5. Close the terminal when the analysis is done.
 
-Common config path on macOS:
+The tools cover device and screen state, PTY lifecycle, command execution, snapshots, and Frida status, process listing, and scripts. MCP resources expose read-only session, Relay, and analysis context. The `mira_android_triage`, `mira_magisk_risk_review`, and `mira_frida_triage` prompts provide starting context without hard-coding a detection result.
 
-```text
-~/Library/Application Support/Claude/claude_desktop_config.json
+For root, Magisk, Zygisk, or LSPosed investigations, tell the AI what environment is expected. The Mira terminal runs inside the Mira app sandbox, not an adb or root shell. Detection logic belongs in generated or reusable scripts, such as [`tools/android/mira-proc-audit-sidechannel.sh`](../tools/android/mira-proc-audit-sidechannel.sh), rather than a fixed MCP detector.
+
+## Android Frida tasks
+
+Describe the analysis goal in ordinary language. The AI writes the Frida source and calls `mira_frida_run_script` with:
+
+- an exported task method named by `rpcMethod`;
+- an idempotent cleanup method named by `cleanupMethod`;
+- any RPC arguments required by the task.
+
+The current Android path keeps one Frida runtime and one runner Script alive, but gives each request its own local function scope. It runs cleanup in `finally` and does not cache each source as another Script. This supports repeated, changing one-shot analysis tasks without restarting Mira or unloading Gadget.
+
+The AI must make cleanup restore Java implementations, detach native listeners, cancel timers, and release task-owned objects. Mira cannot undo arbitrary global state or external side effects left by a script. Long-running listener management is not available yet.
+
+On the Android single-runner path, `ArrayBuffer`, `DataView`, and typed-array results are returned as:
+
+```json
+{ "type": "bytes", "encoding": "base64", "dataBase64": "..." }
 ```
 
-The repo root also keeps a minimal example:
+The AI decodes or saves this data when needed. Ordinary JSON is unchanged, and unsupported or circular values fail explicitly instead of being silently dropped.
 
-```text
-./claude_desktop_config.json
-```
+The unreleased compatibility build passed bounded arm64, 4 KB emulator checks on Android 10 through 15. Android 16 Java hooks remain unsupported because assigning a Frida Java method implementation can crash ART. Native Interceptor and read-only Java operations passed in the targeted Android 16 diagnosis, but that does not satisfy Java hook and original-call workflows. See the [Frida compatibility notes](./notes/android-frida-gadget-compatibility-2026-09-05.md).
 
-## Codex config
+## Limits
 
-Configure Mira MCP in your Codex TOML config and point it at the same Python module and Relay URL.
-
-## Codex CLI example
-
-Use the same Relay URL and Python entry when running from the CLI so desktop and terminal sessions stay aligned.
-
-## Exposed tools
-
-The MCP server exposes Mira session and runtime operations through tool calls. In practice, these cover session status, session listing, PTY lifecycle, command execution, and runtime interaction flows.
-
-## Exposed resources
-
-The server can surface runtime context as MCP resources when a client needs read-oriented access rather than direct tool execution.
-
-## Exposed prompt
-
-The repo can also provide reusable prompts that help AI clients enter a stable mobile runtime analysis workflow.
-
-## Recommended AI analysis flow
-
-Recommended order:
-
-1. Start Relay.
-2. Connect the mobile app.
-3. Start MCP Server.
-4. Let the AI client inspect device and session state first.
-5. Reuse one long-lived iOS session when possible instead of reopening repeatedly.
-
-## Magisk environment context
-
-For Android risk review, keep environment context explicit, especially when your target case depends on root, Magisk, Zygisk, LSPosed, or related runtime traces.
-
-## Design boundaries
-
-1. MCP is an adapter, not a replacement for Relay.
-2. Relay remains the transport and device coordination layer.
-3. Runtime actions should stay grounded in the authorized Mira host app sandbox and connected session lifecycle.
+- MCP connects to an existing Relay. It does not start Relay or expose a public MCP HTTP service.
+- A timed-out shell command leaves that PTY session uncertain. Inspect its output, close it, and open a new session. Commands are not replayed.
+- A watchdog bounds stuck Frida client calls, but it cannot recover the app from a fatal native or JNI operation.
+- Mira only observes and operates inside the authorized Mira host app sandbox.

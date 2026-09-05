@@ -43,7 +43,9 @@ Runtime state and logs are Git-ignored under `.mira/runtime/web-<port>/` and `.m
 
 ## MCP diagnostics
 
-The MCP server continues to use `http://127.0.0.1:8765`. After updating MCP code, reconnect/restart the MCP client to load the new Python process. Android Frida commands support both legacy `exports` and current `exports_sync`, report the failing phase and partial messages, and clean up scripts/sessions on ordinary exceptions. A process watchdog bounds stuck Frida client calls.
+The MCP server continues to use `http://127.0.0.1:8765`. Restart or reconnect the MCP client after updating MCP Python code. For Frida tasks, the user describes the goal and the AI supplies the task export, `rpcMethod`, and idempotent `cleanupMethod`. Mira runs each task in the shared single runner, calls cleanup in `finally`, and returns binary values as `{ "type": "bytes", "encoding": "base64", "dataBase64": "..." }`. Long-running listener management is not available.
+
+The unreleased compatibility path passed bounded Android 10 through 15 checks on arm64, 4 KB AVDs. Android 16 Java hooks remain unsupported because installing a method implementation can crash ART. See [`docs/MCP.md`](./MCP.md) and the [Frida compatibility notes](./notes/android-frida-gadget-compatibility-2026-09-05.md).
 
 A watchdog cannot undo a fatal native/JNI operation inside the instrumented App. Run unstable native probes in a disposable child process under the same App UID and validate returned handles before using them. Keep ordinary sandbox denials as unavailable evidence; do not grant extra development permissions to simulate a normal third-party App.
 

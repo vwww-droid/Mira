@@ -9,13 +9,45 @@ import sys
 import tempfile
 import types
 import unittest
+import zlib
+import socket
 from pathlib import Path
 from unittest.mock import patch
 
 from mira.mcp.server import MAX_BUFFER_BYTES, MiraMcpServer, TerminalSession, ToolError
+from mira.mcp import frida_agent
+from mira.mcp.frida_agent import PersistentAgent
 
 
 class FridaRegressionTests(unittest.TestCase):
+    def test_jsonable_preserves_json_and_binary_bytes(self):
+        value = {
+            'scalar': 7,
+            'text': '你好🙂',
+            'array': [True, None, {'nested': 'value'}],
+            'binary': memoryview(b'\xe4\xbd\xa0\x00\xf0\x9f\x99\x82'),
+            'empty': bytearray(),
+        }
+        self.assertEqual(frida_agent.jsonable(value), {
+            'scalar': 7,
+            'text': '你好🙂',
+            'array': [True, None, {'nested': 'value'}],
+            'binary': {
+                'type': 'bytes', 'encoding': 'base64',
+                'dataBase64': base64.b64encode(b'\xe4\xbd\xa0\x00\xf0\x9f\x99\x82').decode(),
+            },
+            'empty': {'type': 'bytes', 'encoding': 'base64', 'dataBase64': ''},
+        })
+
+    def test_jsonable_rejects_lossy_values_and_cycles(self):
+        cyclic = []
+        cyclic.append(cyclic)
+        cases = [object(), float('nan'), float('inf'), cyclic, {1: 'not a JSON key'}]
+        for value in cases:
+            with self.subTest(value=type(value).__name__), self.assertRaisesRegex(
+                    TypeError, 'not JSON-compatible'):
+                frida_agent.jsonable(value)
+
     def source(self, **extra):
         return MiraMcpServer.build_frida_python_source(dict(mode='run_script',
             scriptBase64=base64.b64encode(b'rpc.exports = {};').decode(), rpcMethod='ping',
@@ -99,6 +131,83 @@ def get_device_manager(): return Manager()
             finally:
                 if child.poll() is None: child.kill(); child.wait()
                 os.close(read_fd); os.close(write_fd)
+
+    def test_persistent_command_is_short_single_line_and_round_trips_spec(self):
+        spec = {
+            'persistentId': 'auto-test', 'script': 'Java.performNow(function () {});' * 100,
+            'rpcMethod': 'probe', 'rpcArgs': ['value'], 'cleanupMethod': 'cleanup',
+            'operationTimeout': 10,
+        }
+        command = MiraMcpServer.build_persistent_frida_command(spec)
+        self.assertNotIn('\n', command)
+        self.assertLess(len(command), 1500)
+        encoded = __import__('shlex').split(command)[4]
+        decoded = json.loads(zlib.decompress(base64.urlsafe_b64decode(encoded)))
+        self.assertEqual(decoded, spec)
+
+    def test_runner_reuses_one_script_for_different_sources(self):
+        class Exports:
+            def execute(self, source, method, args, cleanup):
+                return {'ok': True, 'rpcResult': [source, method, args, cleanup],
+                        'error': None, 'cleanupError': None}
+        class Script:
+            exports_sync = Exports()
+            def on(self, _, callback): self.callback = callback
+            def load(self): pass
+        created = []
+        runner_sources = []
+        agent = PersistentAgent.__new__(PersistentAgent)
+        def create_script(source):
+            runner_sources.append(source)
+            created.append(Script())
+            return created[-1]
+        agent.session = types.SimpleNamespace(create_script=create_script)
+        agent.runner = None
+        first = agent.handle({'script': 'first', 'rpcMethod': 'probe',
+                              'rpcArgs': [1], 'cleanupMethod': 'cleanup'})
+        second = agent.handle({'script': 'second', 'rpcMethod': 'probe',
+                               'rpcArgs': [2], 'cleanupMethod': 'cleanup'})
+        self.assertEqual(len(created), 1)
+        self.assertIn("new Function('rpc', source)(userRpc)", runner_sources[0])
+        self.assertIn('miraNormalizeRpcValue', runner_sources[0])
+        self.assertIn('value.byteOffset, value.byteLength', runner_sources[0])
+        self.assertIn("encoding: 'base64'", runner_sources[0])
+        self.assertIn('Object.defineProperty(objectResult, key', runner_sources[0])
+        self.assertNotIn('eval(source)', runner_sources[0])
+        self.assertFalse(first['reusedScript'])
+        self.assertTrue(second['reusedScript'])
+        self.assertEqual(second['rpcResult'][0], 'second')
+
+    def test_persistent_client_timeout_after_send_is_not_replayed(self):
+        encoded = base64.urlsafe_b64encode(zlib.compress(b'{}')).decode()
+        with patch.object(frida_agent, 'exchange', side_effect=socket.timeout('late')) as exchange_mock, \
+             patch.object(frida_agent.subprocess, 'Popen') as popen_mock, \
+             contextlib.redirect_stdout(io.StringIO()) as output, self.assertRaises(SystemExit):
+            frida_agent.run_client('/tmp/test-agent.sock', encoded, 0.01)
+        self.assertEqual(exchange_mock.call_count, 1)
+        popen_mock.assert_not_called()
+        self.assertIn('outcome unknown; not retried', output.getvalue())
+
+    def test_persistent_daemon_survives_broken_client_response(self):
+        class Connection:
+            chunks = [b'{}', b'']
+            def recv(self, _): return self.chunks.pop(0)
+            def sendall(self, _): raise BrokenPipeError('client closed')
+        agent = types.SimpleNamespace(handle=lambda request: {'ok': True, 'request': request})
+        frida_agent.serve_connection(agent, Connection())
+
+    def test_mcp_dispatch_rejects_concurrent_frida_operation_without_running_it(self):
+        server = MiraMcpServer('http://relay', '')
+        server.frida_operation_lock.acquire()
+        try:
+            with patch.object(server, 'tool_frida_run_script') as run_script:
+                server.tools['mira_frida_run_script'] = run_script
+                result = server.call_tool({'name': 'mira_frida_run_script', 'arguments': {}})
+        finally:
+            server.frida_operation_lock.release()
+        run_script.assert_not_called()
+        self.assertTrue(result['isError'])
+        self.assertIn('another Frida operation is active', str(result))
 
 
 class TerminalRegressionTests(unittest.TestCase):

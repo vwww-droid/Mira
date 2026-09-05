@@ -7,7 +7,7 @@
 
 # Mira
 
-面向 Android 与 iOS 的移动端运行时检测工作台.
+面向 Android 与 iOS 的移动端运行时检测工作台。
 
 <p>
   <img src="https://img.shields.io/badge/analysis-AI--native-0f172a?style=flat-square" alt="AI-native analysis" />
@@ -20,49 +20,54 @@
 ---
 
 <div align="center">
-  <strong>Mira 以公开演进的方式构建, 作为一个长期项目, 持续把真实运行时案例沉淀成可复用的检测知识, 分析工作流和跨平台工具能力.</strong>
+  <strong>Mira 以公开演进的方式构建，作为一个长期项目，持续把真实运行时案例沉淀成可复用的检测知识，分析工作流和跨平台工具能力。</strong>
 </div>
+
+## 下载 Android APK
+
+[**直接下载最新 Android APK**](https://github.com/vwww-droid/Mira/releases/latest/download/mira-app-debug.apk) · [版本说明与其他文件](https://github.com/vwww-droid/Mira/releases/latest)
+
+已发布的 APK 包含 arm64-v8a 和 armeabi-v7a JNI 库，内置离线 Python/Frida 运行时需要 arm64-v8a。按 ABI 分包的下载地址将在发布后补充。
+
+尚未发布的 Frida 兼容改动支持 Android 10 到 15。Android 16 暂不支持 Java hook，相关问题尚无已确认的 Frida 官方修复。详见[构建脚本](./tools/android/build-frida-16.7-compat-apk.sh)和[兼容性记录](./docs/notes/android-frida-gadget-compatibility-2026-09-05.md)。
 
 ## Why follow Mira
 
-- Mira 的成长来自真实运行时工作, 不只是预先规划好的功能列表.
-- 每一个一线案例, 都可能继续长成新的工作流, 工具能力或检测笔记.
-- 这个项目的目标, 是随着时间持续积累真正有用的移动端运行时知识.
-- 关注 Mira, 也是在关注这些知识如何一步步变成真正可用的工具.
+Mira 把真实运行时案例整理成可复用的工作流、工具和检测笔记。
 
 ## Research Updates
 
-- [260520] 文章: [Audit logcat 侧信道检测 root, 模拟器, scrcpy 类投屏](./knowledge/articles/zh/audit-logcat-sidechannel-detect-root-emulator-projection.md)
-- [260520] 案例: [Android 高 PID shell proc audit 侧信道提示 scrcpy 投屏](./knowledge/cases/zh/2026/2026-05-20-android-high-pid-shell-audit-sidechannel-scrcpy.md)
-- [260520] 案例: [Android 模拟器 proc audit 侧信道暴露 qemu SELinux 上下文](./knowledge/cases/zh/2026/2026-05-20-android-emulator-proc-audit-sidechannel.md)
-- [260519] 案例: [Android proc audit 侧信道检测 Magisk SELinux 上下文](./knowledge/cases/zh/2026/2026-05-19-android-proc-audit-magisk-sidechannel.md)
+- [260520] 文章：[Audit logcat 侧信道检测 root、模拟器、scrcpy 类投屏](./knowledge/articles/zh/audit-logcat-sidechannel-detect-root-emulator-projection.md)
+- [260520] 案例：[Android 高 PID shell proc audit 侧信道提示 scrcpy 投屏](./knowledge/cases/zh/2026/2026-05-20-android-high-pid-shell-audit-sidechannel-scrcpy.md)
+- [260520] 案例：[Android 模拟器 proc audit 侧信道暴露 qemu SELinux 上下文](./knowledge/cases/zh/2026/2026-05-20-android-emulator-proc-audit-sidechannel.md)
+- [260519] 案例：[Android proc audit 侧信道检测 Magisk SELinux 上下文](./knowledge/cases/zh/2026/2026-05-19-android-proc-audit-magisk-sidechannel.md)
 
 ## Features
 
-- 🧩 **直达真实 App 沙箱**: 直接进入目标 App 的真实权限沙箱, 用同一套工作流覆盖 Android 与 iOS.
-- 🤖 **为 AI 分析员而生**: 让 AI 像真正上手的分析员一样, 在活体运行时里观察, 操作, 推理风险路径.
-- ⚡ **运行时逻辑即开即打**: 随时执行 Java, Native, Frida 逻辑, 不再只靠静态线索猜.
-- 🚀 **几分钟出第一批结果**: 启动 Relay, 装上检测端, 连上就能拿到 shell, screen 和 runtime 证据.
-- ♾️ **发现一次, 复用很多次**: 把一次真实发现沉淀成可复用的检测模式和持续增益的防护情报.
+- 🧩 **直达真实 App 沙箱**：直接进入目标 App 的真实权限沙箱，用同一套工作流覆盖 Android 与 iOS。
+- 🤖 **为 AI 分析员而生**：让 AI 像真正上手的分析员一样，在活体运行时里观察，操作，推理风险路径。
+- ⚡ **运行时逻辑即开即打**：随时执行 Java、Native 和 Frida 逻辑，不再只靠静态线索猜。
+- 🚀 **几分钟出第一批结果**：启动 Relay，装上检测端，连上就能拿到 shell、screen 和 runtime 证据。
+- ♾️ **发现一次，复用很多次**：把一次真实发现沉淀成可复用的检测模式和持续增益的防护情报。
 
 ## Getting Started
 
-- **Relay**: `PYTHONPATH=. python3 -m mira.relay.server --host 0.0.0.0 --port 8765 --advertise-url http://<你的局域网IP>:8765`
-- **浏览器**: 在电脑打开 `http://127.0.0.1:8765`
-- **Android**: 从 [Releases](https://github.com/vwww-droid/Mira/releases) 下载 APK, 安装后在 App 中填写 `http://<你的局域网IP>:8765`
-- **iOS**: 当前验证的是 iOS 16.7.10 真机. 详见 [`docs/GETTING-STARTED.zh-CN.md`](./docs/GETTING-STARTED.zh-CN.md)
-- **AI 接入**: `PYTHONPATH=. python3 -m mira.mcp.server --relay http://127.0.0.1:8765`. MCP 配置见 [`docs/MCP.zh-CN.md`](./docs/MCP.zh-CN.md)
+- **Relay**：`PYTHONPATH=. python3 -m mira.relay.server --host 0.0.0.0 --port 8765 --advertise-url http://<你的局域网IP>:8765`
+- **浏览器**：在电脑打开 `http://127.0.0.1:8765`
+- **Android**：[直接下载 APK](https://github.com/vwww-droid/Mira/releases/latest/download/mira-app-debug.apk)，安装后在 App 中填写 `http://<你的局域网IP>:8765`
+- **iOS**：当前验证的是 iOS 16.7.10 真机。详见 [`docs/GETTING-STARTED.zh-CN.md`](./docs/GETTING-STARTED.zh-CN.md)
+- **AI 接入**：`PYTHONPATH=. python3 -m mira.mcp.server --relay http://127.0.0.1:8765`。MCP 配置见 [`docs/MCP.zh-CN.md`](./docs/MCP.zh-CN.md)
 
 ## Contributing
 
-Mira 欢迎移动安全研究员, 逆向工程师, Frida 用户, MCP 用户和真机测试者提交 issue 与 pull request.
+Mira 欢迎移动安全研究员，逆向工程师，Frida 用户，MCP 用户和真机测试者提交 issue 与 pull request。
 
-- 提交聚焦的 pull request 前, 请先阅读 [`CONTRIBUTING.md`](./CONTRIBUTING.md).
-- 提 bug, 安全加固, 检测思路或设备兼容性反馈时, 优先使用 issue templates.
-- 提交安全报告前, 请先阅读 [`SECURITY.md`](./SECURITY.md).
-- scanner 自动生成的安全加固 PR 也欢迎, 但需要说明在 Mira 仓库中的真实可达路径和验证结果.
+- 提交聚焦的 pull request 前，请先阅读 [`CONTRIBUTING.md`](./CONTRIBUTING.md)。
+- 提 bug、安全加固、检测思路或设备兼容性反馈时，优先使用 issue templates。
+- 提交安全报告前，请先阅读 [`SECURITY.md`](./SECURITY.md)。
+- scanner 自动生成的安全加固 PR 也欢迎，但需要说明在 Mira 仓库中的真实可达路径和验证结果。
 
-适合作为起点的方向包括 native 内存安全审查, Android 与 iOS 真机测试, Frida 工作流示例, MCP 客户端接入说明, 以及新的可复用检测案例.
+适合作为起点的方向包括 native 内存安全审查，Android 与 iOS 真机测试，Frida 工作流示例，MCP 客户端接入说明，以及新的可复用检测案例。
 
 ## Live Discovery Examples
 
@@ -74,11 +79,11 @@ Mira 欢迎移动安全研究员, 逆向工程师, Frida 用户, MCP 用户和�
   <tr>
     <td>
       <img src="./docs/android-remote-frida.png" alt="Android Remote Frida" />
-      <div align="center"><sub>Android 侧远程 shell, 运行时检查与 Frida 动态执行视图.</sub></div>
+      <div align="center"><sub>Android 侧远程 shell、运行时检查与 Frida 动态执行视图。</sub></div>
     </td>
     <td>
       <img src="./docs/ios-remote-frida.png" alt="iOS Remote Frida" />
-      <div align="center"><sub>iOS 侧对应的 PTY 与 Frida 工作流, 适配 iSH 兼容层.</sub></div>
+      <div align="center"><sub>iOS 侧对应的 PTY 与 Frida 工作流，适配 iSH 兼容层。</sub></div>
     </td>
   </tr>
   <tr>
@@ -89,12 +94,12 @@ Mira 欢迎移动安全研究员, 逆向工程师, Frida 用户, MCP 用户和�
     <td>
       <img src="https://github.com/vwww-droid/Mira/releases/download/v1.1.2/Area.preview.gif" alt="Android LSPosed Trace" />
       <div align="center"><sub><a href="https://github.com/vwww-droid/Mira/releases/download/v1.1.2/Area.gif">下载原版 GIF</a></sub></div>
-      <div align="center"><sub>通过 Frida 围绕 App classloader 构造运行时路径, 进一步发现 LSPosed 痕迹.</sub></div>
+      <div align="center"><sub>通过 Frida 围绕 App classloader 构造运行时路径，进一步发现 LSPosed 痕迹。</sub></div>
     </td>
     <td>
       <img src="https://github.com/vwww-droid/Mira/releases/download/v1.1.2/cydia-ios.preview.gif" alt="iOS Jailbreak Trace" />
       <div align="center"><sub><a href="https://github.com/vwww-droid/Mira/releases/download/v1.1.2/cydia-ios.gif">下载原版 GIF</a></sub></div>
-      <div align="center"><sub>一句话让 Claude 在实时终端中漫游, 自动发现设备环境里的越狱工具痕迹.</sub></div>
+      <div align="center"><sub>一句话让 Claude 在实时终端中漫游，自动发现设备环境里的越狱工具痕迹。</sub></div>
     </td>
   </tr>
 </table>
@@ -103,34 +108,34 @@ Mira 欢迎移动安全研究员, 逆向工程师, Frida 用户, MCP 用户和�
 
 ![使用 cpolar 方案公网访问](./docs/public-deploy.png)
 
-配合 Relay, 可将临时授权会话扩展到公网, 适用于云手机, 专家协作和实时证据交接.
+配合 Relay，可将临时授权会话扩展到公网，适用于云手机、专家协作和实时证据交接。
 
 ## Research Boundaries
 
-1. Mira 只观察和交互 Mira 宿主 App 自身沙盒.
-2. Mira 不控制其他第三方 App.
-3. Mira 不提供系统级远控能力.
-4. Mira 不提供 root / jailbreak 绕过能力.
-5. Mira 不提供生产 SDK 或静默后台控制链路.
+1. Mira 只观察和交互 Mira 宿主 App 自身沙盒。
+2. Mira 不控制其他第三方 App。
+3. Mira 不提供系统级远控能力。
+4. Mira 不提供 root / jailbreak 绕过能力。
+5. Mira 不提供生产 SDK 或静默后台控制链路。
 
 ## Documentation
 
-- [`docs/README.zh-CN.md`](./docs/README.zh-CN.md): 简体中文文档总入口.
-- [`docs/GETTING-STARTED.zh-CN.md`](./docs/GETTING-STARTED.zh-CN.md): 完整安装, 构建, 设备连接, MCP 和 CLI 说明.
-- [`docs/REMOTE-RELAY.zh-CN.md`](./docs/REMOTE-RELAY.zh-CN.md): 公网与局域网 Relay 启动方式.
-- [`docs/MCP.zh-CN.md`](./docs/MCP.zh-CN.md): Codex 与 Claude 的 MCP 接入说明.
-- [`docs/IOS-APP.zh-CN.md`](./docs/IOS-APP.zh-CN.md): iOS App 架构与设备侧说明.
-- [`docs/NATIVE-ARCHITECTURE.zh-CN.md`](./docs/NATIVE-ARCHITECTURE.zh-CN.md): Android 与 iOS 共享 PTY 原生架构.
-- [`docs/TOOLBOX.zh-CN.md`](./docs/TOOLBOX.zh-CN.md): Android 内置工具箱打包与释放流程.
-- [`docs/REPO-ARCHITECTURE.zh-CN.md`](./docs/REPO-ARCHITECTURE.zh-CN.md): 仓库分层与入口布局说明.
-- [`docs/THIRD-PARTY-NOTICES.zh-CN.md`](./docs/THIRD-PARTY-NOTICES.zh-CN.md): 第三方许可证与来源说明.
+- [`docs/README.zh-CN.md`](./docs/README.zh-CN.md)：简体中文文档总入口。
+- [`docs/GETTING-STARTED.zh-CN.md`](./docs/GETTING-STARTED.zh-CN.md)：完整安装、构建、设备连接、MCP 和 CLI 说明。
+- [`docs/REMOTE-RELAY.zh-CN.md`](./docs/REMOTE-RELAY.zh-CN.md)：公网与局域网 Relay 启动方式。
+- [`docs/MCP.zh-CN.md`](./docs/MCP.zh-CN.md)：Codex 与 Claude 的 MCP 接入说明。
+- [`docs/IOS-APP.zh-CN.md`](./docs/IOS-APP.zh-CN.md)：iOS App 架构与设备侧说明。
+- [`docs/NATIVE-ARCHITECTURE.zh-CN.md`](./docs/NATIVE-ARCHITECTURE.zh-CN.md)：Android 与 iOS 共享 PTY 原生架构。
+- [`docs/TOOLBOX.zh-CN.md`](./docs/TOOLBOX.zh-CN.md)：Android 内置工具箱打包与释放流程。
+- [`docs/REPO-ARCHITECTURE.zh-CN.md`](./docs/REPO-ARCHITECTURE.zh-CN.md)：仓库分层与入口布局说明。
+- [`docs/THIRD-PARTY-NOTICES.zh-CN.md`](./docs/THIRD-PARTY-NOTICES.zh-CN.md)：第三方许可证与来源说明。
 
 ## Acknowledgements
 
-- [lamda](https://github.com/firerpa/lamda): Web 工作台交互设计参考.
-- [Termux](https://github.com/termux/termux-app): Android 侧终端体验与可扩展终端生态.
-- [iSH](https://github.com/ish-app/ish): iOS 侧 Linux shell 与 syscall 转换路径.
+- [lamda](https://github.com/firerpa/lamda)：Web 工作台交互设计参考。
+- [Termux](https://github.com/termux/termux-app)：Android 侧终端体验与可扩展终端生态。
+- [iSH](https://github.com/ish-app/ish)：iOS 侧 Linux shell 与 syscall 转换路径。
 
 ## License
 
-`GPL-3.0-only`.
+`GPL-3.0-only`。
