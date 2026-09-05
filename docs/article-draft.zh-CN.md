@@ -54,13 +54,17 @@ Mira 通过 MCP(Model Context Protocol, 模型上下文协议) 将设备侧能�
 
 下图展示了 AI 直接通过 Mira 的 Unix Shell 能力完成探测, 并识别出 Android 设备上狐狸面具的安装痕迹:
 
-![](https://github.com/vwww-droid/Mira/releases/download/v1.1.2/stat-magisk.gif)
+![](https://github.com/vwww-droid/Mira/releases/download/v1.1.2/stat-magisk.preview.gif)
+
+[下载原版 GIF](https://github.com/vwww-droid/Mira/releases/download/v1.1.2/stat-magisk.gif)
 
 同样的方法也适用于 iOS 场景. 在 iOS 上, Mira 会在 `/mira/` 下提供一套类 Android 的文件系统视图和进程视图, 便于使用熟悉的命令集去操作 iOS 路径.
 
 笔者在 iPhone X 环境安装了 Cydia, 因为没研究过 Cydia 实现, 不知道可能的痕迹, 但这个 AI 清楚, 于是命令 AI 自己来狠狠的探索一下! 结果什么依赖目录、包管理痕迹或历史文件全都给捅出来了, 甚至其他相关的框架痕迹都一股脑弄出来了.
 
-![](https://github.com/vwww-droid/Mira/releases/download/v1.1.2/cydia-ios.gif)
+![](https://github.com/vwww-droid/Mira/releases/download/v1.1.2/cydia-ios.preview.gif)
+
+[下载原版 GIF](https://github.com/vwww-droid/Mira/releases/download/v1.1.2/cydia-ios.gif)
 
 这个场景的价值在于, **很多原本需要人工经验驱动的路径探测动作, 都可以由 AI 低成本重复执行, 而且天然适合批量化和自动化**.
 
@@ -78,7 +82,9 @@ Mira 内置 Frida Gadget 与适配好的 frida-cli, 因此 **AI 可通过 mira-m
 
 下图展示了 AI 基于运行时枚举结果, 识别出 3 种异常 `ClassLoader` 注入特征:
 
-![](https://github.com/vwww-droid/Mira/releases/download/v1.1.2/Area.gif)
+![](https://github.com/vwww-droid/Mira/releases/download/v1.1.2/Area.preview.gif)
+
+[下载原版 GIF](https://github.com/vwww-droid/Mira/releases/download/v1.1.2/Area.gif)
 
 这个场景的价值在于, **很多原本验证路径很长的问题, 现在都可以先让 AI 提出猜想, 再立即在设备运行时中验证**. 对移动安全分析来说, 这种从怀疑到验证的闭环速度非常关键.
 

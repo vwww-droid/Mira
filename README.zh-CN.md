@@ -87,11 +87,13 @@ Mira 欢迎移动安全研究员, 逆向工程师, Frida 用户, MCP 用户和�
   </tr>
   <tr>
     <td>
-      <img src="https://github.com/vwww-droid/Mira/releases/download/v1.1.2/Area.gif" alt="Android LSPosed Trace" />
+      <img src="https://github.com/vwww-droid/Mira/releases/download/v1.1.2/Area.preview.gif" alt="Android LSPosed Trace" />
+      <div align="center"><sub><a href="https://github.com/vwww-droid/Mira/releases/download/v1.1.2/Area.gif">下载原版 GIF</a></sub></div>
       <div align="center"><sub>通过 Frida 围绕 App classloader 构造运行时路径, 进一步发现 LSPosed 痕迹.</sub></div>
     </td>
     <td>
-      <img src="https://github.com/vwww-droid/Mira/releases/download/v1.1.2/cydia-ios.gif" alt="iOS Jailbreak Trace" />
+      <img src="https://github.com/vwww-droid/Mira/releases/download/v1.1.2/cydia-ios.preview.gif" alt="iOS Jailbreak Trace" />
+      <div align="center"><sub><a href="https://github.com/vwww-droid/Mira/releases/download/v1.1.2/cydia-ios.gif">下载原版 GIF</a></sub></div>
       <div align="center"><sub>一句话让 Claude 在实时终端中漫游, 自动发现设备环境里的越狱工具痕迹.</sub></div>
     </td>
   </tr>
