@@ -1,95 +1,36 @@
 ---
 name: mira-case-capture
-description: Capture one Mira detection case as a structured record. Use when Codex needs to turn a concrete finding, experiment, command output, or risk-environment clue into a reusable case with smells, key clues, judgment seeds, and next checks under the Mira knowledge pipeline.
+description: Capture Mira detection experiments locally, then distill selected evidence into a tracked case only when the user explicitly requests promotion into a report or the knowledge repository.
 ---
 
 # Mira Case Capture
 
-## Overview
+## Default: local investigation
 
-Use this skill for one concrete detection record.
-Assume topic is either already confirmed, or still only a candidate that must be labeled explicitly.
-Focus on evidence, judgment signals, and reusable clues.
-Do not drift into full article writing.
+Testing, exploring a device, collecting evidence, and asking for a summary do not authorize promotion into the knowledge repository.
 
-## Required Structure
+Write working notes, command output, screenshots, scripts, failed attempts, and draft reports under `reports/local/<YYYY-MM-DD>-<investigation>/`. Verify this path is Git-ignored before writing. Preserve relative subdirectories when moving an existing investigation so its links remain usable. Do not stage, commit, or push these files.
 
-Write each case around these fields:
+Do not create files in `knowledge/cases/`, `knowledge/topics/`, `knowledge/articles/`, or maintained `tools/` merely because an experiment is interesting or succeeds. Experimental scripts stay beside local evidence. Ordinary product fixes explicitly requested by the user are separate from this evidence-staging rule.
 
-1. detection object.
-2. initial suspicion.
-3. topic candidate.
-4. confirmed topic.
-5. smells.
-6. key clues.
-7. validation actions.
-8. result.
-9. false-positive risk.
-10. distilled judgment seeds.
-11. suggested next checks.
-12. linked articles.
+Capture only what the investigation needs: the tested object, app identity and permission context, commands or script snapshots, exact invocation and parameters, observations, failures, and unresolved questions. Distinguish observations from interpretation. No mandatory bilingual draft or large template during testing. Redact credentials and unnecessary device/instance identifiers.
 
-## Capture Rules
+## Promotion: only selected, authorized material
 
-Separate observation from interpretation.
-For every important point, distinguish:
+Promote when the user explicitly asks to distill specified findings into a report, case, or the knowledge repository. Confirmation of a research topic, permission to test, or a request to continue is not promotion authorization. If selected material is clear, proceed without asking again; otherwise keep work local and clarify the scope.
 
-1. what was seen.
-2. what it may imply.
-3. what still needs verification.
+Before writing the tracked case:
 
-Prefer compact, high-signal records over long chronology.
-Keep ephemeral noise out unless it explains a likely misread.
+1. Select validated, reproducible findings covered by the request.
+2. Exclude raw dumps, transient logs, timestamps/instance values, tool chatter, speculative claims, duplicates, and unrelated failures. Include a failure only when it explains a method's reliability or a likely misinterpretation.
+3. Keep observations, supported interpretation, and remaining uncertainty distinct. Document false positives and measurement-tool artifacts.
+4. Include enough method to reproduce: script path, invocation, environment, parameters, known limitations, and a minimal verification. Promote a maintained script only if requested or necessary for the authorized case. Never embed detector logic into Mira App components.
 
-## Shell Script Capture Rules
+Write English and Chinese cases under `knowledge/cases/en/YYYY/YYYY-MM-DD-<slug>.md` and `knowledge/cases/zh/YYYY/YYYY-MM-DD-<slug>.md`. Only small, necessary executable snapshots belong in `knowledge/cases/artifacts/YYYY/`; raw investigation evidence remains local. Use the existing tooling directory for an authorized reusable script.
 
-When a detection case depends on a shell script, command sequence, or Mira PTY execution behavior, the case must capture the script as an executable method, not just as supporting evidence. Include:
+A promoted case should explain the detection object, initial suspicion, topic status, key clues, validation, result, false-positive risks, reusable judgment, remaining checks, and related articles when relevant. Do not invent a confirmed topic or article. Avoid full article prose and empty fields.
 
-1. script artifact path when a reusable script is created.
-2. executable script snapshot saved beside the case when the script is central to reproducing the finding.
-3. exact invocation model, such as paste into current PTY, source with `. file`, or run through `mira_run_command`.
-4. forbidden or misleading invocation forms, such as `sh file` when it changes behavior.
-5. tunable parameters and known-good defaults.
-6. environment assumptions, including current shell process, PTY state, log buffers, and available applets.
-7. observed failure modes caused by chunk size, timing, buffering, rate limits, or command noise.
-8. minimal validation command proving the script still works.
+## Verification
 
-Do not bury reusable script behavior only in docs. A future reader should be able to rerun or adapt the script from the case directory itself, while the linked tools artifact remains the maintained reusable copy.
-
-## Smells And Clues
-
-Always try to extract:
-
-1. `smells` as why this feels suspicious.
-2. `key clues` as what most sharply increases confidence.
-3. `noise or misdirection` as what could waste future time.
-4. `judgment seeds` as the reusable pattern fragments not yet mature enough for topic-wide patterns.
-
-## Output Path
-
-Save case files under:
-
-`knowledge/cases/en/YYYY/YYYY-MM-DD-<object>-<signal-surface>.md` and `knowledge/cases/zh/YYYY/YYYY-MM-DD-<object>-<signal-surface>.md`
-
-Use the same English slug in both filenames.
-Write the English case in `en/` and the Chinese adaptation in `zh/`.
-Store language-neutral executable case artifacts under `knowledge/cases/artifacts/YYYY/`.
-
-## Minimal Good Case
-
-A good case should let a future reader answer:
-
-1. what was being detected.
-2. why it looked suspicious.
-3. what evidence mattered most.
-4. what conclusion was actually supported.
-5. what should be checked next.
-
-## Quality Bar
-
-Before finishing, verify:
-
-1. the case is useful without article context.
-2. the core smells and clues are explicit.
-3. the result does not overclaim beyond the evidence.
-4. at least one next-check item exists when certainty is incomplete.
+- Local-only investigation: `git status --short` must not list its working artifacts; `git check-ignore` must confirm the destination.
+- Promotion: every tracked finding fits the authorized scope, is useful without the conversation, and links to reproducible methods without requiring unavailable local dumps.

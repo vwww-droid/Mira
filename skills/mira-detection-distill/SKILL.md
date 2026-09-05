@@ -14,6 +14,8 @@ Always confirm topic dynamically before creating or updating topic assets.
 
 ## Core Contract
 
+Investigation is local-first: keep experiments, raw evidence, trial scripts and draft reports in Git-ignored `reports/local/<investigation>/`. Testing or topic confirmation does not authorize tracked case/article/tool creation. Apply the local-versus-promotion boundary in `$mira-case-capture`; the output paths and script routing below apply only after the user explicitly requests promotion of selected material.
+
 Treat the pipeline as four layers:
 
 1. `case` for one concrete detection record.
