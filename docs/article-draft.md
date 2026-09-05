@@ -52,11 +52,11 @@ That means even a third-party app permission set can still infer the existence o
 
 The image below shows AI using the Mira Unix shell to do that probing and surface Magisk installation traces on Android:
 
-![](./stat-magisk.gif)
+![](https://github.com/vwww-droid/Mira/releases/download/v1.1.2/stat-magisk.gif)
 
 The same idea also works on iOS. Mira exposes Android-like file and process views under `/mira/` on iOS so familiar command-line workflows can still be used there.
 
-![](./cydia-ios.gif)
+![](https://github.com/vwww-droid/Mira/releases/download/v1.1.2/cydia-ios.gif)
 
 The value of this scenario is that many steps that used to require manual experience can now be repeated by AI at low cost and scaled naturally.
 
@@ -66,7 +66,7 @@ This scenario answers a common question: when you suspect LSPosed or a similar f
 
 Mira ships Frida Gadget and an adapted frida-cli, so AI can use mira-mcp to run Java-side and native-side dynamic logic directly. That makes it easy to probe `ClassLoader`, enumerate classes, inspect stacks, and identify unusual loading chains.
 
-![](./Area.gif)
+![](https://github.com/vwww-droid/Mira/releases/download/v1.1.2/Area.gif)
 
 The value here is that many long validation paths can now become a fast loop of hypothesis and runtime verification.
 

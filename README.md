@@ -87,11 +87,11 @@ Good starting points include native memory-safety review, Android and iOS device
   </tr>
   <tr>
     <td>
-      <img src="./docs/Area.gif" alt="Android LSPosed Trace" />
+      <img src="https://github.com/vwww-droid/Mira/releases/download/v1.1.2/Area.gif" alt="Android LSPosed Trace" />
       <div align="center"><sub>Construct a Frida path around the app classloader and surface LSPosed traces from runtime state.</sub></div>
     </td>
     <td>
-      <img src="./docs/cydia-ios.gif" alt="iOS Jailbreak Trace" />
+      <img src="https://github.com/vwww-droid/Mira/releases/download/v1.1.2/cydia-ios.gif" alt="iOS Jailbreak Trace" />
       <div align="center"><sub>Ask Claude to roam the live terminal and surface jailbreak-related traces in the device environment.</sub></div>
     </td>
   </tr>
