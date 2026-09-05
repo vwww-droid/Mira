@@ -699,7 +699,7 @@ def write_source_manifest(
     lines.append("python-wheels:")
     for wheel in wheels:
         lines.append(f"  - {wheel}")
-    lines.append(f"vendored-frida-tools: {FRIDA_TOOLS_DIR}")
+    lines.append("vendored-frida-tools: third_party/frida-tools")
     lines.append(f"frida-sdist: {frida_sdist_name}")
     lines.append(f"frida-devkit: {FRIDA_DEVKIT_URL}")
     (asset_root / "SOURCE.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")

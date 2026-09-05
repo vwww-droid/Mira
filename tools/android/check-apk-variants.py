@@ -42,11 +42,15 @@ def check(universal, variants):
                 if path not in entries or entries[path].file_size == 0:
                     raise ValueError(f"Missing/empty JNI payload: {path}")
         prefix = 'assets/bootstrap/prefix/arm64-v8a/'
-        for name in ('bin/python3', 'bin/pip', 'bin/frida-official',
-                     'lib/python3.13/site-packages/_frida.abi3.so'):
+        for name in ('bin/python3', 'bin/pip', 'bin/frida-official'):
             path = prefix + name
             if path not in entries or entries[path].file_size == 0:
                 raise ValueError(f"Missing/empty bootstrap: {path}")
+        frida_extensions = [name for name in entries if name.startswith(prefix + 'lib/python')
+                            and name.endswith(('/site-packages/_frida.abi3.so',
+                                               '/site-packages/frida/_frida.abi3.so'))]
+        if len(frida_extensions) != 1 or entries[frida_extensions[0]].file_size == 0:
+            raise ValueError('Missing or ambiguous Frida extension')
         hashes = {n: sha(base, n) for n in entries}
         for abi, path in variants.items():
             with zipfile.ZipFile(path) as candidate:

@@ -69,6 +69,7 @@ jobs:
           MIRA_FRIDA_COMPAT_OUTPUT_APK: ${{ github.workspace }}/dist/android-frida-compat/mira-app-android10-15-frida-16.7.19-single-runner-binary-debug.apk
         run: |
           chmod +x ./gradlew ./tools/android/build-frida-16.7-compat-apk.sh ./tools/android/prepare-frida-gadget.sh
+          export ANDROID_NDK_ROOT="$ANDROID_SDK_ROOT/ndk/29.0.14206865"
           ./tools/android/build-frida-16.7-compat-apk.sh
 
       - name: Verify and describe artifact
@@ -83,10 +84,16 @@ jobs:
           python3 tools/android/check-apk-compression.py \
             android/app/build/outputs/apk/debug/mira-app-debug-unsigned.apk "$APK" \
             > dist/android-frida-compat/compression-report.json
+          PYTHON_VERSION="$(unzip -p "$APK" assets/bootstrap/prefix/arm64-v8a/SOURCE.txt \
+            | sed -n 's/^python-version: //p')"
+          test -n "$PYTHON_VERSION"
+          test "$(printf '%s\n' "$PYTHON_VERSION" | wc -l)" -eq 1
           cat > dist/android-frida-compat/BUILD-INFO.txt <<EOF
-          Compatibility target: Android 10-15
+          Intended compatibility range: Android 10-15
+          Verification: CI package checks only; see the compatibility notes for device coverage
           Frida version: 16.7.19
-          Bootstrap state: 17
+          Python version: ${PYTHON_VERSION}
+          Bootstrap state: 18
           Signing: ephemeral GitHub Actions debug key; it may not update an APK signed elsewhere
           Commit: ${GITHUB_SHA}
           EOF

@@ -7,15 +7,16 @@ import java.nio.file.*;
 import java.util.zip.*;
 
 public final class BootstrapInstallTest {
-    static final String FRIDA = "lib/python3.13/site-packages/_frida.abi3.so";
+    static final String PYTHON = "lib/python3.14";
+    static final String FRIDA = PYTHON + "/site-packages/_frida.abi3.so";
     static final String PAYLOAD = "unique-runtime-payload-for-crc-test";
     static void zip(File file) throws Exception {
         try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(file))) {
             for (String name : new String[] {FRIDA, "bin/python3", "bin/pip", "bin/frida-official",
                 "bin/mira-frida-agent.py",
-                "lib/python3.13/site-packages/frida/__init__.py",
-                "lib/python3.13/site-packages/pip/__init__.py",
-                "lib/python3.13/zipfile/_path/__init__.py"}) {
+                PYTHON + "/site-packages/frida/__init__.py",
+                PYTHON + "/site-packages/pip/__init__.py",
+                PYTHON + "/zipfile/_path/__init__.py"}) {
                 byte[] data = (name.equals(FRIDA) ? PAYLOAD : "content").getBytes("UTF-8");
                 CRC32 crc = new CRC32(); crc.update(data);
                 ZipEntry entry = new ZipEntry("assets/bootstrap/prefix/arm64-v8a/" + name);

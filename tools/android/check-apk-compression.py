@@ -18,9 +18,6 @@ ABIS = {"arm64-v8a", "armeabi-v7a"}
 REQUIRED = {
     PREFIX + name for name in (
         "SOURCE.txt", "bin/python3", "bin/pip", "bin/frida-official",
-        "lib/python3.13/site-packages/frida/__init__.py",
-        "lib/python3.13/site-packages/frida_tools/application.py",
-        "lib/python3.13/site-packages/pip/__init__.py",
     )
 } | {f"lib/{abi}/{name}" for abi in ABIS
      for name in ("libdynamic.so", "libdynamic.config.so")}
@@ -46,8 +43,19 @@ def entries(archive):
     require(REQUIRED <= files.keys(), f"Missing required entries: {sorted(REQUIRED - files.keys())}")
     for name in REQUIRED:
         require(files[name].file_size > 0, f"Empty required entry: {name}")
-    frida_extensions = [PREFIX + "lib/python3.13/site-packages/_frida.abi3.so",
-                        PREFIX + "lib/python3.13/site-packages/frida/_frida.abi3.so"]
+    python_roots = {
+        name.rsplit("/site-packages/frida/__init__.py", 1)[0]
+        for name in files
+        if name.startswith(PREFIX + "lib/python")
+        and name.endswith("/site-packages/frida/__init__.py")
+    }
+    require(len(python_roots) == 1, f"Expected one Python runtime, found: {sorted(python_roots)}")
+    python_root = next(iter(python_roots))
+    for suffix in ("/site-packages/frida_tools/application.py",
+                   "/site-packages/pip/__init__.py", "/zipfile/_path/__init__.py"):
+        require(python_root + suffix in files, f"Missing Python runtime entry: {python_root + suffix}")
+    frida_extensions = [python_root + "/site-packages/_frida.abi3.so",
+                        python_root + "/site-packages/frida/_frida.abi3.so"]
     require(any(name in files and files[name].file_size > 0 for name in frida_extensions),
             "Missing or empty Frida extension")
     require({n.split('/')[1] for n in files if n.startswith('lib/')} == ABIS,

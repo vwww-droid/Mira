@@ -19,6 +19,9 @@ class ApkCompressionTest(unittest.TestCase):
         self.baseline = Path(self.temp.name) / "baseline.apk"
         self.candidate = Path(self.temp.name) / "candidate.apk"
         self.content = {name: b"payload" * 1024 for name in CHECK.REQUIRED}
+        for suffix in ("frida/__init__.py", "frida_tools/application.py", "pip/__init__.py"):
+            self.content[CHECK.PREFIX + "lib/python3.13/site-packages/" + suffix] = b"payload" * 1024
+        self.content[CHECK.PREFIX + "lib/python3.13/zipfile/_path/__init__.py"] = b"payload" * 1024
         self.content[CHECK.PREFIX + "lib/python3.13/site-packages/_frida.abi3.so"] = b"payload" * 1024
         for name in self.content:
             if name.endswith(".config.so"):
@@ -36,6 +39,15 @@ class ApkCompressionTest(unittest.TestCase):
         result = CHECK.compare(self.baseline, self.candidate)
         self.assertEqual(result["identical_payload_entries"], len(self.content))
         self.assertGreater(result["compressed_library_entries"], 0)
+
+    def test_accepts_python_314_runtime_layout(self):
+        moved = {
+            name.replace("lib/python3.13/", "lib/python3.14/"): data
+            for name, data in self.content.items()
+        }
+        self.write(self.baseline, moved, zipfile.ZIP_STORED)
+        self.write(self.candidate, moved)
+        self.assertGreater(CHECK.compare(self.baseline, self.candidate)["compressed_library_entries"], 0)
 
     def test_reject_empty_archive_missing_empty_changed_and_stored(self):
         name = CHECK.PREFIX + "lib/python3.13/site-packages/_frida.abi3.so"

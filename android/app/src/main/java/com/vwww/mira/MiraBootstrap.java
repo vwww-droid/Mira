@@ -143,11 +143,26 @@ public final class MiraBootstrap {
             && new File(prefixDir, "bin/python3").isFile()
             && new File(prefixDir, "bin/frida-official").isFile()
             && new File(prefixDir, "bin/mira-frida-agent.py").isFile()
-            && (new File(prefixDir, "lib/python3.13/site-packages/_frida.abi3.so").isFile()
-                || new File(prefixDir, "lib/python3.13/site-packages/frida/_frida.abi3.so").isFile())
-            && new File(prefixDir, "lib/python3.13/zipfile/_path/__init__.py").isFile()
+            && hasCompletePythonRuntime()
             && new File(prefixDir, "etc/profile").isFile()
             && new File(homeDir, ".profile").isFile();
+    }
+
+    private boolean hasCompletePythonRuntime() {
+        File libDir = new File(prefixDir, "lib");
+        File[] candidates = libDir.listFiles(file -> file.isDirectory()
+            && file.getName().matches("python\\d+\\.\\d+"));
+        if (candidates == null) return false;
+        for (File pythonDir : candidates) {
+            File sitePackages = new File(pythonDir, "site-packages");
+            boolean hasExtension = new File(sitePackages, "_frida.abi3.so").isFile()
+                || new File(sitePackages, "frida/_frida.abi3.so").isFile();
+            if (hasExtension
+                && new File(sitePackages, "frida/__init__.py").isFile()
+                && new File(sitePackages, "pip/__init__.py").isFile()
+                && new File(pythonDir, "zipfile/_path/__init__.py").isFile()) return true;
+        }
+        return false;
     }
 
     private void writeInstallState() throws IOException {
@@ -435,19 +450,18 @@ public final class MiraBootstrap {
         String prefix = "assets/" + assetRoot + "/";
         try (ZipFile zipFile = new ZipFile(packageCodePath)) {
             for (String required : new String[] {
-                "bin/python3", "bin/pip", "bin/frida-official", "bin/mira-frida-agent.py",
-                "lib/python3.13/site-packages/frida/__init__.py",
-                "lib/python3.13/site-packages/pip/__init__.py"
+                "bin/python3", "bin/pip", "bin/frida-official", "bin/mira-frida-agent.py"
             }) {
                 ZipEntry entry = zipFile.getEntry(prefix + required);
                 if (entry == null || entry.isDirectory() || entry.getSize() <= 0) {
                     throw new IOException("Missing or empty bootstrap entry: " + prefix + required);
                 }
             }
+            String pythonRoot = findBootstrapPythonRoot(zipFile, prefix);
             ZipEntry topLevelFrida = zipFile.getEntry(prefix
-                + "lib/python3.13/site-packages/_frida.abi3.so");
+                + pythonRoot + "/site-packages/_frida.abi3.so");
             ZipEntry packagedFrida = zipFile.getEntry(prefix
-                + "lib/python3.13/site-packages/frida/_frida.abi3.so");
+                + pythonRoot + "/site-packages/frida/_frida.abi3.so");
             if ((topLevelFrida == null || topLevelFrida.isDirectory() || topLevelFrida.getSize() <= 0)
                 && (packagedFrida == null || packagedFrida.isDirectory() || packagedFrida.getSize() <= 0)) {
                 throw new IOException("Missing or empty Frida extension in " + prefix);
@@ -467,6 +481,30 @@ public final class MiraBootstrap {
             if (extractedAny) return;
         }
         throw new IOException("No bootstrap ZIP entries found for " + assetRoot);
+    }
+
+    private String findBootstrapPythonRoot(ZipFile zipFile, String prefix) throws IOException {
+        Enumeration<? extends ZipEntry> entries = zipFile.entries();
+        while (entries.hasMoreElements()) {
+            String name = entries.nextElement().getName();
+            if (!name.startsWith(prefix + "lib/python")
+                || !name.endsWith("/site-packages/frida/__init__.py")) continue;
+            String relative = name.substring(prefix.length());
+            int separator = relative.indexOf("/site-packages/");
+            String pythonRoot = separator >= 0 ? relative.substring(0, separator) : "";
+            if (!pythonRoot.matches("lib/python\\d+\\.\\d+")) continue;
+            for (String required : new String[] {
+                pythonRoot + "/site-packages/pip/__init__.py",
+                pythonRoot + "/zipfile/_path/__init__.py"
+            }) {
+                ZipEntry entry = zipFile.getEntry(prefix + required);
+                if (entry == null || entry.isDirectory()) {
+                    throw new IOException("Missing bootstrap entry: " + prefix + required);
+                }
+            }
+            return pythonRoot;
+        }
+        throw new IOException("Missing Python runtime under " + prefix);
     }
 
     private File safeDestinationFile(File destinationRoot, String relativePath) throws IOException {
