@@ -46,7 +46,9 @@ jobs:
 
       - name: Install Android SDK components
         run: |
-          sdkmanager 'platforms;android-36' 'build-tools;36.1.0' 'ndk;29.0.14206865'
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-36' 'build-tools;36.1.0' 'ndk;29.0.14206865'
 
       - name: Create ephemeral debug signing key
         run: |
