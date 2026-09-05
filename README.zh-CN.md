@@ -17,20 +17,6 @@
 </p>
 </div>
 
----
-
-<div align="center">
-  <strong>Mira 以公开演进的方式构建，作为一个长期项目，持续把真实运行时案例沉淀成可复用的检测知识，分析工作流和跨平台工具能力。</strong>
-</div>
-
-## 下载 Android APK
-
-[**直接下载最新 Android APK**](https://github.com/vwww-droid/Mira/releases/latest/download/mira-app-debug.apk) · [版本说明与其他文件](https://github.com/vwww-droid/Mira/releases/latest)
-
-已发布的 APK 包含 arm64-v8a 和 armeabi-v7a JNI 库，内置离线 Python/Frida 运行时需要 arm64-v8a。按 ABI 分包的下载地址将在发布后补充。
-
-尚未发布的 Frida 兼容改动支持 Android 10 到 15。Android 16 暂不支持 Java hook，相关问题尚无已确认的 Frida 官方修复。详见[构建脚本](./tools/android/build-frida-16.7-compat-apk.sh)和[兼容性记录](./docs/notes/android-frida-gadget-compatibility-2026-09-05.md)。
-
 ## Why follow Mira
 
 Mira 把真实运行时案例整理成可复用的工作流、工具和检测笔记。
@@ -44,19 +30,19 @@ Mira 把真实运行时案例整理成可复用的工作流、工具和检测笔
 
 ## Features
 
-- 🧩 **直达真实 App 沙箱**：直接进入目标 App 的真实权限沙箱，用同一套工作流覆盖 Android 与 iOS。
-- 🤖 **为 AI 分析员而生**：让 AI 像真正上手的分析员一样，在活体运行时里观察，操作，推理风险路径。
-- ⚡ **运行时逻辑即开即打**：随时执行 Java、Native 和 Frida 逻辑，不再只靠静态线索猜。
-- 🚀 **几分钟出第一批结果**：启动 Relay，装上检测端，连上就能拿到 shell、screen 和 runtime 证据。
-- ♾️ **发现一次，复用很多次**：把一次真实发现沉淀成可复用的检测模式和持续增益的防护情报。
+- **App 沙箱工具**：在 Android 和 iOS 的 Mira 宿主 App 沙箱中使用 shell、PTY、截图和文件工具。
+- **Frida 任务**：通过 RPC 运行 Java 与 native hook，完成一次性运行时分析。
+- **Relay 与 MCP**：设备通过 Relay 接入，AI 再通过 MCP 操作同一会话。
 
 ## Getting Started
 
 - **Relay**：`PYTHONPATH=. python3 -m mira.relay.server --host 0.0.0.0 --port 8765 --advertise-url http://<你的局域网IP>:8765`
 - **浏览器**：在电脑打开 `http://127.0.0.1:8765`
-- **Android**：[直接下载 APK](https://github.com/vwww-droid/Mira/releases/latest/download/mira-app-debug.apk)，安装后在 App 中填写 `http://<你的局域网IP>:8765`
+- **Android**：[下载最新 APK](https://github.com/vwww-droid/Mira/releases/latest/download/mira-app-debug.apk)，安装后在 App 中填写 `http://<你的局域网IP>:8765`
 - **iOS**：当前验证的是 iOS 16.7.10 真机。详见 [`docs/GETTING-STARTED.zh-CN.md`](./docs/GETTING-STARTED.zh-CN.md)
 - **AI 接入**：`PYTHONPATH=. python3 -m mira.mcp.server --relay http://127.0.0.1:8765`。MCP 配置见 [`docs/MCP.zh-CN.md`](./docs/MCP.zh-CN.md)
+
+APK 的离线 Python/Frida 运行时需要 arm64-v8a，支持 Android 10 到 15。Android 16 暂不支持 Java hook，相关问题尚无已确认的 Frida 官方修复。详见[兼容性记录](./docs/notes/android-frida-gadget-compatibility-2026-09-05.md)。
 
 ## Contributing
 

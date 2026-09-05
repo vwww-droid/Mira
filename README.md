@@ -17,20 +17,6 @@ Mobile runtime detection workbench for iOS and Android.
 </p>
 </div>
 
----
-
-<div align="center">
-  <strong>Mira is built in the open as a long-term project for turning real runtime cases into reusable detection knowledge, analysis workflows, and cross-platform tooling.</strong>
-</div>
-
-## Download Android APK
-
-[**Download the latest Android APK**](https://github.com/vwww-droid/Mira/releases/latest/download/mira-app-debug.apk) · [Release notes and other assets](https://github.com/vwww-droid/Mira/releases/latest)
-
-The published APK includes arm64-v8a and armeabi-v7a JNI libraries. The bundled offline Python/Frida runtime requires arm64-v8a. Separate ABI downloads will be listed here when published.
-
-The unreleased Frida compatibility changes support Android 10 through 15. Android 16 Java hooks remain unsupported, and no confirmed official Frida fix is available. See the [build script](./tools/android/build-frida-16.7-compat-apk.sh) and [compatibility notes](./docs/notes/android-frida-gadget-compatibility-2026-09-05.md).
-
 ## Why follow Mira
 
 Mira turns real runtime cases into reusable workflows, tools, and detection notes.
@@ -44,19 +30,19 @@ Mira turns real runtime cases into reusable workflows, tools, and detection note
 
 ## Features
 
-- 🧩 **Real app sandbox access**: Drop directly into the true permission sandbox of target apps with one consistent Android and iOS workflow.
-- 🤖 **Built for AI operators**: Let AI inspect, navigate, and reason inside the live app runtime like a hands-on analyst.
-- ⚡ **Live runtime execution**: Run Java, Native, and Frida-driven logic on demand to verify signals instead of guessing from static traces.
-- 🚀 **Fast to first result**: Start Relay, install the app, and get to shell, screen, and runtime evidence in minutes.
-- ♾️ **Compounding detection intelligence**: Turn one real finding into reusable detection patterns and repeatable hardening wins.
+- **App sandbox tools**: Use shell, PTY, screen capture, and file tools inside the Mira host app sandbox on Android and iOS.
+- **Frida tasks**: Run Java and native hooks with RPC for one-time runtime analysis.
+- **Relay and MCP**: Connect devices through Relay and let AI work in the same sessions through MCP.
 
 ## Getting Started
 
 - **Relay**: `PYTHONPATH=. python3 -m mira.relay.server --host 0.0.0.0 --port 8765 --advertise-url http://<your-lan-ip>:8765`
 - **Browser**: Open `http://127.0.0.1:8765` on your desktop.
-- **Android**: [Download the APK directly](https://github.com/vwww-droid/Mira/releases/latest/download/mira-app-debug.apk), install it, then enter `http://<your-lan-ip>:8765` in the app.
+- **Android**: [Download the latest APK](https://github.com/vwww-droid/Mira/releases/latest/download/mira-app-debug.apk), install it, then enter `http://<your-lan-ip>:8765` in the app.
 - **iOS**: Verified on a real device running iOS 16.7.10. See [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md).
 - **AI**: `PYTHONPATH=. python3 -m mira.mcp.server --relay http://127.0.0.1:8765`. MCP config: [`docs/MCP.md`](./docs/MCP.md).
+
+The APK's offline Python/Frida runtime requires arm64-v8a and supports Android 10 through 15. Android 16 Java hooks are not supported, and no confirmed official Frida fix is available. See the [compatibility notes](./docs/notes/android-frida-gadget-compatibility-2026-09-05.md).
 
 ## Contributing
 

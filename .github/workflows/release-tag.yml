@@ -40,6 +40,25 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Install Android SDK components
+        run: |
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-36' 'build-tools;36.1.0' 'ndk;29.0.14206865'
+
+      - name: Create CI-only Android debug signing key
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname 'CN=Android Debug,O=Android,C=US'
+
       - name: Validate release version
         run: |
           chmod +x ./mira-build
@@ -48,8 +67,16 @@ jobs:
       - name: Build Python package and Android APK
         run: |
           python -m pip install --upgrade pip build wheel setuptools
-          chmod +x ./gradlew ./mira-build
-          ./mira-build --target python --target android --release-tag "${MIRA_RELEASE_TAG}"
+          chmod +x ./gradlew ./mira-build ./tools/android/build-frida-16.7-compat-apk.sh ./tools/android/prepare-frida-gadget.sh
+          ./mira-build --target python --release-tag "${MIRA_RELEASE_TAG}"
+          export ANDROID_NDK_ROOT="$ANDROID_SDK_ROOT/ndk/29.0.14206865"
+          MIRA_FRIDA_COMPAT_OUTPUT_DIR="$PWD/dist/android" \
+          MIRA_FRIDA_COMPAT_OUTPUT_APK="$PWD/dist/android/mira-app-debug.apk" \
+            ./tools/android/build-frida-16.7-compat-apk.sh
+          test -s dist/android/mira-app-debug.apk
+          "$ANDROID_SDK_ROOT/build-tools/36.1.0/apksigner" verify --verbose --print-certs dist/android/mira-app-debug.apk \
+            > dist/android/ci-signing-certificate.txt
+          sha256sum dist/android/mira-app-debug.apk > dist/android/SHA256SUMS
 
       - name: Upload Python artifacts
         uses: actions/upload-artifact@v7
@@ -149,8 +176,11 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.MIRA_RELEASE_TAG }}
+          draft: true
           generate_release_notes: true
+          # The public Android APK is signed locally with the maintainer's
+          # persistent debug identity and uploaded only after verification.
+          # See docs/RELEASING.md. Never publish this draft without it.
           files: |
             release-assets/python/python/*
-            release-assets/android/android/*
             release-assets/ios/ios/*
