@@ -104,18 +104,6 @@ Mira 欢迎移动安全研究员，逆向工程师，Frida 用户，MCP 用户�
 4. Mira 不提供 root / jailbreak 绕过能力。
 5. Mira 不提供生产 SDK 或静默后台控制链路。
 
-## Documentation
-
-- [`docs/README.zh-CN.md`](./docs/README.zh-CN.md)：简体中文文档总入口。
-- [`docs/GETTING-STARTED.zh-CN.md`](./docs/GETTING-STARTED.zh-CN.md)：完整安装、构建、设备连接、MCP 和 CLI 说明。
-- [`docs/REMOTE-RELAY.zh-CN.md`](./docs/REMOTE-RELAY.zh-CN.md)：公网与局域网 Relay 启动方式。
-- [`docs/MCP.zh-CN.md`](./docs/MCP.zh-CN.md)：Codex 与 Claude 的 MCP 接入说明。
-- [`docs/IOS-APP.zh-CN.md`](./docs/IOS-APP.zh-CN.md)：iOS App 架构与设备侧说明。
-- [`docs/NATIVE-ARCHITECTURE.zh-CN.md`](./docs/NATIVE-ARCHITECTURE.zh-CN.md)：Android 与 iOS 共享 PTY 原生架构。
-- [`docs/TOOLBOX.zh-CN.md`](./docs/TOOLBOX.zh-CN.md)：Android 内置工具箱打包与释放流程。
-- [`docs/REPO-ARCHITECTURE.zh-CN.md`](./docs/REPO-ARCHITECTURE.zh-CN.md)：仓库分层与入口布局说明。
-- [`docs/THIRD-PARTY-NOTICES.zh-CN.md`](./docs/THIRD-PARTY-NOTICES.zh-CN.md)：第三方许可证与来源说明。
-
 ## Acknowledgements
 
 - [lamda](https://github.com/firerpa/lamda)：Web 工作台交互设计参考。

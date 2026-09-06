@@ -104,18 +104,6 @@ With Relay, you can temporarily expose an authorized session beyond the local ne
 4. Mira does not provide root or jailbreak bypass capabilities.
 5. Mira is not a production SDK or a silent background control channel.
 
-## Documentation
-
-- [`docs/README.md`](./docs/README.md): English documentation hub.
-- [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md): full setup, build, device connect, MCP, and CLI.
-- [`docs/REMOTE-RELAY.md`](./docs/REMOTE-RELAY.md): public and LAN Relay startup flows.
-- [`docs/MCP.md`](./docs/MCP.md): Codex and Claude MCP integration.
-- [`docs/IOS-APP.md`](./docs/IOS-APP.md): iOS app architecture and device notes.
-- [`docs/NATIVE-ARCHITECTURE.md`](./docs/NATIVE-ARCHITECTURE.md): shared PTY native architecture.
-- [`docs/TOOLBOX.md`](./docs/TOOLBOX.md): Android toolbox packaging and runtime release flow.
-- [`docs/REPO-ARCHITECTURE.md`](./docs/REPO-ARCHITECTURE.md): repository layering and entry-point layout.
-- [`docs/THIRD-PARTY-NOTICES.md`](./docs/THIRD-PARTY-NOTICES.md): third-party notices.
-
 ## Acknowledgements
 
 - [lamda](https://github.com/firerpa/lamda): inspiration for the web workbench interaction model.
