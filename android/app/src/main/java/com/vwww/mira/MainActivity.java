@@ -37,8 +37,8 @@ public final class MainActivity extends Activity {
     private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if (!MiraDiscoveryService.ACTION_STATUS.equals(intent.getAction())) return;
-            setStatus(intent.getStringExtra(MiraDiscoveryService.EXTRA_STATUS));
+            if (!MiraRuntimeService.ACTION_STATUS.equals(intent.getAction())) return;
+            setStatus(intent.getStringExtra(MiraRuntimeService.EXTRA_STATUS));
         }
     };
 
@@ -73,7 +73,7 @@ public final class MainActivity extends Activity {
         AppScreenCapture.getInstance().register(this);
         requestOutlineUploadSoon();
         if (!receiverRegistered) {
-            registerReceiver(statusReceiver, new IntentFilter(MiraDiscoveryService.ACTION_STATUS));
+            registerReceiver(statusReceiver, new IntentFilter(MiraRuntimeService.ACTION_STATUS));
             receiverRegistered = true;
         }
     }
@@ -240,18 +240,18 @@ public final class MainActivity extends Activity {
             .putString(KEY_RELAY_URL, relayUrl)
             .apply();
 
-        Intent intent = new Intent(this, MiraDiscoveryService.class);
-        intent.setAction(MiraDiscoveryService.ACTION_START);
-        intent.putExtra(MiraDiscoveryService.EXTRA_DEVICE_NAME, identity.defaultDeviceName());
-        intent.putExtra(MiraDiscoveryService.EXTRA_RELAY_URL, relayUrl);
+        Intent intent = new Intent(this, MiraRuntimeService.class);
+        intent.setAction(MiraRuntimeService.ACTION_START);
+        intent.putExtra(MiraRuntimeService.EXTRA_DEVICE_NAME, identity.defaultDeviceName());
+        intent.putExtra(MiraRuntimeService.EXTRA_RELAY_URL, relayUrl);
         startService(intent);
         setStatus("connecting relay");
         requestOutlineUploadSoon();
     }
 
     private void disconnectRelay() {
-        Intent intent = new Intent(this, MiraDiscoveryService.class);
-        intent.setAction(MiraDiscoveryService.ACTION_STOP);
+        Intent intent = new Intent(this, MiraRuntimeService.class);
+        intent.setAction(MiraRuntimeService.ACTION_STOP);
         startService(intent);
         setStatus("disconnected");
     }
@@ -259,7 +259,7 @@ public final class MainActivity extends Activity {
     private void requestOutlineUploadSoon() {
         View decor = getWindow() == null ? null : getWindow().getDecorView();
         if (decor == null) return;
-        decor.postDelayed(MiraDiscoveryService::requestOutlineUpload, 250);
+        decor.postDelayed(MiraRuntimeService::requestOutlineUpload, 250);
     }
 
     private void setStatus(String status) {

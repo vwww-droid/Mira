@@ -21,7 +21,7 @@
             </intent-filter>
         </activity>
         <service
-            android:name=".MiraDiscoveryService"
+            android:name=".MiraRuntimeService"
             android:exported="false" />
     </application>
 </manifest>

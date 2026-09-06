@@ -287,7 +287,7 @@ public final class MiraOutlineCollector {
 
     private static void requestOutlineUpload(View root, long delayMs) {
         if (root == null) return;
-        root.postDelayed(MiraDiscoveryService::requestOutlineUpload, delayMs);
+        root.postDelayed(MiraRuntimeService::requestOutlineUpload, delayMs);
     }
 
     private void cacheOutline(JSONObject outline) {

@@ -22,7 +22,7 @@ public final class MiraApplication extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
-        AppScreenCapture.setOutlineRefreshCallback(MiraDiscoveryService::requestOutlineUpload);
+        AppScreenCapture.setOutlineRefreshCallback(MiraRuntimeService::requestOutlineUpload);
         try {
             MiraPtyProcess.ensureNativeLibraryLoaded();
         } catch (Throwable t) {
@@ -86,7 +86,7 @@ public final class MiraApplication extends Application {
     private void registerVisibleActivity(Activity activity) {
         MiraOutlineCollector.getInstance().register(activity);
         View decor = activity.getWindow() == null ? null : activity.getWindow().getDecorView();
-        if (decor != null) decor.postDelayed(MiraDiscoveryService::requestOutlineUpload, 160);
+        if (decor != null) decor.postDelayed(MiraRuntimeService::requestOutlineUpload, 160);
         scheduleDynamicLibraryLoad();
     }
 
