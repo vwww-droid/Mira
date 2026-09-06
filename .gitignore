@@ -3,6 +3,8 @@
 .env.*
 *.log
 
+.vscode
+
 node_modules/
 dist/
 build/
