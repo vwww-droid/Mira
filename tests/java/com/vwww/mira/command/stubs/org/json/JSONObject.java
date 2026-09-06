@@ -32,6 +32,18 @@ public class JSONObject {
         return value instanceof JSONArray ? (JSONArray) value : null;
     }
 
+    public double optDouble(String key, double fallback) {
+        Object value = values.get(key);
+        if (value instanceof Number) return ((Number) value).doubleValue();
+        if (value instanceof String) {
+            try {
+                return Double.parseDouble((String) value);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return fallback;
+    }
+
     @Override
     public String toString() {
         StringBuilder result = new StringBuilder("{");

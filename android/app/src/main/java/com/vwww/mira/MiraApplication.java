@@ -2,6 +2,7 @@ package com.vwww.mira;
 
 import com.vwww.mira.runtime.RuntimeInstaller;
 import com.vwww.mira.screen.AppScreenCapture;
+import com.vwww.mira.screen.ViewOutlineCollector;
 import com.vwww.mira.terminal.PtyFactory;
 
 import android.app.Activity;
@@ -25,6 +26,7 @@ public final class MiraApplication extends Application {
     public void onCreate() {
         super.onCreate();
         AppScreenCapture.setOutlineRefreshCallback(MiraRuntimeService::requestOutlineUpload);
+        ViewOutlineCollector.setOutlineRefreshCallback(MiraRuntimeService::requestOutlineUpload);
         try {
             PtyFactory.preloadNativeLibrary();
         } catch (Throwable t) {
@@ -61,7 +63,7 @@ public final class MiraApplication extends Application {
 
             @Override
             public void onActivityDestroyed(Activity activity) {
-                MiraOutlineCollector.getInstance().unregister(activity);
+                ViewOutlineCollector.getInstance().unregister(activity);
             }
         });
     }
@@ -86,7 +88,7 @@ public final class MiraApplication extends Application {
     }
 
     private void registerVisibleActivity(Activity activity) {
-        MiraOutlineCollector.getInstance().register(activity);
+        ViewOutlineCollector.getInstance().register(activity);
         View decor = activity.getWindow() == null ? null : activity.getWindow().getDecorView();
         if (decor != null) decor.postDelayed(MiraRuntimeService::requestOutlineUpload, 160);
         scheduleDynamicLibraryLoad();

@@ -1,4 +1,4 @@
-package com.vwww.mira;
+package com.vwww.mira.screen;
 
 import android.app.Activity;
 import android.content.res.Resources;
@@ -24,13 +24,16 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-public final class MiraOutlineCollector {
+public final class ViewOutlineCollector {
     private static final int MAX_DEPTH = 32;
     private static final int MAX_NODES = 900;
     private static final int MAX_TEXT_LENGTH = 80;
     private static final long MAIN_THREAD_TIMEOUT_MS = 1500;
     private static final long LAYOUT_UPLOAD_DEBOUNCE_MS = 450;
-    private static final MiraOutlineCollector INSTANCE = new MiraOutlineCollector();
+    private static final ViewOutlineCollector INSTANCE = new ViewOutlineCollector();
+    private static final Runnable NO_OP_OUTLINE_REFRESH = () -> {
+    };
+    private static volatile Runnable outlineRefreshCallback = NO_OP_OUTLINE_REFRESH;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Object activityLock = new Object();
@@ -41,11 +44,15 @@ public final class MiraOutlineCollector {
     private JSONObject lastOutline;
     private long lastLayoutUploadAt;
 
-    private MiraOutlineCollector() {
+    private ViewOutlineCollector() {
     }
 
-    public static MiraOutlineCollector getInstance() {
+    public static ViewOutlineCollector getInstance() {
         return INSTANCE;
+    }
+
+    public static void setOutlineRefreshCallback(Runnable callback) {
+        outlineRefreshCallback = callback == null ? NO_OP_OUTLINE_REFRESH : callback;
     }
 
     public void register(Activity activity) {
@@ -287,7 +294,7 @@ public final class MiraOutlineCollector {
 
     private static void requestOutlineUpload(View root, long delayMs) {
         if (root == null) return;
-        root.postDelayed(MiraRuntimeService::requestOutlineUpload, delayMs);
+        root.postDelayed(outlineRefreshCallback, delayMs);
     }
 
     private void cacheOutline(JSONObject outline) {

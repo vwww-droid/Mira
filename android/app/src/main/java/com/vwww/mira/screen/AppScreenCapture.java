@@ -157,7 +157,7 @@ public final class AppScreenCapture {
         return value == null ? RenderResult.error("empty render") : value;
     }
 
-    public boolean dispatchTapFromFrame(float frameX, float frameY) {
+    boolean dispatchTapFromFrame(float frameX, float frameY) {
         if (Float.isNaN(frameX) || Float.isInfinite(frameX) || Float.isNaN(frameY) || Float.isInfinite(frameY)) return false;
         if (Looper.myLooper() == Looper.getMainLooper()) return dispatchTapOnMainThread(frameX, frameY);
 
@@ -182,35 +182,35 @@ public final class AppScreenCapture {
         return Boolean.TRUE.equals(result.get());
     }
 
-    public InputResult dispatchTextInput(String text) {
+    InputResult dispatchTextInput(String text) {
         String value = text == null ? "" : text;
         if (Looper.myLooper() == Looper.getMainLooper()) return dispatchTextInputOnMainThread(value, false);
         return callOnMainThread(() -> dispatchTextInputOnMainThread(value, false), InputResult.error("text input failed"));
     }
 
-    public InputResult dispatchPaste(String text) {
+    InputResult dispatchPaste(String text) {
         String value = text == null ? "" : text;
         if (Looper.myLooper() == Looper.getMainLooper()) return dispatchTextInputOnMainThread(value, true);
         return callOnMainThread(() -> dispatchTextInputOnMainThread(value, true), InputResult.error("paste failed"));
     }
 
-    public InputResult dispatchKeyInput(String key) {
+    InputResult dispatchKeyInput(String key) {
         String value = key == null ? "" : key;
         if (Looper.myLooper() == Looper.getMainLooper()) return dispatchKeyInputOnMainThread(value);
         return callOnMainThread(() -> dispatchKeyInputOnMainThread(value), InputResult.error("key input failed"));
     }
 
-    public InputResult copyFocusedText() {
+    InputResult copyFocusedText() {
         if (Looper.myLooper() == Looper.getMainLooper()) return copyFocusedTextOnMainThread();
         return callOnMainThread(this::copyFocusedTextOnMainThread, InputResult.error("copy failed"));
     }
 
-    public InputResult selectAllFocusedText() {
+    InputResult selectAllFocusedText() {
         if (Looper.myLooper() == Looper.getMainLooper()) return selectAllFocusedTextOnMainThread();
         return callOnMainThread(this::selectAllFocusedTextOnMainThread, InputResult.error("select all failed"));
     }
 
-    public InputResult clearFocusedText() {
+    InputResult clearFocusedText() {
         if (Looper.myLooper() == Looper.getMainLooper()) return clearFocusedTextOnMainThread();
         return callOnMainThread(this::clearFocusedTextOnMainThread, InputResult.error("clear failed"));
     }
@@ -723,10 +723,10 @@ public final class AppScreenCapture {
         }
     }
 
-    public static final class InputResult {
-        public final boolean ok;
-        public final String message;
-        public final String text;
+    static final class InputResult {
+        final boolean ok;
+        final String message;
+        final String text;
 
         private InputResult(boolean ok, String message, String text) {
             this.ok = ok;
@@ -734,7 +734,7 @@ public final class AppScreenCapture {
             this.text = text == null ? "" : text;
         }
 
-        public static InputResult ok(String message) {
+        static InputResult ok(String message) {
             return new InputResult(true, message, "");
         }
 
@@ -742,7 +742,7 @@ public final class AppScreenCapture {
             return new InputResult(true, message, text);
         }
 
-        public static InputResult error(String message) {
+        static InputResult error(String message) {
             return new InputResult(false, message, "");
         }
     }

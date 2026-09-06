@@ -22,14 +22,14 @@ Mira Android 侧在 `Debug(调试构建)` 中打印 `MotionEvent(Android 触摸�
 ```java
 @Override
 public boolean dispatchTouchEvent(MotionEvent event) {
-    MiraMotionEventLogger.log(event);
+    MotionEventLogger.log(event);
     return super.dispatchTouchEvent(event);
 }
 ```
 
 日志实现集中在:
 
-`/Users/vw2x/Projects/Reverses/Mira/android/app/src/main/java/com/vwww/mira/MiraMotionEventLogger.java`
+`/Users/vw2x/Projects/Reverses/Mira/android/app/src/main/java/com/vwww/mira/screen/MotionEventLogger.java`
 
 ## 日志标签
 
@@ -117,7 +117,7 @@ AI 或脚本读取时按 `seq + record + chunkIndex` 重新拼接 `payload`, 再
 
 ## Review checklist
 
-修改 `MiraMotionEventLogger` 后至少检查:
+修改 `MotionEventLogger` 后至少检查:
 
 1. 每个新字段是否通过 `put` 包装。
 2. 新增 Android API(安卓接口) 是否有 `SDK_INT(系统版本号)` 判断或反射保护。

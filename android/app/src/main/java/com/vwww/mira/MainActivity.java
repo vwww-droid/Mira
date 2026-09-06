@@ -2,6 +2,8 @@ package com.vwww.mira;
 
 import com.vwww.mira.device.DeviceIdentity;
 import com.vwww.mira.screen.AppScreenCapture;
+import com.vwww.mira.screen.MotionEventLogger;
+import com.vwww.mira.screen.ViewOutlineCollector;
 
 import android.app.Activity;
 import android.content.BroadcastReceiver;
@@ -49,7 +51,7 @@ public final class MainActivity extends Activity {
         identity = new DeviceIdentity(this);
         showControlPage();
         applyLaunchIntent(getIntent());
-        MiraOutlineCollector.getInstance().register(this);
+        ViewOutlineCollector.getInstance().register(this);
         AppScreenCapture.getInstance().register(this);
         requestOutlineUploadSoon();
     }
@@ -63,14 +65,14 @@ public final class MainActivity extends Activity {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
-        MiraMotionEventLogger.log(event);
+        MotionEventLogger.log(event);
         return super.dispatchTouchEvent(event);
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        MiraOutlineCollector.getInstance().register(this);
+        ViewOutlineCollector.getInstance().register(this);
         AppScreenCapture.getInstance().register(this);
         requestOutlineUploadSoon();
         if (!receiverRegistered) {
@@ -90,7 +92,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        MiraOutlineCollector.getInstance().unregister(this);
+        ViewOutlineCollector.getInstance().unregister(this);
         AppScreenCapture.getInstance().unregister(this);
         super.onDestroy();
     }
@@ -164,7 +166,7 @@ public final class MainActivity extends Activity {
         root.addView(spacer());
 
         setContentView(scrollView);
-        MiraOutlineCollector.getInstance().register(this);
+        ViewOutlineCollector.getInstance().register(this);
         AppScreenCapture.getInstance().register(this);
     }
 

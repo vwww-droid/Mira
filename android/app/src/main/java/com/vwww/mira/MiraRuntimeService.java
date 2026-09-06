@@ -7,8 +7,9 @@ import com.vwww.mira.device.DeviceIdentity;
 import com.vwww.mira.relay.DeviceControlClient;
 import com.vwww.mira.relay.TerminalRelayClient;
 import com.vwww.mira.runtime.RuntimeInstaller;
-import com.vwww.mira.screen.AppScreenCapture;
 import com.vwww.mira.screen.AppScreenStreamer;
+import com.vwww.mira.screen.RemoteInputHandler;
+import com.vwww.mira.screen.ViewOutlineCollector;
 import com.vwww.mira.terminal.LocalTerminalServer;
 
 import android.app.Service;
@@ -57,6 +58,7 @@ public final class MiraRuntimeService extends Service {
     private volatile AppScreenStreamer screenStreamer;
     private volatile LocalCommandServer commandServer;
     private RemoteCommandHandler remoteCommandHandler;
+    private RemoteInputHandler remoteInputHandler;
     private volatile LocalTerminalServer terminalServer;
     private volatile boolean controlReady;
 
@@ -66,6 +68,10 @@ public final class MiraRuntimeService extends Service {
         activeService = this;
         identity = new DeviceIdentity(this);
         runtimeInstaller = new RuntimeInstaller(this);
+        remoteInputHandler = new RemoteInputHandler(identity.getInstallId(), response -> {
+            DeviceControlClient client = controlClient;
+            if (client != null) client.sendJson(response);
+        });
         remoteCommandHandler = new RemoteCommandHandler(
             this,
             identity.getInstallId(),
@@ -167,7 +173,7 @@ public final class MiraRuntimeService extends Service {
             deviceName,
             relayUrl,
             () -> state,
-            MiraOutlineCollector.getInstance()::currentOutline,
+            ViewOutlineCollector.getInstance()::currentOutline,
             new DeviceControlClient.Callback() {
                 @Override
                 public void onControlMessage(JSONObject message) {
@@ -299,69 +305,12 @@ public final class MiraRuntimeService extends Service {
             } else if ("session.close".equals(type)) {
                 closeRelay();
             } else if ("screen.input".equals(type)) {
-                handleScreenInput(body);
+                remoteInputHandler.handle(body);
             } else if ("device.command".equals(type)) {
                 remoteCommandHandler.handle(body);
             }
         } catch (Throwable throwable) {
             Log.w(TAG, "Control message failed", throwable);
-        }
-    }
-
-    private void handleScreenInput(JSONObject body) {
-        if (!identity.getInstallId().equals(body.optString("installId"))) {
-            Log.w(TAG, "Ignoring screen.input for wrong installId");
-            return;
-        }
-        String kind = body.optString("kind", "");
-        AppScreenCapture.InputResult result;
-        if ("tap".equals(kind)) {
-            double x = body.optDouble("x", Double.NaN);
-            double y = body.optDouble("y", Double.NaN);
-            if (Double.isNaN(x) || Double.isInfinite(x) || Double.isNaN(y) || Double.isInfinite(y)) {
-                result = AppScreenCapture.InputResult.error("invalid tap coordinates");
-            } else {
-                float frameX = clampTapCoordinate(x);
-                float frameY = clampTapCoordinate(y);
-                boolean accepted = AppScreenCapture.getInstance().dispatchTapFromFrame(frameX, frameY);
-                result = accepted ? AppScreenCapture.InputResult.ok("tap dispatched") : AppScreenCapture.InputResult.error("tap not handled");
-                Log.i(TAG, "screen tap accepted=" + accepted + " x=" + frameX + " y=" + frameY);
-            }
-        } else if ("text".equals(kind)) {
-            result = AppScreenCapture.getInstance().dispatchTextInput(body.optString("text", ""));
-        } else if ("paste".equals(kind)) {
-            result = AppScreenCapture.getInstance().dispatchPaste(body.optString("text", ""));
-        } else if ("key".equals(kind)) {
-            result = AppScreenCapture.getInstance().dispatchKeyInput(body.optString("key", ""));
-        } else if ("copy".equals(kind)) {
-            result = AppScreenCapture.getInstance().copyFocusedText();
-        } else if ("selectall".equals(kind)) {
-            result = AppScreenCapture.getInstance().selectAllFocusedText();
-        } else if ("clear".equals(kind)) {
-            result = AppScreenCapture.getInstance().clearFocusedText();
-        } else {
-            result = AppScreenCapture.InputResult.error("unsupported screen input kind=" + kind);
-        }
-        sendScreenInputResult(body, kind, result);
-    }
-
-    private void sendScreenInputResult(JSONObject request, String kind, AppScreenCapture.InputResult result) {
-        try {
-            JSONObject response = new JSONObject();
-            response.put("type", "screen.input.result");
-            response.put("protocol", 1);
-            response.put("installId", identity.getInstallId());
-            response.put("requestId", request.optString("requestId", ""));
-            response.put("clientId", request.optString("clientId", ""));
-            response.put("kind", kind == null ? "" : kind);
-            response.put("ok", result != null && result.ok);
-            response.put("message", result == null ? "input failed" : result.message);
-            if (result == null || !result.ok) response.put("error", result == null ? "input failed" : result.message);
-            if (result != null && result.text != null && ("copy".equals(kind) || !result.text.isEmpty())) response.put("text", result.text);
-            DeviceControlClient client = controlClient;
-            if (client != null) client.sendJson(response);
-        } catch (Throwable throwable) {
-            Log.w(TAG, "Unable to send screen input result", throwable);
         }
     }
 
@@ -441,11 +390,6 @@ public final class MiraRuntimeService extends Service {
             discoveryServer = null;
         }
         if (server != null) server.close();
-    }
-
-    private static float clampTapCoordinate(double value) {
-        double clamped = Math.max(0d, Math.min(value, 100000d));
-        return (float) clamped;
     }
 
     private static String safeLogValue(String value) {

@@ -74,7 +74,7 @@ Mira 当前 v1.0.0 是研究原型和参考实现, 重点不是做完整企业�
 - [x] 运行时和终端迁入 `runtime`/`terminal`: `RuntimeInstaller` 负责安装与状态, 包内 `RuntimeScripts` 生成原有脚本, `VerifiedExtraction` 校验写入; `PtyFactory`/`PtySession` 提供会话入口, 包内 `NativePtyProcess` 和 `PtyLaunchSpec` 管理 JNI 与启动参数, `SessionToolbox`/`LocalTerminalServer` 分别管理会话工具和本机终端. JNI 类路径及注册同步, 日志标签、管理标记和脚本字节保留. 宿主测试 37 项通过; 脚本提取后相关 3 项重跑通过; Pixel 4 验证本机鉴权、PTY 读写/resize、远端命令与 Python/Frida 导入, 强制安装状态恢复后 7 个脚本哈希及状态内容一致.
 - [x] 建立 `runtime`, `terminal`, `relay`, `device`, `command`, `screen` 职责包. `TerminalRelayClient`/`DeviceControlClient` 分别管理终端会话与设备控制, `WebSocketConnection` 提供共享传输, `DeviceIdentity`/`DeviceMetrics` 提供设备信息. 内部实现去除重复 Mira 前缀, App 入口保留. Pixel 4 覆盖安装后 identity preferences 哈希不变, 遥测更新、PTY、远端 logcat、屏幕推流正常.
 - [x] `relay/RelayEndpoint` 收敛 control/screen 的重复 URL 构造; 宿主 golden 测试覆盖 scheme、IPv6、路径前缀、已有 endpoint、尾斜杠、转义路径、query/fragment 与非法 URI, 保留原兼容语义. 回归命令: `python3 -m unittest tests.test_relay_endpoint -v`.
-- [ ] 将 View 轮廓与触摸日志归入屏幕模块, 移除轮廓采集对具体 Service 的反向依赖; 抽出运行服务中的远程输入处理, 使 App 入口专注生命周期与组件装配.
+- [x] View 轮廓与触摸日志迁入 `screen/ViewOutlineCollector`、`MotionEventLogger`; Application 注入轮廓刷新回调以移除采集对具体 Service 的反向依赖. `RemoteInputHandler` 接管输入校验/路由/响应, Service 动态读取当前控制连接并保留 queued sender. 相关宿主测试 3 项通过; Pixel 4 实测 7 种输入的设备确认、文字/粘贴/按键/复制/全选/清空、轮廓刷新与 20 帧推流, 原输入已恢复.
 - [ ] 评估共享 C 的最小切口: Android `screen/AvcBitstream`, `screen/ScreenVideoPacket` 与 iOS `MiraRemoteServices.swift` 中的 Annex B/MHS1 处理. 先对齐两端输入契约、NAL 长度前缀规则与序号策略, 再决定迁移; Java MediaCodec/View/Settings/生命周期保留在 Android 层, PTY/进程底层继续复用现有 native 实现. 不将具体检测策略写死进 C 或 Java 基座.
 
 ### 产品与自动化

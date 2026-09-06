@@ -1,4 +1,6 @@
-package com.vwww.mira;
+package com.vwww.mira.screen;
+
+import com.vwww.mira.BuildConfig;
 
 import android.os.Build;
 import android.util.Log;
@@ -18,7 +20,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
 
-final class MiraMotionEventLogger {
+public final class MotionEventLogger {
     private static final String TAG = "MiraMotionEvent";
     private static final int LOG_CHUNK_SIZE = 3500;
     private static final AtomicLong NEXT_SEQUENCE = new AtomicLong();
@@ -26,10 +28,10 @@ final class MiraMotionEventLogger {
     private static final TreeMap<Integer, String> CLASSIFICATION_NAMES = discoverMotionEventConstants("CLASSIFICATION_");
     private static final TreeMap<Integer, String> SOURCE_NAMES = discoverInputDeviceConstants("SOURCE_");
 
-    private MiraMotionEventLogger() {
+    private MotionEventLogger() {
     }
 
-    static void log(MotionEvent event) {
+    public static void log(MotionEvent event) {
         if (!BuildConfig.DEBUG || event == null) return;
         try {
             long sequence = NEXT_SEQUENCE.incrementAndGet();
