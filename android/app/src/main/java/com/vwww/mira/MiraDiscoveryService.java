@@ -1,5 +1,8 @@
 package com.vwww.mira;
 
+import com.vwww.mira.screen.AppScreenCapture;
+import com.vwww.mira.screen.AppScreenStreamer;
+
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -67,7 +70,7 @@ public final class MiraDiscoveryService extends Service {
     private volatile String state = "idle";
     private volatile MiraRelayClient relayClient;
     private volatile MiraControlClient controlClient;
-    private volatile MiraSelfScreenStreamer screenStreamer;
+    private volatile AppScreenStreamer screenStreamer;
     private volatile MiraLocalCommandServer commandServer;
     private volatile MiraTerminalServer terminalServer;
     private volatile boolean controlReady;
@@ -200,7 +203,7 @@ public final class MiraDiscoveryService extends Service {
             Log.i(TAG, "Screen streamer start skipped until control ready");
             return;
         }
-        MiraSelfScreenStreamer streamer = new MiraSelfScreenStreamer(this, identity, deviceName, relayUrl);
+        AppScreenStreamer streamer = new AppScreenStreamer(this, identity, deviceName, relayUrl);
         screenStreamer = streamer;
         streamer.start();
     }
@@ -213,7 +216,7 @@ public final class MiraDiscoveryService extends Service {
         }
         if (screenStreamer != null && screenStreamer.isAlive()) return;
         closeScreenStreamer();
-        MiraSelfScreenStreamer streamer = new MiraSelfScreenStreamer(this, identity, deviceName, relayUrl);
+        AppScreenStreamer streamer = new AppScreenStreamer(this, identity, deviceName, relayUrl);
         screenStreamer = streamer;
         streamer.start();
         Log.i(TAG, "Screen streamer ensured relayUrl=" + relayUrl);
@@ -492,38 +495,38 @@ public final class MiraDiscoveryService extends Service {
             return;
         }
         String kind = body.optString("kind", "");
-        MiraSelfScreenCapture.InputResult result;
+        AppScreenCapture.InputResult result;
         if ("tap".equals(kind)) {
             double x = body.optDouble("x", Double.NaN);
             double y = body.optDouble("y", Double.NaN);
             if (Double.isNaN(x) || Double.isInfinite(x) || Double.isNaN(y) || Double.isInfinite(y)) {
-                result = MiraSelfScreenCapture.InputResult.error("invalid tap coordinates");
+                result = AppScreenCapture.InputResult.error("invalid tap coordinates");
             } else {
                 float frameX = clampTapCoordinate(x);
                 float frameY = clampTapCoordinate(y);
-                boolean accepted = MiraSelfScreenCapture.getInstance().dispatchTapFromFrame(frameX, frameY);
-                result = accepted ? MiraSelfScreenCapture.InputResult.ok("tap dispatched") : MiraSelfScreenCapture.InputResult.error("tap not handled");
+                boolean accepted = AppScreenCapture.getInstance().dispatchTapFromFrame(frameX, frameY);
+                result = accepted ? AppScreenCapture.InputResult.ok("tap dispatched") : AppScreenCapture.InputResult.error("tap not handled");
                 Log.i(TAG, "screen tap accepted=" + accepted + " x=" + frameX + " y=" + frameY);
             }
         } else if ("text".equals(kind)) {
-            result = MiraSelfScreenCapture.getInstance().dispatchTextInput(body.optString("text", ""));
+            result = AppScreenCapture.getInstance().dispatchTextInput(body.optString("text", ""));
         } else if ("paste".equals(kind)) {
-            result = MiraSelfScreenCapture.getInstance().dispatchPaste(body.optString("text", ""));
+            result = AppScreenCapture.getInstance().dispatchPaste(body.optString("text", ""));
         } else if ("key".equals(kind)) {
-            result = MiraSelfScreenCapture.getInstance().dispatchKeyInput(body.optString("key", ""));
+            result = AppScreenCapture.getInstance().dispatchKeyInput(body.optString("key", ""));
         } else if ("copy".equals(kind)) {
-            result = MiraSelfScreenCapture.getInstance().copyFocusedText();
+            result = AppScreenCapture.getInstance().copyFocusedText();
         } else if ("selectall".equals(kind)) {
-            result = MiraSelfScreenCapture.getInstance().selectAllFocusedText();
+            result = AppScreenCapture.getInstance().selectAllFocusedText();
         } else if ("clear".equals(kind)) {
-            result = MiraSelfScreenCapture.getInstance().clearFocusedText();
+            result = AppScreenCapture.getInstance().clearFocusedText();
         } else {
-            result = MiraSelfScreenCapture.InputResult.error("unsupported screen input kind=" + kind);
+            result = AppScreenCapture.InputResult.error("unsupported screen input kind=" + kind);
         }
         sendScreenInputResult(body, kind, result);
     }
 
-    private void sendScreenInputResult(JSONObject request, String kind, MiraSelfScreenCapture.InputResult result) {
+    private void sendScreenInputResult(JSONObject request, String kind, AppScreenCapture.InputResult result) {
         try {
             JSONObject response = new JSONObject();
             response.put("type", "screen.input.result");

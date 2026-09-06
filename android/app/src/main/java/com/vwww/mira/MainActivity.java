@@ -1,5 +1,7 @@
 package com.vwww.mira;
 
+import com.vwww.mira.screen.AppScreenCapture;
+
 import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -47,7 +49,7 @@ public final class MainActivity extends Activity {
         showControlPage();
         applyLaunchIntent(getIntent());
         MiraOutlineCollector.getInstance().register(this);
-        MiraSelfScreenCapture.getInstance().register(this);
+        AppScreenCapture.getInstance().register(this);
         requestOutlineUploadSoon();
     }
 
@@ -68,7 +70,7 @@ public final class MainActivity extends Activity {
     protected void onStart() {
         super.onStart();
         MiraOutlineCollector.getInstance().register(this);
-        MiraSelfScreenCapture.getInstance().register(this);
+        AppScreenCapture.getInstance().register(this);
         requestOutlineUploadSoon();
         if (!receiverRegistered) {
             registerReceiver(statusReceiver, new IntentFilter(MiraDiscoveryService.ACTION_STATUS));
@@ -88,7 +90,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         MiraOutlineCollector.getInstance().unregister(this);
-        MiraSelfScreenCapture.getInstance().unregister(this);
+        AppScreenCapture.getInstance().unregister(this);
         super.onDestroy();
     }
 
@@ -162,7 +164,7 @@ public final class MainActivity extends Activity {
 
         setContentView(scrollView);
         MiraOutlineCollector.getInstance().register(this);
-        MiraSelfScreenCapture.getInstance().register(this);
+        AppScreenCapture.getInstance().register(this);
     }
 
     private void applyLaunchIntent(Intent intent) {

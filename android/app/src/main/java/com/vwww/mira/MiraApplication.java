@@ -1,5 +1,7 @@
 package com.vwww.mira;
 
+import com.vwww.mira.screen.AppScreenCapture;
+
 import android.app.Activity;
 import android.app.Application;
 import android.os.Bundle;
@@ -20,6 +22,7 @@ public final class MiraApplication extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        AppScreenCapture.setOutlineRefreshCallback(MiraDiscoveryService::requestOutlineUpload);
         try {
             MiraPtyProcess.ensureNativeLibraryLoaded();
         } catch (Throwable t) {

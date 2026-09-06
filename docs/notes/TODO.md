@@ -65,6 +65,17 @@ Mira 当前 v1.0.0 是研究原型和参考实现, 重点不是做完整企业�
 
 ## P2-产品化和自动化
 
+### Android Java 架构整理
+
+- [x] 将屏幕推流的纯数据逻辑提取到 `com.vwww.mira.screen`: `AvcBitstream` 负责 AVC 转换和 SPS, `ScreenVideoPacket` 负责 MHS1 编码. Android 编码器和连接生命周期继续由调用方管理. 用宿主 JVM 测试固定码流与协议字节, 命令: `python3 -m unittest discover -s tests -p 'test_screen_protocol.py'`.
+- [x] 屏幕模块迁入 `screen` 包: `AppScreenStreamer` 负责推流生命周期, `AppScreenCapture` 负责宿主 App 画面与输入, 包内 `AvcEncoderSelector` 负责候选枚举和成功配置缓存, `AvcEncoderProfile` 保存编码配置. 保留原缓存 key、候选顺序、等待规则与宿主 App 画面范围; Android Service/MainActivity 通过公开入口调用, Application 注入轮廓刷新回调以避免采集类反向依赖具体 Service; 码流和配置实现不对包外暴露. 回归命令: `python3 -m unittest discover -s tests -p 'test_screen_*.py'`.
+- [ ] 拆分 `MiraDiscoveryService`: 当前同时管理 UDP 发现、HTTP 请求、Relay/control、终端和屏幕服务. 先提取局域网发现与 HTTP 处理, 再将 Android Service 明确命名为 `MiraRuntimeService`; 同步 Manifest、Intent、脚本和调用方, 保持已有 action 字符串兼容.
+- [ ] 按职责逐步建立 `runtime`, `terminal`, `relay`, `command`, `screen` 包. 明确命名候选: `MiraBootstrap` -> `RuntimeInstaller`, `MiraToolbox` -> `SessionToolbox`, `MiraRelayClient` -> `TerminalRelayClient`, `MiraControlClient` -> `DeviceControlClient`. 包内实现类不再重复 Mira 前缀; Application/Service 等 App 入口可保留. 迁移 `MiraPtyProcess` 时必须同步 JNI 注册类路径与外部引用.
+- [ ] 收敛 control/screen 的重复 Relay URL 构造, 为路径前缀、已有 endpoint 与 scheme 转换建立兼容用例.
+- [ ] 评估共享 C 的最小切口: Android `screen/AvcBitstream`, `screen/ScreenVideoPacket` 与 iOS `MiraRemoteServices.swift` 中的 Annex B/MHS1 处理. 先对齐两端输入契约、NAL 长度前缀规则与序号策略, 再决定迁移; Java MediaCodec/View/Settings/生命周期保留在 Android 层, PTY/进程底层继续复用现有 native 实现. 不将具体检测策略写死进 C 或 Java 基座.
+
+### 产品与自动化
+
 1. 增加 case 浏览和导出能力, 让一次风险探索能直接形成可分享的脱敏报告。
 2. 增加 Skill notes(技能笔记)提炼能力, 从 case 中提取可复用判断模式, 但不默认提交 PR(Pull Request, 代码合并请求)。
 3. 增加真实设备, 模拟器和云手机的基线对比样例。

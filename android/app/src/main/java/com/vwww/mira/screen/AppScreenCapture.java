@@ -1,4 +1,4 @@
-package com.vwww.mira;
+package com.vwww.mira.screen;
 
 import android.app.Activity;
 import android.content.ClipData;
@@ -29,10 +29,13 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-public final class MiraSelfScreenCapture {
+public final class AppScreenCapture {
     private static final String TAG = "MiraSelfScreen";
     private static final long MAIN_THREAD_TIMEOUT_MS = 1800;
-    private static final MiraSelfScreenCapture INSTANCE = new MiraSelfScreenCapture();
+    private static final AppScreenCapture INSTANCE = new AppScreenCapture();
+    private static final Runnable NO_OP_OUTLINE_REFRESH = () -> {
+    };
+    private static volatile Runnable outlineRefreshCallback = NO_OP_OUTLINE_REFRESH;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Object activityLock = new Object();
@@ -40,11 +43,15 @@ public final class MiraSelfScreenCapture {
     private WeakReference<View> rootRef = new WeakReference<>(null);
     private volatile CaptureGeometry lastGeometry;
 
-    private MiraSelfScreenCapture() {
+    private AppScreenCapture() {
     }
 
-    public static MiraSelfScreenCapture getInstance() {
+    public static AppScreenCapture getInstance() {
         return INSTANCE;
+    }
+
+    public static void setOutlineRefreshCallback(Runnable callback) {
+        outlineRefreshCallback = callback == null ? NO_OP_OUTLINE_REFRESH : callback;
     }
 
     public void register(Activity activity) {
@@ -344,7 +351,7 @@ public final class MiraSelfScreenCapture {
                 down.recycle();
                 up.recycle();
             }
-            root.postDelayed(MiraDiscoveryService::requestOutlineUpload, 180);
+            root.postDelayed(outlineRefreshCallback, 180);
             Log.i(TAG, "tap frame=" + frameX + "," + frameY + " view=" + x + "," + y + " handled=" + handledDown + "/" + handledUp);
             return handledDown || handledUp;
         } catch (Throwable throwable) {
@@ -362,11 +369,11 @@ public final class MiraSelfScreenCapture {
             View focus = focusedView(activity, root);
             if (updateClipboard) setClipboard(activity, text);
             if (insertIntoEditable(focus, text)) {
-                root.postDelayed(MiraDiscoveryService::requestOutlineUpload, 80);
+                root.postDelayed(outlineRefreshCallback, 80);
                 return InputResult.ok("text inserted");
             }
             boolean handled = dispatchCharacters(focus == null ? root : focus, text);
-            root.postDelayed(MiraDiscoveryService::requestOutlineUpload, 80);
+            root.postDelayed(outlineRefreshCallback, 80);
             return handled ? InputResult.ok("text dispatched") : InputResult.error("focused view does not accept text");
         } catch (Throwable throwable) {
             Log.w(TAG, "Text input failed", throwable);
@@ -384,7 +391,7 @@ public final class MiraSelfScreenCapture {
             View target = focusedView(activity, root);
             if (target == null) target = root;
             if (("Backspace".equals(key) || "Delete".equals(key)) && deleteFromEditable(target, "Delete".equals(key))) {
-                root.postDelayed(MiraDiscoveryService::requestOutlineUpload, 80);
+                root.postDelayed(outlineRefreshCallback, 80);
                 return InputResult.ok("deleted");
             }
             long now = SystemClock.uptimeMillis();
@@ -392,7 +399,7 @@ public final class MiraSelfScreenCapture {
             KeyEvent up = new KeyEvent(now, now + 16, KeyEvent.ACTION_UP, keyCode, 0);
             boolean handled = target.dispatchKeyEvent(down) || root.dispatchKeyEvent(down);
             handled = target.dispatchKeyEvent(up) || root.dispatchKeyEvent(up) || handled;
-            root.postDelayed(MiraDiscoveryService::requestOutlineUpload, 80);
+            root.postDelayed(outlineRefreshCallback, 80);
             return handled ? InputResult.ok("key dispatched") : InputResult.error("key not handled: " + key);
         } catch (Throwable throwable) {
             Log.w(TAG, "Key input failed", throwable);
@@ -444,7 +451,7 @@ public final class MiraSelfScreenCapture {
             } else {
                 return InputResult.error("focused text is not selectable");
             }
-            root.postDelayed(MiraDiscoveryService::requestOutlineUpload, 80);
+            root.postDelayed(outlineRefreshCallback, 80);
             return InputResult.ok("selected all");
         } catch (Throwable throwable) {
             Log.w(TAG, "Select all focused text failed", throwable);
@@ -464,7 +471,7 @@ public final class MiraSelfScreenCapture {
             if (editable == null) return InputResult.error("focused text is not editable");
             editable.clear();
             if (textView instanceof EditText) ((EditText) textView).setSelection(0);
-            root.postDelayed(MiraDiscoveryService::requestOutlineUpload, 80);
+            root.postDelayed(outlineRefreshCallback, 80);
             return InputResult.ok("cleared");
         } catch (Throwable throwable) {
             Log.w(TAG, "Clear focused text failed", throwable);
@@ -727,7 +734,7 @@ public final class MiraSelfScreenCapture {
             this.text = text == null ? "" : text;
         }
 
-        static InputResult ok(String message) {
+        public static InputResult ok(String message) {
             return new InputResult(true, message, "");
         }
 
@@ -735,7 +742,7 @@ public final class MiraSelfScreenCapture {
             return new InputResult(true, message, text);
         }
 
-        static InputResult error(String message) {
+        public static InputResult error(String message) {
             return new InputResult(false, message, "");
         }
     }
