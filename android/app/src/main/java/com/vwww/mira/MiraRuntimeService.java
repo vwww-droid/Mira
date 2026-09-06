@@ -1,25 +1,23 @@
 package com.vwww.mira;
 
 import com.vwww.mira.discovery.LanDiscoveryServer;
+import com.vwww.mira.command.LocalCommandServer;
+import com.vwww.mira.command.RemoteCommandHandler;
 import com.vwww.mira.screen.AppScreenCapture;
 import com.vwww.mira.screen.AppScreenStreamer;
 
 import android.app.Service;
 import android.content.Intent;
 import android.os.IBinder;
-import android.os.SystemClock;
 import android.util.Log;
 
 import org.json.JSONException;
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -52,7 +50,8 @@ public final class MiraRuntimeService extends Service {
     private volatile MiraRelayClient relayClient;
     private volatile MiraControlClient controlClient;
     private volatile AppScreenStreamer screenStreamer;
-    private volatile MiraLocalCommandServer commandServer;
+    private volatile LocalCommandServer commandServer;
+    private RemoteCommandHandler remoteCommandHandler;
     private volatile MiraTerminalServer terminalServer;
     private volatile boolean controlReady;
 
@@ -62,6 +61,15 @@ public final class MiraRuntimeService extends Service {
         activeService = this;
         identity = new MiraIdentity(this);
         bootstrap = new MiraBootstrap(this);
+        remoteCommandHandler = new RemoteCommandHandler(
+            this,
+            identity.getInstallId(),
+            executor,
+            response -> {
+                MiraControlClient client = controlClient;
+                if (client != null) client.sendJsonDirect(response);
+            }
+        );
     }
 
     @Override
@@ -213,7 +221,7 @@ public final class MiraRuntimeService extends Service {
 
     private synchronized void startCommandServer() throws IOException {
         if (commandServer != null) return;
-        MiraLocalCommandServer server = new MiraLocalCommandServer(this);
+        LocalCommandServer server = new LocalCommandServer(this);
         server.start();
         commandServer = server;
     }
@@ -228,7 +236,7 @@ public final class MiraRuntimeService extends Service {
     }
 
     private void writeTerminalTokenFile(String token) throws IOException {
-        File runDir = MiraLocalCommandServer.runDir(this);
+        File runDir = LocalCommandServer.runDir(this);
         if (!runDir.isDirectory() && !runDir.mkdirs() && !runDir.isDirectory()) {
             throw new IOException("Unable to create run dir: " + runDir.getAbsolutePath());
         }
@@ -288,124 +296,10 @@ public final class MiraRuntimeService extends Service {
             } else if ("screen.input".equals(type)) {
                 handleScreenInput(body);
             } else if ("device.command".equals(type)) {
-                handleDeviceCommand(body);
+                remoteCommandHandler.handle(body);
             }
         } catch (Throwable throwable) {
             Log.w(TAG, "Control message failed", throwable);
-        }
-    }
-
-    private void handleDeviceCommand(JSONObject body) {
-        if (!identity.getInstallId().equals(body.optString("installId"))) {
-            Log.w(TAG, "Ignoring device.command for wrong installId");
-            return;
-        }
-        String command = body.optString("command", "").trim();
-        String requestId = body.optString("requestId", "").trim();
-        if (command.isEmpty()) {
-            sendDeviceCommandResult(body, "mira", false, "", "missing command");
-            return;
-        }
-        if (!"mira-logcat".equals(command)) {
-            sendDeviceCommandResult(
-                body,
-                command,
-                false,
-                "",
-                "unsupported command: " + command
-            );
-            return;
-        }
-        if (requestId.isEmpty()) {
-            Log.w(TAG, "Ignoring device.command for missing requestId");
-            return;
-        }
-        Log.i(TAG, "Device command scheduled command=" + safeLogValue(command) + " requestId=" + safeLogValue(requestId));
-        executor.execute(() -> runDeviceCommand(body, command));
-    }
-
-    private void runDeviceCommand(JSONObject body, String command) {
-        String requestId = body.optString("requestId", "").trim();
-        try {
-            List<String> args = parseCommandArguments(body);
-            long startMs = SystemClock.elapsedRealtime();
-            MiraCommandResult result = MiraCommandRouter.dispatch(this, command, args);
-            long elapsedMs = SystemClock.elapsedRealtime() - startMs;
-            if (result == null) {
-                sendDeviceCommandResult(body, command, false, "", "command execution failed: empty result");
-                return;
-            }
-            Log.i(TAG, "Device command finished requestId=" + safeLogValue(requestId) + " command=" + safeLogValue(command) + " exit=" + result.exitCode + " elapsedMs=" + elapsedMs);
-            JSONObject response = new JSONObject();
-            response.put("type", "device.command.result");
-            response.put("protocol", 1);
-            response.put("installId", identity.getInstallId());
-            response.put("requestId", requestId);
-            response.put("command", command);
-            response.put("ok", result.exitCode == 0);
-            response.put("exitCode", result.exitCode);
-            response.put("stdout", result.stdout);
-            response.put("stderr", result.stderr == null ? "" : result.stderr);
-            if (result.exitCode != 0 && (result.stderr == null || result.stderr.isEmpty())) {
-                response.put("error", "command failed with exit code " + result.exitCode);
-            }
-            if (result.exitCode == 0 && result.stderr != null && result.stderr.length() > 0) {
-                response.put("warning", result.stderr);
-            }
-            int stdoutBytes = result.stdout == null ? 0 : result.stdout.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-            int stderrBytes = result.stderr == null ? 0 : result.stderr.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-            Log.i(TAG, "Sending device command result requestId=" + safeLogValue(requestId) + " command=" + safeLogValue(command) + " stdoutBytes=" + stdoutBytes + " stderrBytes=" + stderrBytes);
-            MiraControlClient client = controlClient;
-            if (client != null) client.sendJsonDirect(response);
-        } catch (Throwable throwable) {
-            Log.w(TAG, "Device command failed requestId=" + safeLogValue(requestId) + " command=" + safeLogValue(command), throwable);
-            sendDeviceCommandResult(
-                body,
-                command,
-                false,
-                "",
-                "command execution failed: " + throwable.getMessage()
-            );
-        }
-    }
-
-    private List<String> parseCommandArguments(JSONObject body) throws JSONException {
-        JSONArray rawArgs = body.optJSONArray("arguments");
-        if (rawArgs == null) return java.util.Collections.emptyList();
-        List<String> args = new ArrayList<>();
-        for (int i = 0; i < rawArgs.length(); i++) {
-            String arg = rawArgs.optString(i, null);
-            if (arg == null) {
-                throw new JSONException("arguments[" + i + "] is not string");
-            }
-            args.add(arg);
-        }
-        return args;
-    }
-
-    private void sendDeviceCommandResult(JSONObject request, String command, boolean ok, String stdout, String error) {
-        try {
-            String requestId = request.optString("requestId", "").trim();
-            if (requestId.isEmpty()) {
-                Log.w(TAG, "Cannot send command result without requestId");
-                return;
-            }
-            JSONObject response = new JSONObject();
-            response.put("type", "device.command.result");
-            response.put("protocol", 1);
-            response.put("installId", identity.getInstallId());
-            response.put("requestId", requestId);
-            response.put("command", command);
-            response.put("ok", ok);
-            response.put("exitCode", ok ? 0 : 1);
-            response.put("stdout", stdout);
-            response.put("stderr", error == null ? "" : error);
-            if (!ok && error != null) response.put("error", error);
-            Log.i(TAG, "Sending device command error result requestId=" + safeLogValue(requestId) + " command=" + safeLogValue(command) + " error=" + safeLogValue(error));
-            MiraControlClient client = controlClient;
-            if (client != null) client.sendJsonDirect(response);
-        } catch (Throwable throwable) {
-            Log.w(TAG, "Unable to send device command result", throwable);
         }
     }
 

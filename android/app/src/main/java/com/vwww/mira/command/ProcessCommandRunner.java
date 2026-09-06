@@ -1,4 +1,4 @@
-package com.vwww.mira;
+package com.vwww.mira.command;
 
 import android.os.SystemClock;
 
@@ -8,21 +8,21 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-final class MiraProcessRunner {
+final class ProcessCommandRunner {
     private static final int MAX_OUTPUT_BYTES = 1024 * 1024;
 
-    private MiraProcessRunner() {
+    private ProcessCommandRunner() {
     }
 
-    static MiraCommandResult run(List<String> argv, long timeoutMs) {
+    static CommandResult run(List<String> argv, long timeoutMs) {
         if (argv == null || argv.isEmpty()) {
-            return MiraCommandResult.error("empty command\n");
+            return CommandResult.error("empty command\n");
         }
         Process process;
         try {
             process = new ProcessBuilder(argv).start();
         } catch (IOException failure) {
-            return MiraCommandResult.error(argv.get(0) + ": " + failure.getMessage() + "\n");
+            return CommandResult.error(argv.get(0) + ": " + failure.getMessage() + "\n");
         }
 
         LimitedOutput stdout = new LimitedOutput();
@@ -59,14 +59,14 @@ final class MiraProcessRunner {
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     process.destroy();
-                    return new MiraCommandResult(130, stdout.toText(), stderr.toText() + "\ncommand interrupted\n");
+                    return new CommandResult(130, stdout.toText(), stderr.toText() + "\ncommand interrupted\n");
                 }
             }
         }
 
         joinQuietly(stdoutThread);
         joinQuietly(stderrThread);
-        return new MiraCommandResult(exitCode, stdout.toText(), stderr.toText());
+        return new CommandResult(exitCode, stdout.toText(), stderr.toText());
     }
 
     private static void readStream(InputStream input, LimitedOutput output) {

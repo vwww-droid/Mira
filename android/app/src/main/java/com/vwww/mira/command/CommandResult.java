@@ -1,22 +1,22 @@
-package com.vwww.mira;
+package com.vwww.mira.command;
 
-final class MiraCommandResult {
+final class CommandResult {
     final int exitCode;
     final String stdout;
     final String stderr;
 
-    MiraCommandResult(int exitCode, String stdout, String stderr) {
+    CommandResult(int exitCode, String stdout, String stderr) {
         this.exitCode = sanitizeExitCode(exitCode);
         this.stdout = stdout == null ? "" : stdout;
         this.stderr = stderr == null ? "" : stderr;
     }
 
-    static MiraCommandResult ok(String stdout) {
-        return new MiraCommandResult(0, stdout, "");
+    static CommandResult ok(String stdout) {
+        return new CommandResult(0, stdout, "");
     }
 
-    static MiraCommandResult error(String stderr) {
-        return new MiraCommandResult(1, "", stderr == null ? "" : stderr);
+    static CommandResult error(String stderr) {
+        return new CommandResult(1, "", stderr == null ? "" : stderr);
     }
 
     private static int sanitizeExitCode(int exitCode) {

@@ -1,4 +1,4 @@
-package com.vwww.mira;
+package com.vwww.mira.command;
 
 import android.util.Base64;
 
@@ -12,11 +12,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 
-final class MiraCommandProtocol {
+final class LocalCommandProtocol {
     static final int PROTOCOL_VERSION = 1;
     private static final int MAX_FRAME_BYTES = 4 * 1024 * 1024;
 
-    private MiraCommandProtocol() {
+    private LocalCommandProtocol() {
     }
 
     static JSONObject readJson(InputStream input) throws IOException, JSONException {
@@ -41,7 +41,7 @@ final class MiraCommandProtocol {
         dataOutput.flush();
     }
 
-    static JSONObject resultJson(MiraCommandResult result) throws JSONException {
+    static JSONObject resultJson(CommandResult result) throws JSONException {
         return new JSONObject()
             .put("protocol", PROTOCOL_VERSION)
             .put("exitCode", result.exitCode)
@@ -49,7 +49,7 @@ final class MiraCommandProtocol {
             .put("stderr", result.stderr);
     }
 
-    static void writeTextResult(OutputStream output, MiraCommandResult result) throws IOException {
+    static void writeTextResult(OutputStream output, CommandResult result) throws IOException {
         String payload = "MIRA/1 EXIT " + result.exitCode + "\n" +
             "STDOUT " + encode(result.stdout) + "\n" +
             "STDERR " + encode(result.stderr) + "\n" +

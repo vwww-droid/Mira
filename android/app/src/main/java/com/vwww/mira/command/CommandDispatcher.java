@@ -1,4 +1,4 @@
-package com.vwww.mira;
+package com.vwww.mira.command;
 
 import android.app.Application;
 import android.content.Context;
@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-final class MiraCommandRouter {
+final class CommandDispatcher {
     private static final long DUMPSYS_TIMEOUT_MS = 10_000L;
     private static final long LOGCAT_TIMEOUT_MS = 30_000L;
     private static final long GETPROP_TIMEOUT_MS = 5_000L;
@@ -32,10 +32,10 @@ final class MiraCommandRouter {
         "window"
     ));
 
-    private MiraCommandRouter() {
+    private CommandDispatcher() {
     }
 
-    static MiraCommandResult dispatch(Context context, String tool, List<String> argv) {
+    static CommandResult dispatch(Context context, String tool, List<String> argv) {
         if (tool == null) tool = "";
         if (argv == null) argv = new ArrayList<>();
         try {
@@ -52,14 +52,14 @@ final class MiraCommandRouter {
                 case "mira-logcat":
                     return runLogcat(argv);
                 default:
-                    return MiraCommandResult.error("unsupported Mira command: " + tool + "\n");
+                    return CommandResult.error("unsupported Mira command: " + tool + "\n");
             }
         } catch (Throwable failure) {
-            return MiraCommandResult.error(tool + ": " + failure.getClass().getSimpleName() + ": " + failure.getMessage() + "\n");
+            return CommandResult.error(tool + ": " + failure.getClass().getSimpleName() + ": " + failure.getMessage() + "\n");
         }
     }
 
-    private static MiraCommandResult runAm(Context context, List<String> argv) throws UnsupportedEncodingException {
+    private static CommandResult runAm(Context context, List<String> argv) throws UnsupportedEncodingException {
         Application application = asApplication(context);
         List<String> effectiveArgv = argv;
         boolean help = argv.isEmpty() || "help".equals(argv.get(0)) || "--help".equals(argv.get(0)) || "--am-help".equals(argv.get(0)) || "-h".equals(argv.get(0));
@@ -76,7 +76,7 @@ final class MiraCommandRouter {
         }
 
         if (help) exitCode = 0;
-        return new MiraCommandResult(
+        return new CommandResult(
             exitCode,
             stdoutBuffer.toString(StandardCharsets.UTF_8.name()),
             stderrBuffer.toString(StandardCharsets.UTF_8.name())
@@ -89,22 +89,22 @@ final class MiraCommandRouter {
         throw new IllegalStateException("application context is not an Application");
     }
 
-    private static MiraCommandResult runSettings(Context context, List<String> argv) {
+    private static CommandResult runSettings(Context context, List<String> argv) {
         if (argv.isEmpty() || "help".equals(argv.get(0)) || "--help".equals(argv.get(0))) {
-            return MiraCommandResult.ok("usage: mira-settings get system|secure|global KEY\n" +
+            return CommandResult.ok("usage: mira-settings get system|secure|global KEY\n" +
                 "       mira-settings list system|secure|global\n");
         }
         String action = argv.get(0);
         if ("get".equals(action)) {
-            if (argv.size() != 3) return MiraCommandResult.error("usage: mira-settings get system|secure|global KEY\n");
+            if (argv.size() != 3) return CommandResult.error("usage: mira-settings get system|secure|global KEY\n");
             String value = getSetting(context, argv.get(1), argv.get(2));
-            return MiraCommandResult.ok((value == null ? "null" : value) + "\n");
+            return CommandResult.ok((value == null ? "null" : value) + "\n");
         }
         if ("list".equals(action)) {
-            if (argv.size() != 2) return MiraCommandResult.error("usage: mira-settings list system|secure|global\n");
-            return MiraCommandResult.ok(listSettings(context, argv.get(1)));
+            if (argv.size() != 2) return CommandResult.error("usage: mira-settings list system|secure|global\n");
+            return CommandResult.ok(listSettings(context, argv.get(1)));
         }
-        return MiraCommandResult.error("mira-settings: unsupported subcommand: " + action + "\n");
+        return CommandResult.error("mira-settings: unsupported subcommand: " + action + "\n");
     }
 
     private static String getSetting(Context context, String namespace, String key) {
@@ -150,20 +150,20 @@ final class MiraCommandRouter {
         return output.toString();
     }
 
-    private static MiraCommandResult runGetprop(List<String> argv) {
+    private static CommandResult runGetprop(List<String> argv) {
         if (argv.size() > 2 || (!argv.isEmpty() && ("help".equals(argv.get(0)) || "--help".equals(argv.get(0))))) {
-            return MiraCommandResult.ok("usage: mira-getprop [KEY [DEFAULT]]\n");
+            return CommandResult.ok("usage: mira-getprop [KEY [DEFAULT]]\n");
         }
         if (argv.isEmpty()) {
-            return MiraProcessRunner.run(Arrays.asList("/system/bin/getprop"), GETPROP_TIMEOUT_MS);
+            return ProcessCommandRunner.run(Arrays.asList("/system/bin/getprop"), GETPROP_TIMEOUT_MS);
         }
         String key = argv.get(0);
         String fallback = argv.size() == 2 ? argv.get(1) : "";
         String value = getSystemProperty(key, fallback);
         if (value == null) {
-            return MiraProcessRunner.run(Arrays.asList("/system/bin/getprop", key), GETPROP_TIMEOUT_MS);
+            return ProcessCommandRunner.run(Arrays.asList("/system/bin/getprop", key), GETPROP_TIMEOUT_MS);
         }
-        return MiraCommandResult.ok(value + "\n");
+        return CommandResult.ok(value + "\n");
     }
 
     private static String getSystemProperty(String key, String fallback) {
@@ -178,24 +178,24 @@ final class MiraCommandRouter {
         }
     }
 
-    private static MiraCommandResult runDumpsys(List<String> argv) {
+    private static CommandResult runDumpsys(List<String> argv) {
         if (argv.isEmpty() || "help".equals(argv.get(0)) || "--help".equals(argv.get(0))) {
-            return MiraCommandResult.ok("usage: mira-dumpsys battery|display|window|activity|power|input [args...]\n");
+            return CommandResult.ok("usage: mira-dumpsys battery|display|window|activity|power|input [args...]\n");
         }
         String service = argv.get(0);
         if (!DUMPSYS_ALLOWLIST.contains(service)) {
-            return MiraCommandResult.error("mira-dumpsys: service not allowed: " + service + "\n");
+            return CommandResult.error("mira-dumpsys: service not allowed: " + service + "\n");
         }
         List<String> command = new ArrayList<>();
         command.add("/system/bin/dumpsys");
         command.add("battery".equals(service) ? "batteryproperties" : service);
         command.addAll(argv.subList(1, argv.size()));
-        return MiraProcessRunner.run(command, DUMPSYS_TIMEOUT_MS);
+        return ProcessCommandRunner.run(command, DUMPSYS_TIMEOUT_MS);
     }
 
-    private static MiraCommandResult runLogcat(List<String> argv) {
+    private static CommandResult runLogcat(List<String> argv) {
         if (!argv.isEmpty() && ("help".equals(argv.get(0)) || "--help".equals(argv.get(0)))) {
-            return MiraCommandResult.ok("usage: mira-logcat [-d] [-t COUNT] [-T TIME] [-v FORMAT] [-s TAG] [TAG:LEVEL...]\n");
+            return CommandResult.ok("usage: mira-logcat [-d] [-t COUNT] [-T TIME] [-v FORMAT] [-s TAG] [TAG:LEVEL...]\n");
         }
         List<String> command = new ArrayList<>();
         command.add("/system/bin/logcat");
@@ -205,7 +205,7 @@ final class MiraCommandRouter {
         for (int i = 0; i < argv.size(); i++) {
             String arg = argv.get(i);
             if ("-c".equals(arg) || "--clear".equals(arg) || "-f".equals(arg) || "-r".equals(arg) || "-n".equals(arg) || "-G".equals(arg)) {
-                return MiraCommandResult.error("mira-logcat: option not allowed: " + arg + "\n");
+                return CommandResult.error("mira-logcat: option not allowed: " + arg + "\n");
             }
             if ("--tag".equals(arg)) {
                 command.add("-s");
@@ -233,7 +233,7 @@ final class MiraCommandRouter {
             command.add("-v");
             command.add("time");
         }
-        return MiraProcessRunner.run(command, LOGCAT_TIMEOUT_MS);
+        return ProcessCommandRunner.run(command, LOGCAT_TIMEOUT_MS);
     }
 
     private static String normalizeNamespace(String namespace) {

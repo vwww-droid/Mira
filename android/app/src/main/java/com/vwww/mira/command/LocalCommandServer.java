@@ -1,4 +1,4 @@
-package com.vwww.mira;
+package com.vwww.mira.command;
 
 import android.content.Context;
 import android.net.Credentials;
@@ -23,7 +23,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public final class MiraLocalCommandServer implements Closeable {
+public final class LocalCommandServer implements Closeable {
     private static final String TAG = "MiraCommandServer";
     private static final String SOCKET_NAME = "mira-command.sock";
 
@@ -36,7 +36,7 @@ public final class MiraLocalCommandServer implements Closeable {
     private LocalServerSocket serverSocket;
     private Thread acceptThread;
 
-    public MiraLocalCommandServer(Context context) {
+    public LocalCommandServer(Context context) {
         this.context = context.getApplicationContext();
         this.socketFile = socketFile(this.context);
     }
@@ -90,8 +90,8 @@ public final class MiraLocalCommandServer implements Closeable {
             Credentials credentials = socket.getPeerCredentials();
             int uid = credentials == null ? -1 : credentials.getUid();
             if (uid != Process.myUid()) {
-                MiraCommandProtocol.writeJson(socket.getOutputStream(), MiraCommandProtocol.resultJson(
-                    MiraCommandResult.error("mira command bridge rejected peer uid=" + uid + "\n")
+                LocalCommandProtocol.writeJson(socket.getOutputStream(), LocalCommandProtocol.resultJson(
+                    CommandResult.error("mira command bridge rejected peer uid=" + uid + "\n")
                 ));
                 return;
             }
@@ -101,15 +101,15 @@ public final class MiraLocalCommandServer implements Closeable {
                 if (isTextProtocol(prefix)) {
                     String line = readTextLine(input, prefix);
                     TextRequest request = parseTextRequest(line);
-                    MiraCommandResult result = MiraCommandRouter.dispatch(context, request.tool, request.argv);
-                    MiraCommandProtocol.writeTextResult(socket.getOutputStream(), result);
+                    CommandResult result = CommandDispatcher.dispatch(context, request.tool, request.argv);
+                    LocalCommandProtocol.writeTextResult(socket.getOutputStream(), result);
                 } else {
                     input.unread(prefix);
-                    JSONObject request = MiraCommandProtocol.readJson(input);
+                    JSONObject request = LocalCommandProtocol.readJson(input);
                     String tool = request.optString("tool", "");
                     List<String> argv = toStringList(request.optJSONArray("argv"));
-                    MiraCommandResult result = MiraCommandRouter.dispatch(context, tool, argv);
-                    MiraCommandProtocol.writeJson(socket.getOutputStream(), MiraCommandProtocol.resultJson(result));
+                    CommandResult result = CommandDispatcher.dispatch(context, tool, argv);
+                    LocalCommandProtocol.writeJson(socket.getOutputStream(), LocalCommandProtocol.resultJson(result));
                 }
             }
         } catch (Throwable failure) {
@@ -157,7 +157,7 @@ public final class MiraLocalCommandServer implements Closeable {
         }
         List<String> argv = new ArrayList<>();
         for (int i = 2; i < parts.length; i++) {
-            if (!parts[i].isEmpty()) argv.add(MiraCommandProtocol.decode(parts[i]));
+            if (!parts[i].isEmpty()) argv.add(LocalCommandProtocol.decode(parts[i]));
         }
         return new TextRequest(parts[1], argv);
     }

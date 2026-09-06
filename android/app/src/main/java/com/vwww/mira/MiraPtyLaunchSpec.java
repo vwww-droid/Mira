@@ -1,5 +1,7 @@
 package com.vwww.mira;
 
+import com.vwww.mira.command.LocalCommandServer;
+
 import android.content.Context;
 
 import java.io.File;
@@ -63,7 +65,7 @@ public final class MiraPtyLaunchSpec {
         String basePath = prefix + "/bin:/system/bin:/system/xbin";
         String toolboxPath = toolbox == null ? "" : toolbox.pathPrefix();
         String path = toolbox == null ? basePath : toolboxPath + ":" + basePath;
-        String commandSocket = MiraLocalCommandServer.socketFile(context).getAbsolutePath();
+        String commandSocket = LocalCommandServer.socketFile(context).getAbsolutePath();
 
         String[] args = new String[0];
         String[] env = new String[] {
