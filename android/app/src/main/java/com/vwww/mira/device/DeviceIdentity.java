@@ -1,4 +1,4 @@
-package com.vwww.mira;
+package com.vwww.mira.device;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -13,7 +13,7 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.UUID;
 
-public final class MiraIdentity {
+public final class DeviceIdentity {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final String PREFS = "mira_identity";
     private static final String KEY_INSTALL_ID = "install_id";
@@ -22,7 +22,7 @@ public final class MiraIdentity {
     private final Context context;
     private final SharedPreferences preferences;
 
-    public MiraIdentity(Context context) {
+    public DeviceIdentity(Context context) {
         this.context = context.getApplicationContext();
         this.preferences = this.context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         ensureIdentity();

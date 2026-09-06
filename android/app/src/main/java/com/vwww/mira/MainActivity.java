@@ -1,5 +1,6 @@
 package com.vwww.mira;
 
+import com.vwww.mira.device.DeviceIdentity;
 import com.vwww.mira.screen.AppScreenCapture;
 
 import android.app.Activity;
@@ -29,7 +30,7 @@ public final class MainActivity extends Activity {
     public static final String EXTRA_RELAY_URL = "mira_relay_url";
     public static final String EXTRA_AUTO_CONNECT = "mira_auto_connect";
 
-    private MiraIdentity identity;
+    private DeviceIdentity identity;
     private EditText relayUrlInput;
     private TextView statusText;
     private boolean receiverRegistered;
@@ -45,7 +46,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        identity = new MiraIdentity(this);
+        identity = new DeviceIdentity(this);
         showControlPage();
         applyLaunchIntent(getIntent());
         MiraOutlineCollector.getInstance().register(this);

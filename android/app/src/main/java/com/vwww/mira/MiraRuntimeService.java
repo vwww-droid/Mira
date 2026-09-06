@@ -3,6 +3,9 @@ package com.vwww.mira;
 import com.vwww.mira.discovery.LanDiscoveryServer;
 import com.vwww.mira.command.LocalCommandServer;
 import com.vwww.mira.command.RemoteCommandHandler;
+import com.vwww.mira.device.DeviceIdentity;
+import com.vwww.mira.relay.DeviceControlClient;
+import com.vwww.mira.relay.TerminalRelayClient;
 import com.vwww.mira.runtime.RuntimeInstaller;
 import com.vwww.mira.screen.AppScreenCapture;
 import com.vwww.mira.screen.AppScreenStreamer;
@@ -42,15 +45,15 @@ public final class MiraRuntimeService extends Service {
     private final AtomicInteger lifecycleGeneration = new AtomicInteger(0);
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
-    private MiraIdentity identity;
+    private DeviceIdentity identity;
     private RuntimeInstaller runtimeInstaller;
     private volatile LanDiscoveryServer discoveryServer;
     private String deviceName = "Mira Device";
     private String relayUrl = "";
     private int discoveryPort = 8766;
     private volatile String state = "idle";
-    private volatile MiraRelayClient relayClient;
-    private volatile MiraControlClient controlClient;
+    private volatile TerminalRelayClient relayClient;
+    private volatile DeviceControlClient controlClient;
     private volatile AppScreenStreamer screenStreamer;
     private volatile LocalCommandServer commandServer;
     private RemoteCommandHandler remoteCommandHandler;
@@ -61,14 +64,14 @@ public final class MiraRuntimeService extends Service {
     public void onCreate() {
         super.onCreate();
         activeService = this;
-        identity = new MiraIdentity(this);
+        identity = new DeviceIdentity(this);
         runtimeInstaller = new RuntimeInstaller(this);
         remoteCommandHandler = new RemoteCommandHandler(
             this,
             identity.getInstallId(),
             executor,
             response -> {
-                MiraControlClient client = controlClient;
+                DeviceControlClient client = controlClient;
                 if (client != null) client.sendJsonDirect(response);
             }
         );
@@ -158,14 +161,14 @@ public final class MiraRuntimeService extends Service {
 
     private void startControlClient() {
         publishStatus("connecting relay");
-        controlClient = new MiraControlClient(
+        controlClient = new DeviceControlClient(
             this,
             identity,
             deviceName,
             relayUrl,
             () -> state,
             MiraOutlineCollector.getInstance()::currentOutline,
-            new MiraControlClient.Callback() {
+            new DeviceControlClient.Callback() {
                 @Override
                 public void onControlMessage(JSONObject message) {
                     handleControlMessage(message);
@@ -273,7 +276,7 @@ public final class MiraRuntimeService extends Service {
     }
 
     private void requestControlOutline() {
-        MiraControlClient client = controlClient;
+        DeviceControlClient client = controlClient;
         if (client != null) client.sendOutline();
     }
 
@@ -355,7 +358,7 @@ public final class MiraRuntimeService extends Service {
             response.put("message", result == null ? "input failed" : result.message);
             if (result == null || !result.ok) response.put("error", result == null ? "input failed" : result.message);
             if (result != null && result.text != null && ("copy".equals(kind) || !result.text.isEmpty())) response.put("text", result.text);
-            MiraControlClient client = controlClient;
+            DeviceControlClient client = controlClient;
             if (client != null) client.sendJson(response);
         } catch (Throwable throwable) {
             Log.w(TAG, "Unable to send screen input result", throwable);
@@ -371,7 +374,7 @@ public final class MiraRuntimeService extends Service {
         if (relayClient != null) return false;
         String sessionId = body.optString("sessionId");
         state = "opening";
-        relayClient = new MiraRelayClient(
+        relayClient = new TerminalRelayClient(
             this,
             runtimeInstaller,
             identity,

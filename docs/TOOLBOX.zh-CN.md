@@ -61,7 +61,7 @@ tools/toolbox/download-lamda-busybox.sh
 
 ```text
 Open Terminal
-  -> MiraRelayClient
+  -> relay.TerminalRelayClient
   -> terminal.SessionToolbox.prepare(sessionId)
   -> 按设备 ABI 选择 BusyBox 资产
   -> /data/user/0/com.vwww.mira/cache/mira-sessions/<sessionId>/bin/busybox

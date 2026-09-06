@@ -1,4 +1,4 @@
-package com.vwww.mira;
+package com.vwww.mira.device;
 
 import android.app.ActivityManager;
 import android.content.Context;
@@ -11,14 +11,14 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.util.Locale;
 
-public final class MiraDeviceMetrics {
+public final class DeviceMetrics {
     private static long lastCpuTotal;
     private static long lastCpuIdle;
     private static long lastRxBytes = -1;
     private static long lastTxBytes = -1;
     private static long lastNetworkAt;
 
-    private MiraDeviceMetrics() {
+    private DeviceMetrics() {
     }
 
     public static synchronized JSONObject snapshot(Context context) throws Exception {

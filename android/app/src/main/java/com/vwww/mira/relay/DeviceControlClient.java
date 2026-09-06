@@ -1,4 +1,7 @@
-package com.vwww.mira;
+package com.vwww.mira.relay;
+
+import com.vwww.mira.device.DeviceIdentity;
+import com.vwww.mira.device.DeviceMetrics;
 
 import android.content.Context;
 import android.util.Log;
@@ -6,17 +9,15 @@ import android.util.Log;
 import org.json.JSONObject;
 
 import java.io.Closeable;
-import java.net.URI;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
-import java.util.Locale;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public final class MiraControlClient implements Closeable {
+public final class DeviceControlClient implements Closeable {
     public interface Callback {
         void onControlMessage(JSONObject message);
         void onControlStatus(String status);
@@ -35,7 +36,7 @@ public final class MiraControlClient implements Closeable {
     private static final long METRICS_PERIOD_SECONDS = 1;
 
     private final Context context;
-    private final MiraIdentity identity;
+    private final DeviceIdentity identity;
     private final String deviceName;
     private final String relayUrl;
     private final StateProvider stateProvider;
@@ -49,12 +50,12 @@ public final class MiraControlClient implements Closeable {
         return thread;
     });
 
-    private volatile MiraWebSocketConnection websocket;
+    private volatile WebSocketConnection websocket;
     private Thread workerThread;
 
-    public MiraControlClient(
+    public DeviceControlClient(
         Context context,
-        MiraIdentity identity,
+        DeviceIdentity identity,
         String deviceName,
         String relayUrl,
         StateProvider stateProvider,
@@ -81,8 +82,8 @@ public final class MiraControlClient implements Closeable {
     private void runLoop() {
         while (running.get()) {
             try {
-                String controlWs = controlWsUrl(relayUrl);
-                MiraWebSocketConnection connected = MiraWebSocketConnection.connect(controlWs);
+                String controlWs = RelayEndpoint.controlWebSocket(relayUrl);
+                WebSocketConnection connected = WebSocketConnection.connect(controlWs);
                 if (!running.get()) {
                     connected.close();
                     break;
@@ -107,9 +108,9 @@ public final class MiraControlClient implements Closeable {
 
     private void readControlLoop() throws Exception {
         while (running.get()) {
-            MiraWebSocketConnection current = websocket;
+            WebSocketConnection current = websocket;
             if (current == null) break;
-            MiraWebSocketConnection.WebSocketFrame frame = current.readFrame();
+            WebSocketConnection.WebSocketFrame frame = current.readFrame();
             if (frame.isClose()) break;
             if (frame.isPing()) {
                 current.sendPong(frame.payload);
@@ -144,7 +145,7 @@ public final class MiraControlClient implements Closeable {
     private void sendJsonDirect(JSONObject json, String mode) {
         if (json == null) return;
         try {
-            MiraWebSocketConnection current = websocket;
+            WebSocketConnection current = websocket;
             if (!running.get() || current == null) return;
             current.sendJson(json);
         } catch (Throwable throwable) {
@@ -167,7 +168,7 @@ public final class MiraControlClient implements Closeable {
     private void sendOutlineIfReady(String trigger) {
         if (!running.get() || !controlReady.get() || outlineProvider == null) return;
         try {
-            MiraWebSocketConnection current = websocket;
+            WebSocketConnection current = websocket;
             if (current == null) return;
             JSONObject outline = outlineProvider.currentOutline();
             int nodes = outline.optJSONArray("nodes") == null ? -1 : outline.optJSONArray("nodes").length();
@@ -191,7 +192,7 @@ public final class MiraControlClient implements Closeable {
     private void sendMetricsIfReady() {
         if (!running.get() || !controlReady.get()) return;
         try {
-            MiraWebSocketConnection current = websocket;
+            WebSocketConnection current = websocket;
             if (current == null) return;
             JSONObject message = new JSONObject();
             message.put("type", "device.metrics");
@@ -199,7 +200,7 @@ public final class MiraControlClient implements Closeable {
             message.put("installId", identity.getInstallId());
             message.put("deviceName", deviceName);
             message.put("state", stateProvider == null ? "idle" : stateProvider.currentState());
-            message.put("metrics", MiraDeviceMetrics.snapshot(context));
+            message.put("metrics", DeviceMetrics.snapshot(context));
             current.sendJson(message);
         } catch (Throwable throwable) {
             Log.w(TAG, "Metrics send failed", throwable);
@@ -210,34 +211,9 @@ public final class MiraControlClient implements Closeable {
         JSONObject json = identity.deviceMeta(deviceName, stateProvider == null ? "idle" : stateProvider.currentState(), "");
         json.put("type", "device.register");
         json.put("transport", "control");
-        json.put("relayUrl", normalizeRelayUrl(relayUrl));
+        json.put("relayUrl", RelayEndpoint.normalizeBaseUrl(relayUrl));
         return json;
     }
-
-    private String normalizeRelayUrl(String value) {
-        String raw = value == null ? "" : value.trim();
-        if (raw.isEmpty()) return "";
-        if (!raw.contains("://")) return "https://" + raw;
-        return raw;
-    }
-
-    private String controlWsUrl(String value) throws Exception {
-        String raw = value == null ? "" : value.trim();
-        if (raw.isEmpty()) throw new IllegalArgumentException("Relay URL is empty");
-        if (!raw.contains("://")) raw = "https://" + raw;
-        URI uri = new URI(raw);
-        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
-        if ("http".equals(scheme)) scheme = "ws";
-        else if ("https".equals(scheme)) scheme = "wss";
-        else if (!"ws".equals(scheme) && !"wss".equals(scheme)) throw new IllegalArgumentException("Unsupported Relay URL scheme");
-        String authority = uri.getRawAuthority();
-        if (authority == null || authority.trim().isEmpty()) throw new IllegalArgumentException("Relay URL host is empty");
-        String path = uri.getRawPath();
-        if (path == null || path.isEmpty() || "/".equals(path)) path = "/ws/control";
-        else if (!path.endsWith("/ws/control")) path = path.replaceAll("/+$", "") + "/ws/control";
-        return scheme + "://" + authority + path;
-    }
-
 
     private static String safeLogValue(String value) {
         if (value == null) return "";
@@ -281,7 +257,7 @@ public final class MiraControlClient implements Closeable {
 
     private void closeSocketOnly() {
         controlReady.set(false);
-        MiraWebSocketConnection closing = websocket;
+        WebSocketConnection closing = websocket;
         websocket = null;
         if (closing != null) closing.close();
     }

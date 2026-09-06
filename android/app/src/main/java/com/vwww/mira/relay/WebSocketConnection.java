@@ -1,4 +1,4 @@
-package com.vwww.mira;
+package com.vwww.mira.relay;
 
 import android.os.Looper;
 import android.util.Base64;
@@ -22,7 +22,7 @@ import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
-public final class MiraWebSocketConnection implements Closeable {
+public final class WebSocketConnection implements Closeable {
     private static final String TAG = "MiraWebSocket";
     private static final int MAX_FRAME_SIZE = 1024 * 1024;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
@@ -32,13 +32,13 @@ public final class MiraWebSocketConnection implements Closeable {
     private volatile InputStream input;
     private volatile OutputStream output;
 
-    private MiraWebSocketConnection(Socket socket, InputStream input, OutputStream output) {
+    private WebSocketConnection(Socket socket, InputStream input, OutputStream output) {
         this.socket = socket;
         this.input = input;
         this.output = output;
     }
 
-    public static MiraWebSocketConnection connect(String url) throws Exception {
+    public static WebSocketConnection connect(String url) throws Exception {
         URI uri = new URI(url);
         String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
         boolean tls;
@@ -84,7 +84,7 @@ public final class MiraWebSocketConnection implements Closeable {
             throw new IOException("WebSocket handshake failed: " + response.split("\r\n", 2)[0]);
         }
         connected.setSoTimeout(0);
-        return new MiraWebSocketConnection(connected, input, output);
+        return new WebSocketConnection(connected, input, output);
     }
 
     private static Socket openSocket(String host, int port, boolean tls) throws IOException {

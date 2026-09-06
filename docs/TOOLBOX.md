@@ -61,7 +61,7 @@ The repository still keeps `tools/toolbox/build-busybox-android.sh` as a self-bu
 
 ```text
 Open Terminal
-  -> MiraRelayClient
+  -> relay.TerminalRelayClient
   -> terminal.SessionToolbox.prepare(sessionId)
   -> Select BusyBox asset by device ABI
   -> /data/user/0/com.vwww.mira/cache/mira-sessions/<sessionId>/bin/busybox

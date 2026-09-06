@@ -72,8 +72,9 @@ Mira 当前 v1.0.0 是研究原型和参考实现, 重点不是做完整企业�
 - [x] 运行服务更名 `MiraRuntimeService`, 同步 Manifest 和调用方并保留原 action/extras 字符串. `discovery/LanDiscoveryServer` 通过回调完成 UDP 发现与 HTTP 唤醒, 自主管理 socket、客户端和 multicast lock; 包内 `HttpRequestParser` 负责有界协议读写. close 后实例不可复用, runtime 每次启动创建新实例; 跨组件关闭不嵌套持有 runtime/server 锁. 回归命令: `python3 -m unittest tests.test_android_discovery -v`.
 - [x] 命令模块迁入 `command` 包: `LocalCommandServer` 提供本机 socket 入口, `RemoteCommandHandler` 负责远端命令校验和结果返回, dispatcher/protocol/result/process 实现保持包内可见. 保留 same-UID 校验、socket 路径、文本/JSON 协议和远端 logcat 白名单. `python3 -m unittest tests.test_android_commands -v` 通过; Pixel 4 实测 shell wrappers、本机 JSON socket、远端 logcat 与屏幕推流通过.
 - [x] 运行时和终端迁入 `runtime`/`terminal`: `RuntimeInstaller` 负责安装与状态, 包内 `RuntimeScripts` 生成原有脚本, `VerifiedExtraction` 校验写入; `PtyFactory`/`PtySession` 提供会话入口, 包内 `NativePtyProcess` 和 `PtyLaunchSpec` 管理 JNI 与启动参数, `SessionToolbox`/`LocalTerminalServer` 分别管理会话工具和本机终端. JNI 类路径及注册同步, 日志标签、管理标记和脚本字节保留. 宿主测试 37 项通过; 脚本提取后相关 3 项重跑通过; Pixel 4 验证本机鉴权、PTY 读写/resize、远端命令与 Python/Frida 导入, 强制安装状态恢复后 7 个脚本哈希及状态内容一致.
-- [ ] 按职责逐步建立 `runtime`, `terminal`, `relay`, `command`, `screen` 包. 明确命名候选: `MiraBootstrap` -> `RuntimeInstaller`, `MiraToolbox` -> `SessionToolbox`, `MiraRelayClient` -> `TerminalRelayClient`, `MiraControlClient` -> `DeviceControlClient`. 包内实现类不再重复 Mira 前缀; Application/Service 等 App 入口可保留. 迁移 `MiraPtyProcess` 时必须同步 JNI 注册类路径与外部引用.
-- [ ] 收敛 control/screen 的重复 Relay URL 构造, 为路径前缀、已有 endpoint 与 scheme 转换建立兼容用例.
+- [x] 建立 `runtime`, `terminal`, `relay`, `device`, `command`, `screen` 职责包. `TerminalRelayClient`/`DeviceControlClient` 分别管理终端会话与设备控制, `WebSocketConnection` 提供共享传输, `DeviceIdentity`/`DeviceMetrics` 提供设备信息. 内部实现去除重复 Mira 前缀, App 入口保留. Pixel 4 覆盖安装后 identity preferences 哈希不变, 遥测更新、PTY、远端 logcat、屏幕推流正常.
+- [x] `relay/RelayEndpoint` 收敛 control/screen 的重复 URL 构造; 宿主 golden 测试覆盖 scheme、IPv6、路径前缀、已有 endpoint、尾斜杠、转义路径、query/fragment 与非法 URI, 保留原兼容语义. 回归命令: `python3 -m unittest tests.test_relay_endpoint -v`.
+- [ ] 将 View 轮廓与触摸日志归入屏幕模块, 移除轮廓采集对具体 Service 的反向依赖; 抽出运行服务中的远程输入处理, 使 App 入口专注生命周期与组件装配.
 - [ ] 评估共享 C 的最小切口: Android `screen/AvcBitstream`, `screen/ScreenVideoPacket` 与 iOS `MiraRemoteServices.swift` 中的 Annex B/MHS1 处理. 先对齐两端输入契约、NAL 长度前缀规则与序号策略, 再决定迁移; Java MediaCodec/View/Settings/生命周期保留在 Android 层, PTY/进程底层继续复用现有 native 实现. 不将具体检测策略写死进 C 或 Java 基座.
 
 ### 产品与自动化

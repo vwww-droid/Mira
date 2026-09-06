@@ -11,16 +11,15 @@ import android.view.Surface;
 
 import org.json.JSONObject;
 
-import com.vwww.mira.MiraIdentity;
-import com.vwww.mira.MiraWebSocketConnection;
+import com.vwww.mira.device.DeviceIdentity;
+import com.vwww.mira.relay.RelayEndpoint;
+import com.vwww.mira.relay.WebSocketConnection;
 
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
-import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -35,14 +34,14 @@ public final class AppScreenStreamer implements Closeable {
     private static final long ENCODER_CONFIGURE_TIMEOUT_MS = 3000;
     private static final long FIRST_FRAME_TIMEOUT_MS = 3000;
 
-    private final MiraIdentity identity;
+    private final DeviceIdentity identity;
     private final String deviceName;
     private final String relayUrl;
     private final AvcEncoderSelector encoderSelector;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     private volatile Thread workerThread;
-    private volatile MiraWebSocketConnection websocket;
+    private volatile WebSocketConnection websocket;
     private volatile MediaCodec encoder;
     private volatile Surface inputSurface;
     private volatile long lastFailureLogAt;
@@ -51,7 +50,7 @@ public final class AppScreenStreamer implements Closeable {
     private String codecString = CODEC_AVC_BASELINE;
     private AvcEncoderProfile activeProfile;
 
-    public AppScreenStreamer(Context context, MiraIdentity identity, String deviceName, String relayUrl) {
+    public AppScreenStreamer(Context context, DeviceIdentity identity, String deviceName, String relayUrl) {
         this.identity = identity;
         this.deviceName = deviceName;
         this.relayUrl = relayUrl;
@@ -81,7 +80,7 @@ public final class AppScreenStreamer implements Closeable {
                 }
                 AvcEncoderProfile profile = configureEncoder(rootSize);
                 if (!running.get()) break;
-                MiraWebSocketConnection connected = MiraWebSocketConnection.connect(screenDeviceWsUrl(relayUrl));
+                WebSocketConnection connected = WebSocketConnection.connect(RelayEndpoint.screenWebSocket(relayUrl));
                 websocket = connected;
                 connected.sendJson(screenInfo(profile, rootSize));
                 Log.i(TAG, "screen video info sent codec=" + codecString + " profile=" + profile.describe() + " source=" + rootSize.width + "x" + rootSize.height);
@@ -255,7 +254,7 @@ public final class AppScreenStreamer implements Closeable {
         }
     }
 
-    private void encodeLoop(MiraWebSocketConnection connected, AvcEncoderProfile profile, AppScreenCapture.RootSize rootSize) throws Exception {
+    private void encodeLoop(WebSocketConnection connected, AvcEncoderProfile profile, AppScreenCapture.RootSize rootSize) throws Exception {
         MediaCodec currentEncoder = encoder;
         Surface currentSurface = inputSurface;
         if (currentEncoder == null || currentSurface == null) return;
@@ -288,7 +287,7 @@ public final class AppScreenStreamer implements Closeable {
     private boolean drainEncoder(
         MediaCodec currentEncoder,
         MediaCodec.BufferInfo bufferInfo,
-        MiraWebSocketConnection connected,
+        WebSocketConnection connected,
         AvcEncoderProfile profile,
         AppScreenCapture.RootSize rootSize,
         boolean endOfStream
@@ -394,23 +393,6 @@ public final class AppScreenStreamer implements Closeable {
         output.write(data, 0, data.length);
     }
 
-    private String screenDeviceWsUrl(String value) throws Exception {
-        String raw = value == null ? "" : value.trim();
-        if (raw.isEmpty()) throw new IllegalArgumentException("Relay URL is empty");
-        if (!raw.contains("://")) raw = "https://" + raw;
-        URI uri = new URI(raw);
-        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
-        if ("http".equals(scheme)) scheme = "ws";
-        else if ("https".equals(scheme)) scheme = "wss";
-        else if (!"ws".equals(scheme) && !"wss".equals(scheme)) throw new IllegalArgumentException("Unsupported Relay URL scheme");
-        String authority = uri.getRawAuthority();
-        if (authority == null || authority.trim().isEmpty()) throw new IllegalArgumentException("Relay URL host is empty");
-        String path = uri.getRawPath();
-        if (path == null || path.isEmpty() || "/".equals(path)) path = "/ws/screen/device";
-        else if (!path.endsWith("/ws/screen/device")) path = path.replaceAll("/+$", "") + "/ws/screen/device";
-        return scheme + "://" + authority + path;
-    }
-
     private void logFailure(String message, Throwable throwable) {
         long now = System.currentTimeMillis();
         if (now - lastFailureLogAt < 5000) return;
@@ -428,7 +410,7 @@ public final class AppScreenStreamer implements Closeable {
     }
 
     private void closeSocketOnly() {
-        MiraWebSocketConnection closing = websocket;
+        WebSocketConnection closing = websocket;
         websocket = null;
         if (closing != null) closing.close();
     }
