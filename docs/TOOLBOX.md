@@ -62,13 +62,13 @@ The repository still keeps `tools/toolbox/build-busybox-android.sh` as a self-bu
 ```text
 Open Terminal
   -> MiraRelayClient
-  -> MiraToolbox.prepare(sessionId)
+  -> terminal.SessionToolbox.prepare(sessionId)
   -> Select BusyBox asset by device ABI
   -> /data/user/0/com.vwww.mira/cache/mira-sessions/<sessionId>/bin/busybox
   -> Run busybox --list to get the real supported applets
   -> Create symlinks for all actually supported applets
   -> Copy manifest.json to the session root
-  -> MiraPtyFactory prepends the session bin directory to PATH
+  -> terminal.PtyFactory prepends the session bin directory to PATH
   -> Create PTY
   -> Remove mira-sessions/<sessionId> after session.close
 ```

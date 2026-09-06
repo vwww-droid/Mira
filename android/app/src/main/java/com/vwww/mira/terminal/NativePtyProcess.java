@@ -1,11 +1,11 @@
-package com.vwww.mira;
+package com.vwww.mira.terminal;
 
 import android.util.Log;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public final class MiraPtyProcess implements MiraPtySession {
+final class NativePtyProcess implements PtySession {
     private static final String TAG = "MiraPtyProcess";
     private static final AtomicBoolean NATIVE_LIBRARY_LOADED = new AtomicBoolean(false);
     private static final Object NATIVE_LIBRARY_LOCK = new Object();
@@ -31,7 +31,7 @@ public final class MiraPtyProcess implements MiraPtySession {
         }
     }
 
-    public MiraPtyProcess(MiraPtyLaunchSpec spec) {
+    NativePtyProcess(PtyLaunchSpec spec) {
         this(
             spec.getShellPath(),
             spec.getCwd(),
@@ -44,11 +44,11 @@ public final class MiraPtyProcess implements MiraPtySession {
         );
     }
 
-    public MiraPtyProcess(String shellPath, String cwd, String[] args, String[] env, int rows, int columns) {
+    NativePtyProcess(String shellPath, String cwd, String[] args, String[] env, int rows, int columns) {
         this(shellPath, cwd, args, env, rows, columns, 0, 0);
     }
 
-    public MiraPtyProcess(String shellPath, String cwd, String[] args, String[] env, int rows, int columns, int cellWidth, int cellHeight) {
+    NativePtyProcess(String shellPath, String cwd, String[] args, String[] env, int rows, int columns, int cellWidth, int cellHeight) {
         this.cellWidth = Math.max(cellWidth, 0);
         this.cellHeight = Math.max(cellHeight, 0);
         Log.i(TAG, "nativeOpen shell=" + shellPath + " cwd=" + cwd + " rows=" + rows + " cols=" + columns + " args=" + (args == null ? 0 : args.length));

@@ -1,4 +1,6 @@
-package com.vwww.mira;
+package com.vwww.mira.runtime;
+
+import com.vwww.mira.BuildConfig;
 
 import android.content.Context;
 import android.content.res.AssetManager;
@@ -21,13 +23,11 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 /**
- * Mira 最小 bootstrap, 用于创建 APK 私有沙盒里的类 Termux 用户空间骨架。
- *
- * 当前只提供 files/usr/bin/sh wrapper, 不安装 apt 或完整 Termux 包。
+ * Installs Mira's APK-bundled runtime and managed shell scripts into the app's
+ * private files directory.
  */
-public final class MiraBootstrap {
+public final class RuntimeInstaller {
     private static final String TAG = "MiraBootstrap";
-    private static final String MANAGED_MARKER = "# Managed by MiraBootstrap";
     private static final String BOOTSTRAP_PREFIX_ASSET_ROOT = "bootstrap/prefix";
     private static final String INSTALL_STATE_FILE_NAME = ".mira-bootstrap-state";
     private static final int INSTALL_STATE_VERSION = BuildConfig.MIRA_BOOTSTRAP_STATE_VERSION;
@@ -41,8 +41,9 @@ public final class MiraBootstrap {
     private final File installStateFile;
     private final AssetManager assets;
     private final String packageCodePath;
+    private final RuntimeScripts scripts;
 
-    public MiraBootstrap(Context context) {
+    public RuntimeInstaller(Context context) {
         Context appContext = context.getApplicationContext();
         assets = appContext.getAssets();
         filesDir = appContext.getFilesDir();
@@ -51,6 +52,7 @@ public final class MiraBootstrap {
         tmpDir = new File(appContext.getCacheDir(), "tmp");
         installStateFile = new File(filesDir, INSTALL_STATE_FILE_NAME);
         packageCodePath = appContext.getPackageCodePath();
+        scripts = new RuntimeScripts(prefixDir, homeDir, tmpDir);
     }
 
     public void installIfNeeded() throws IOException {
@@ -86,13 +88,13 @@ public final class MiraBootstrap {
                 mkdir(new File(prefixDir, "var"));
                 mkdir(new File(prefixDir, "share"));
 
-                writeManagedExecutable(new File(prefixDir, "bin/sh"), shellWrapper(), "export MIRA_SANDBOX=1", "export ENV=\"$HOME/.profile\"");
-                writeManagedExecutable(new File(prefixDir, "bin/mira-info"), miraInfoScript(), "echo \"Mira sandbox\"");
-                writeManagedExecutable(new File(prefixDir, "bin/frida"), fridaWrapperScript());
+                writeManagedExecutable(new File(prefixDir, "bin/sh"), scripts.shellWrapper(), "export MIRA_SANDBOX=1", "export ENV=\"$HOME/.profile\"");
+                writeManagedExecutable(new File(prefixDir, "bin/mira-info"), scripts.miraInfoScript(), "echo \"Mira sandbox\"");
+                writeManagedExecutable(new File(prefixDir, "bin/frida"), scripts.fridaWrapperScript());
                 writeMiraCommandWrappers();
-                writeManagedText(new File(prefixDir, "etc/profile.d/mira-env.sh"), profileHookScript());
-                writeManagedText(new File(prefixDir, "etc/profile"), profileScript(), "# Mira minimal profile");
-                writeManagedText(new File(homeDir, ".profile"), homeProfileScript(), "# Mira shell profile");
+                writeManagedText(new File(prefixDir, "etc/profile.d/mira-env.sh"), scripts.profileHookScript());
+                writeManagedText(new File(prefixDir, "etc/profile"), scripts.profileScript(), "# Mira minimal profile");
+                writeManagedText(new File(homeDir, ".profile"), scripts.homeProfileScript(), "# Mira shell profile");
                 writeInstallState();
                 INSTALL_COMPLETED.set(true);
                 Log.i(TAG, "Bootstrap install complete in " + (SystemClock.elapsedRealtime() - startedAt) + "ms");
@@ -135,7 +137,7 @@ public final class MiraBootstrap {
     private boolean isBootstrapCurrent() throws IOException {
         if (!installStateFile.isFile()) return false;
         String state = readText(installStateFile);
-        if (!state.equals(MANAGED_MARKER + "\nversion=" + INSTALL_STATE_VERSION + "\n")) return false;
+        if (!state.equals(RuntimeScripts.MANAGED_MARKER + "\nversion=" + INSTALL_STATE_VERSION + "\n")) return false;
         return prefixDir.isDirectory()
             && homeDir.isDirectory()
             && new File(prefixDir, "bin/sh").isFile()
@@ -166,10 +168,10 @@ public final class MiraBootstrap {
     }
 
     private void writeInstallState() throws IOException {
-        byte[] state = (MANAGED_MARKER + "\nversion=" + INSTALL_STATE_VERSION + "\n").getBytes(StandardCharsets.UTF_8);
+        byte[] state = (RuntimeScripts.MANAGED_MARKER + "\nversion=" + INSTALL_STATE_VERSION + "\n").getBytes(StandardCharsets.UTF_8);
         CRC32 crc = new CRC32();
         crc.update(state);
-        MiraVerifiedExtraction.extract(() -> new ByteArrayInputStream(state),
+        VerifiedExtraction.extract(() -> new ByteArrayInputStream(state),
             installStateFile, state.length, crc.getValue(), false);
     }
 
@@ -201,7 +203,7 @@ public final class MiraBootstrap {
     private boolean shouldWriteManagedFile(File file, String... legacyMarkers) throws IOException {
         if (!file.exists()) return true;
         String existing = readText(file);
-        if (existing.contains(MANAGED_MARKER)) return true;
+        if (existing.contains(RuntimeScripts.MANAGED_MARKER)) return true;
         if (legacyMarkers != null) {
             for (String marker : legacyMarkers) {
                 if (marker != null && !marker.isEmpty() && existing.contains(marker)) return true;
@@ -224,129 +226,6 @@ public final class MiraBootstrap {
         }
     }
 
-    private String shellWrapper() {
-        String prefix = quote(prefixDir.getAbsolutePath());
-        String home = quote(homeDir.getAbsolutePath());
-        String tmp = quote(tmpDir.getAbsolutePath());
-        return "#!/system/bin/sh\n" +
-            MANAGED_MARKER + "\n" +
-            "export PREFIX=" + prefix + "\n" +
-            "export TERMUX_PREFIX=\"$PREFIX\"\n" +
-            "export HOME=" + home + "\n" +
-            "export TERMUX_HOME=\"$HOME\"\n" +
-            "export TMPDIR=" + tmp + "\n" +
-            "export LD_LIBRARY_PATH=\"$PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"\n" +
-            "MIRA_BASE_PATH=\"$PREFIX/bin:/system/bin:/system/xbin\"\n" +
-            "if [ -n \"$MIRA_PATH_PREFIX\" ]; then\n" +
-            "  export PATH=\"$MIRA_PATH_PREFIX:$MIRA_BASE_PATH\"\n" +
-            "else\n" +
-            "  export PATH=\"$MIRA_BASE_PATH\"\n" +
-            "fi\n" +
-            "export TERM=\"${TERM:-xterm-256color}\"\n" +
-            "export COLORTERM=\"${COLORTERM:-truecolor}\"\n" +
-            "export MIRA_SANDBOX=1\n" +
-            "export MIRA_PREFIX=\"$PREFIX\"\n" +
-            "cd \"$HOME\" 2>/dev/null || cd \"$TMPDIR\" 2>/dev/null || cd /\n" +
-            "export PWD=\"$(pwd)\"\n" +
-            "export SHELL=\"$PREFIX/bin/sh\"\n" +
-            "export ENV=\"$HOME/.profile\"\n" +
-            "exec /system/bin/sh \"$@\"\n";
-    }
-
-    private String profileScript() {
-        return MANAGED_MARKER + "\n" +
-            "# Mira minimal profile\n" +
-            "if [ -d \"$PREFIX/etc/profile.d\" ]; then\n" +
-            "  for mira_profile in \"$PREFIX\"/etc/profile.d/*.sh; do\n" +
-            "    [ -f \"$mira_profile\" ] && . \"$mira_profile\"\n" +
-            "  done\n" +
-            "fi\n";
-    }
-
-    private String profileHookScript() {
-        return MANAGED_MARKER + "\n" +
-            "MIRA_BASE_PATH=\"$PREFIX/bin:/system/bin:/system/xbin\"\n" +
-            "if [ -n \"$MIRA_PATH_PREFIX\" ]; then\n" +
-            "  export PATH=\"$MIRA_PATH_PREFIX:$MIRA_BASE_PATH\"\n" +
-            "else\n" +
-            "  export PATH=\"$MIRA_BASE_PATH\"\n" +
-            "fi\n" +
-            "export TERMUX_PREFIX=\"$PREFIX\"\n" +
-            "export TERMUX_HOME=\"$HOME\"\n" +
-            "export LD_LIBRARY_PATH=\"$PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"\n" +
-            "export MIRA_SANDBOX=1\n";
-    }
-
-    private String homeProfileScript() {
-        return MANAGED_MARKER + "\n" +
-            "# Mira shell profile\n" +
-            "[ -n \"$PREFIX\" ] && [ -f \"$PREFIX/etc/profile\" ] && . \"$PREFIX/etc/profile\"\n" +
-            "cd \"$HOME\" 2>/dev/null || cd \"$TMPDIR\" 2>/dev/null || cd /\n" +
-            "export PWD=\"$(pwd)\"\n" +
-            "mira_ls() {\n" +
-            "  if [ -n \"$MIRA_BUSYBOX\" ] && [ -x \"$MIRA_BUSYBOX\" ]; then \"$MIRA_BUSYBOX\" ls \"$@\"; else command ls \"$@\"; fi\n" +
-            "}\n" +
-            "mira_path() { printf '%s\\n' \"$PATH\" | tr ':' '\\n'; }\n" +
-            "mira_tools() { command -v sh ls cat grep sed awk ps top logcat python3 frida mira-info mira-logcat mira-getprop mira-dumpsys mira-settings 2>/dev/null; }\n" +
-            "alias am='mira-am'\n" +
-            "alias ls='mira_ls'\n" +
-            "alias l='mira_ls -CF'\n" +
-            "alias ll='mira_ls -alF'\n" +
-            "alias la='mira_ls -A'\n" +
-            "alias ..='cd ..'\n" +
-            "alias ...='cd ../..'\n" +
-            "alias up='cd ..'\n" +
-            "alias c='clear'\n" +
-            "alias cls='clear'\n" +
-            "alias md='mkdir -p'\n" +
-            "alias p='cd -'\n" +
-            "alias t='cd \"$TMPDIR\"'\n" +
-            "alias py='python3'\n" +
-            "alias path='mira_path'\n" +
-            "alias tools='mira_tools'\n" +
-            "alias props='mira-getprop'\n" +
-            "alias logs='mira-logcat'\n" +
-            "export PS1='$PWD $ '\n";
-    }
-
-    private String miraInfoScript() {
-        return "#!/system/bin/sh\n" +
-            MANAGED_MARKER + "\n" +
-            "echo \"Mira sandbox\"\n" +
-            "echo \"PREFIX=$PREFIX\"\n" +
-            "echo \"HOME=$HOME\"\n" +
-            "echo \"TMPDIR=$TMPDIR\"\n" +
-            "echo \"SHELL=$SHELL\"\n";
-    }
-
-    private String fridaWrapperScript() {
-        return "#!/system/bin/sh\n" +
-            MANAGED_MARKER + "\n" +
-            "if [ -n \"$PREFIX\" ] && [ -x \"$PREFIX/bin/frida-official\" ] && [ -x \"$PREFIX/bin/python3\" ]; then\n" +
-            "  export LD_LIBRARY_PATH=\"$PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"\n" +
-            "  mira_needs_default_target=1\n" +
-            "  for mira_arg in \"$@\"; do\n" +
-            "    case \"$mira_arg\" in\n" +
-            "      --status)\n" +
-            "        exec \"$PREFIX/bin/python3\" -c \"import frida, json; dev=frida.get_device_manager().add_remote_device('127.0.0.1:27042'); ps=dev.enumerate_processes(); first=ps[0] if ps else None; print(json.dumps({'frida': frida.__version__, 'connected': True, 'processCount': len(ps), 'pid': getattr(first, 'pid', None), 'target': getattr(first, 'name', None)}, separators=(',', ':')))\"\n" +
-            "        ;;\n" +
-            "      -h|--help|--version)\n" +
-            "        mira_needs_default_target=0\n" +
-            "        ;;\n" +
-            "      -D|--device|-U|--usb|-R|--remote|-H|--host|-f|--file|-F|--attach-frontmost|-n|--attach-name|-N|--attach-identifier|-p|--attach-pid|-W|--await)\n" +
-            "        mira_needs_default_target=0\n" +
-            "        ;;\n" +
-            "    esac\n" +
-            "  done\n" +
-            "  if [ \"$mira_needs_default_target\" = \"1\" ]; then\n" +
-            "    exec \"$PREFIX/bin/frida-official\" -H 127.0.0.1 -n Gadget \"$@\"\n" +
-            "  fi\n" +
-            "  exec \"$PREFIX/bin/frida-official\" \"$@\"\n" +
-            "fi\n" +
-            "echo \"frida: official runtime is not available\" >&2\n" +
-            "exit 127\n";
-    }
-
     private void writeMiraCommandWrappers() throws IOException {
         String[] commands = new String[] {
             "am",
@@ -359,7 +238,7 @@ public final class MiraBootstrap {
         File binDir = new File(prefixDir, "bin");
         deleteLegacyFridaWrappers(binDir);
         for (String command : commands) {
-            writeExecutable(new File(binDir, command), miraCommandScript(command));
+            writeExecutable(new File(binDir, command), scripts.miraCommandScript(command));
         }
     }
 
@@ -404,38 +283,6 @@ public final class MiraBootstrap {
         }
     }
 
-    private String miraCommandScript(String command) {
-        return "#!/system/bin/sh\n" +
-            "if [ -z \"$MIRA_COMMAND_SOCKET\" ]; then\n" +
-            "  echo \"" + command + ": MIRA_COMMAND_SOCKET is not set\" >&2\n" +
-            "  exit 1\n" +
-            "fi\n" +
-            "mira_b64() {\n" +
-            "  if [ -n \"$MIRA_BUSYBOX\" ] && [ -x \"$MIRA_BUSYBOX\" ]; then \"$MIRA_BUSYBOX\" base64 \"$@\"; else /system/bin/toybox base64 \"$@\"; fi\n" +
-            "}\n" +
-            "request=\"MIRA/1 " + command + "\"\n" +
-            "for arg in \"$@\"; do\n" +
-            "  encoded=$(printf '%s' \"$arg\" | mira_b64 | tr -d '\\n')\n" +
-            "  request=\"$request $encoded\"\n" +
-            "done\n" +
-            "response=$(printf '%s\\n' \"$request\" | /system/bin/toybox nc -U -w 10 \"$MIRA_COMMAND_SOCKET\")\n" +
-            "status=$?\n" +
-            "if [ \"$status\" -ne 0 ]; then\n" +
-            "  echo \"" + command + ": command bridge unavailable\" >&2\n" +
-            "  exit \"$status\"\n" +
-            "fi\n" +
-            "exit_code=$(printf '%s\\n' \"$response\" | sed -n 's/^MIRA\\/1 EXIT //p' | head -1)\n" +
-            "stdout_b64=$(printf '%s\\n' \"$response\" | sed -n 's/^STDOUT //p' | head -1)\n" +
-            "stderr_b64=$(printf '%s\\n' \"$response\" | sed -n 's/^STDERR //p' | head -1)\n" +
-            "[ -n \"$stdout_b64\" ] && printf '%s' \"$stdout_b64\" | mira_b64 -d\n" +
-            "[ -n \"$stderr_b64\" ] && printf '%s' \"$stderr_b64\" | mira_b64 -d >&2\n" +
-            "case \"$exit_code\" in ''|*[!0-9]*) exit 1 ;; *) exit \"$exit_code\" ;; esac\n";
-    }
-
-    private String quote(String value) {
-        return "'" + value.replace("'", "'\\''") + "'";
-    }
-
     private void installBootstrapPrefixIfAvailable() throws IOException {
         String assetRoot = selectBootstrapPrefixAssetRoot();
         if (assetRoot == null) {
@@ -474,7 +321,7 @@ public final class MiraBootstrap {
                 if (!name.startsWith(prefix) || entry.isDirectory()) continue;
                 String relativePath = name.substring(prefix.length());
                 File targetFile = safeDestinationFile(destinationRoot, relativePath);
-                MiraVerifiedExtraction.extract(() -> zipFile.getInputStream(entry),
+                VerifiedExtraction.extract(() -> zipFile.getInputStream(entry),
                     targetFile, entry.getSize(), entry.getCrc(), shouldBeExecutable(relativePath));
                 extractedAny = true;
             }

@@ -1,4 +1,4 @@
-"""Run the actual Java extraction implementation on the host JVM, without Android mocks."""
+"""Run the actual Java runtime installation and extraction code on the host JVM."""
 from pathlib import Path
 import subprocess
 import tempfile
@@ -7,18 +7,18 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class BootstrapExtractionTest(unittest.TestCase):
+class RuntimeExtractionTest(unittest.TestCase):
     def test_failure_recovery_and_verified_writes(self):
         with tempfile.TemporaryDirectory() as temporary:
             classes = Path(temporary) / "classes"
             classes.mkdir()
             subprocess.run([
                 "javac", "--release", "8", "-d", str(classes),
-                str(ROOT / "android/app/src/main/java/com/vwww/mira/MiraVerifiedExtraction.java"),
-                str(ROOT / "tests/java/com/vwww/mira/VerifiedExtractionTest.java"),
+                str(ROOT / "android/app/src/main/java/com/vwww/mira/runtime/VerifiedExtraction.java"),
+                str(ROOT / "tests/java/com/vwww/mira/runtime/VerifiedExtractionTest.java"),
             ], check=True, capture_output=True, text=True)
             result = subprocess.run([
-                "java", "-cp", str(classes), "com.vwww.mira.VerifiedExtractionTest",
+                "java", "-cp", str(classes), "com.vwww.mira.runtime.VerifiedExtractionTest",
                 str(Path(temporary) / "runtime"),
             ], check=True, capture_output=True, text=True)
             self.assertIn("PASS:", result.stdout)
@@ -44,12 +44,13 @@ class BootstrapExtractionTest(unittest.TestCase):
             classes = directory / "classes"
             classes.mkdir()
             subprocess.run(["javac", "--release", "8", "-d", str(classes), *sources,
-                str(ROOT / "android/app/src/main/java/com/vwww/mira/MiraBootstrap.java"),
-                str(ROOT / "android/app/src/main/java/com/vwww/mira/MiraVerifiedExtraction.java"),
-                str(ROOT / "tests/java/com/vwww/mira/BootstrapInstallTest.java")],
+                str(ROOT / "android/app/src/main/java/com/vwww/mira/runtime/RuntimeInstaller.java"),
+                str(ROOT / "android/app/src/main/java/com/vwww/mira/runtime/RuntimeScripts.java"),
+                str(ROOT / "android/app/src/main/java/com/vwww/mira/runtime/VerifiedExtraction.java"),
+                str(ROOT / "tests/java/com/vwww/mira/runtime/RuntimeInstallTest.java")],
                 check=True, capture_output=True, text=True)
             result = subprocess.run(["java", "-cp", str(classes),
-                "com.vwww.mira.BootstrapInstallTest", str(directory / "runtime")],
+                "com.vwww.mira.runtime.RuntimeInstallTest", str(directory / "runtime")],
                 check=True, capture_output=True, text=True)
             self.assertIn("PASS:", result.stdout)
 

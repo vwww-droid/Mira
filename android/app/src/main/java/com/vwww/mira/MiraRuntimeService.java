@@ -3,8 +3,10 @@ package com.vwww.mira;
 import com.vwww.mira.discovery.LanDiscoveryServer;
 import com.vwww.mira.command.LocalCommandServer;
 import com.vwww.mira.command.RemoteCommandHandler;
+import com.vwww.mira.runtime.RuntimeInstaller;
 import com.vwww.mira.screen.AppScreenCapture;
 import com.vwww.mira.screen.AppScreenStreamer;
+import com.vwww.mira.terminal.LocalTerminalServer;
 
 import android.app.Service;
 import android.content.Intent;
@@ -41,7 +43,7 @@ public final class MiraRuntimeService extends Service {
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     private MiraIdentity identity;
-    private MiraBootstrap bootstrap;
+    private RuntimeInstaller runtimeInstaller;
     private volatile LanDiscoveryServer discoveryServer;
     private String deviceName = "Mira Device";
     private String relayUrl = "";
@@ -52,7 +54,7 @@ public final class MiraRuntimeService extends Service {
     private volatile AppScreenStreamer screenStreamer;
     private volatile LocalCommandServer commandServer;
     private RemoteCommandHandler remoteCommandHandler;
-    private volatile MiraTerminalServer terminalServer;
+    private volatile LocalTerminalServer terminalServer;
     private volatile boolean controlReady;
 
     @Override
@@ -60,7 +62,7 @@ public final class MiraRuntimeService extends Service {
         super.onCreate();
         activeService = this;
         identity = new MiraIdentity(this);
-        bootstrap = new MiraBootstrap(this);
+        runtimeInstaller = new RuntimeInstaller(this);
         remoteCommandHandler = new RemoteCommandHandler(
             this,
             identity.getInstallId(),
@@ -117,7 +119,7 @@ public final class MiraRuntimeService extends Service {
         state = "idle";
         controlReady = false;
         try {
-            bootstrap.installIfNeeded();
+            runtimeInstaller.installIfNeeded();
             startCommandServer();
             startTerminalServer();
             if (!relayUrl.isEmpty()) {
@@ -228,7 +230,7 @@ public final class MiraRuntimeService extends Service {
 
     private synchronized void startTerminalServer() throws IOException {
         if (terminalServer != null) return;
-        MiraTerminalServer server = new MiraTerminalServer(this, bootstrap, 0);
+        LocalTerminalServer server = new LocalTerminalServer(this, runtimeInstaller, 0);
         server.start();
         terminalServer = server;
         writeTerminalTokenFile(server.getToken());
@@ -371,7 +373,7 @@ public final class MiraRuntimeService extends Service {
         state = "opening";
         relayClient = new MiraRelayClient(
             this,
-            bootstrap,
+            runtimeInstaller,
             identity,
             body.optString("serverWs"),
             sessionId,

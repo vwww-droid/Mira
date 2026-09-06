@@ -1,9 +1,9 @@
-package com.vwww.mira;
+package com.vwww.mira.terminal;
 
 import java.io.Closeable;
 import java.io.IOException;
 
-public interface MiraPtySession extends Closeable {
+public interface PtySession extends Closeable {
     int getPid();
 
     int read(byte[] buffer) throws IOException;

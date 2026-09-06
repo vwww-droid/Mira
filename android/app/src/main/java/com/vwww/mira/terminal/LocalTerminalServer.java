@@ -1,4 +1,6 @@
-package com.vwww.mira;
+package com.vwww.mira.terminal;
+
+import com.vwww.mira.runtime.RuntimeInstaller;
 
 import android.content.Context;
 import android.content.res.AssetManager;
@@ -27,12 +29,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public final class MiraTerminalServer implements Closeable {
+public final class LocalTerminalServer implements Closeable {
     private static final String WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final Context context;
-    private final MiraBootstrap bootstrap;
+    private final RuntimeInstaller runtimeInstaller;
     private final int requestedPort;
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -41,9 +43,9 @@ public final class MiraTerminalServer implements Closeable {
     private ServerSocket serverSocket;
     private Thread acceptThread;
 
-    public MiraTerminalServer(Context context, MiraBootstrap bootstrap, int requestedPort) {
+    public LocalTerminalServer(Context context, RuntimeInstaller runtimeInstaller, int requestedPort) {
         this.context = context.getApplicationContext();
-        this.bootstrap = bootstrap;
+        this.runtimeInstaller = runtimeInstaller;
         this.requestedPort = requestedPort;
     }
 
@@ -240,7 +242,7 @@ public final class MiraTerminalServer implements Closeable {
             "Sec-WebSocket-Accept: " + accept + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
         output.flush();
 
-        MiraPtySession pty = createPty();
+        PtySession pty = createPty();
         Object writeLock = new Object();
         Thread readerThread = new Thread(() -> pumpPtyToWebSocket(pty, output, writeLock), "MiraPtyReader-" + pty.getPid());
         Thread waiterThread = new Thread(() -> {
@@ -274,11 +276,11 @@ public final class MiraTerminalServer implements Closeable {
         }
     }
 
-    private MiraPtySession createPty() {
-        return MiraPtyFactory.create(context, bootstrap, 24, 80);
+    private PtySession createPty() {
+        return PtyFactory.create(context, runtimeInstaller, 24, 80);
     }
 
-    private void handleTerminalMessage(MiraPtySession pty, String message) throws IOException {
+    private void handleTerminalMessage(PtySession pty, String message) throws IOException {
         try {
             JSONObject json = new JSONObject(message);
             String type = json.optString("type", "");
@@ -291,7 +293,7 @@ public final class MiraTerminalServer implements Closeable {
         }
     }
 
-    private void pumpPtyToWebSocket(MiraPtySession pty, OutputStream output, Object writeLock) {
+    private void pumpPtyToWebSocket(PtySession pty, OutputStream output, Object writeLock) {
         byte[] buffer = new byte[8192];
         try {
             while (running.get()) {

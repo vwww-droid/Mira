@@ -1,4 +1,4 @@
-package com.vwww.mira;
+package com.vwww.mira.runtime;
 
 import android.content.Context;
 import android.content.res.AssetManager;
@@ -6,7 +6,7 @@ import java.io.*;
 import java.nio.file.*;
 import java.util.zip.*;
 
-public final class BootstrapInstallTest {
+public final class RuntimeInstallTest {
     static final String PYTHON = "lib/python3.14";
     static final String FRIDA = PYTHON + "/site-packages/_frida.abi3.so";
     static final String PAYLOAD = "unique-runtime-payload-for-crc-test";
@@ -42,6 +42,8 @@ public final class BootstrapInstallTest {
         File profile = new File(home, ".profile"); Files.write(profile.toPath(), "user profile".getBytes());
         File old = new File(files, "usr/" + FRIDA); old.getParentFile().mkdirs();
         Files.write(old.toPath(), "previous file".getBytes());
+        File customShell = new File(files, "usr/bin/sh"); customShell.getParentFile().mkdirs();
+        Files.write(customShell.toPath(), "#!/system/bin/sh\necho user shell\n".getBytes());
         File state = new File(files, ".mira-bootstrap-state");
         Files.write(state.toPath(), "# Managed by MiraBootstrap\nversion=8\n".getBytes());
         Context context = new Context() {
@@ -51,16 +53,17 @@ public final class BootstrapInstallTest {
             public File getCacheDir() { return new File(root, "cache"); }
             public String getPackageCodePath() { return apk.getAbsolutePath(); }
         };
-        MiraBootstrap bootstrap = new MiraBootstrap(context);
+        RuntimeInstaller installer = new RuntimeInstaller(context);
         boolean failed = false;
-        try { bootstrap.installIfNeeded(); } catch (IOException expected) { failed = true; }
+        try { installer.installIfNeeded(); } catch (IOException expected) { failed = true; }
         check(failed); check(!state.exists());
         check(new String(Files.readAllBytes(old.toPath())).equals("previous file"));
-        zip(apk); bootstrap.installIfNeeded();
+        zip(apk); installer.installIfNeeded();
         check(state.isFile());
         check(new String(Files.readAllBytes(old.toPath())).equals(PAYLOAD));
+        check(new String(Files.readAllBytes(customShell.toPath())).equals("#!/system/bin/sh\necho user shell\n"));
         check(new String(Files.readAllBytes(profile.toPath())).equals("user profile"));
         check(!new File(files, ".mira-extract-.mira-bootstrap-state").exists());
-        System.out.println("PASS: actual bootstrap invalidates stale state, rejects corrupt ZIP, recovers, preserves home");
+        System.out.println("PASS: actual runtime install invalidates stale state, rejects corrupt ZIP, recovers, preserves user files");
     }
 }

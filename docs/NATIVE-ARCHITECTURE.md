@@ -13,7 +13,7 @@ This document describes the Mira native-layer architecture. The current goal is 
 3. `native/src/posix` contains shared POSIX behavior such as fork, setsid, dup2, chdir, execvp, read or write, resize, waitpid, and signal handling.
 4. `native/src/platform/*` only holds platform differences, such as PTY pair creation and fd cleanup.
 5. `native/bridge/*` only holds language bridges. Android uses JNI, while iOS uses a thin C shim for Swift.
-6. Platform apps should only hold session abstractions such as `MiraPtySession` instead of assembling C-layer details directly.
+6. Platform apps should only hold session abstractions such as `terminal.PtySession` instead of assembling C-layer details directly.
 
 ## Current layout
 

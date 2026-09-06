@@ -1,4 +1,4 @@
-package com.vwww.mira;
+package com.vwww.mira.runtime;
 
 import java.io.*;
 import java.nio.file.*;
@@ -32,7 +32,7 @@ public final class VerifiedExtractionTest {
                     if (entry.isDirectory() || !entry.getName().startsWith(prefix)) continue;
                     File target = new File(root, entry.getName().substring(prefix.length()));
                     check(target.getCanonicalPath().startsWith(root.getCanonicalPath() + File.separator));
-                    MiraVerifiedExtraction.extract(() -> apk.getInputStream(entry), target,
+                    VerifiedExtraction.extract(() -> apk.getInputStream(entry), target,
                         entry.getSize(), entry.getCrc(), false);
                     count++;
                 }
@@ -44,7 +44,7 @@ public final class VerifiedExtractionTest {
         File target = new File(root, "library.so");
         Files.write(target.toPath(), "old runtime".getBytes());
         AtomicInteger attempts = new AtomicInteger();
-        MiraVerifiedExtraction.extract(() -> {
+        VerifiedExtraction.extract(() -> {
             if (attempts.incrementAndGet() == 1) throw new IOException("transient read failure");
             return new ByteArrayInputStream(DATA);
         }, target, DATA.length, crc(DATA), true);
@@ -53,35 +53,35 @@ public final class VerifiedExtractionTest {
         check(target.canExecute());
         // Source corruption: both attempts fail; the previous valid file survives.
         attempts.set(0);
-        fails(() -> MiraVerifiedExtraction.extract(() -> {
+        fails(() -> VerifiedExtraction.extract(() -> {
             attempts.incrementAndGet(); return new ByteArrayInputStream(DATA);
         }, target, DATA.length, crc(DATA) ^ 1, false));
         check(attempts.get() == 2);
         check(Arrays.equals(DATA, Files.readAllBytes(target.toPath())));
-        fails(() -> MiraVerifiedExtraction.extract(() -> new ByteArrayInputStream(DATA),
+        fails(() -> VerifiedExtraction.extract(() -> new ByteArrayInputStream(DATA),
             target, DATA.length + 1, crc(DATA), false));
-        fails(() -> MiraVerifiedExtraction.extract(() -> new ByteArrayInputStream(DATA),
+        fails(() -> VerifiedExtraction.extract(() -> new ByteArrayInputStream(DATA),
             target, DATA.length - 1, crc(DATA), false));
-        fails(() -> MiraVerifiedExtraction.extract(() -> new ByteArrayInputStream(DATA),
+        fails(() -> VerifiedExtraction.extract(() -> new ByteArrayInputStream(DATA),
             target, -1, crc(DATA), false));
         // Interrupted staging is reclaimed, not accepted as a completed file.
         File staging = new File(root, ".mira-extract-library.so");
         Files.write(staging.toPath(), "partial".getBytes());
-        MiraVerifiedExtraction.extract(() -> new ByteArrayInputStream(DATA),
+        VerifiedExtraction.extract(() -> new ByteArrayInputStream(DATA),
             target, DATA.length, crc(DATA), false);
         check(!staging.exists());
         // Detect same-length disk corruption with the read-back SHA-256 verifier.
         byte[] expectedHash = MessageDigest.getInstance("SHA-256").digest(DATA);
         byte[] damaged = DATA.clone(); damaged[0] ^= 1;
         Files.write(target.toPath(), damaged);
-        fails(() -> MiraVerifiedExtraction.verifyFile(target, DATA.length, expectedHash));
+        fails(() -> VerifiedExtraction.verifyFile(target, DATA.length, expectedHash));
         File blocked = new File(root, "blocked"); blocked.mkdir();
         Files.write(new File(blocked, "user-file").toPath(), DATA);
-        fails(() -> MiraVerifiedExtraction.extract(() -> new ByteArrayInputStream(DATA),
+        fails(() -> VerifiedExtraction.extract(() -> new ByteArrayInputStream(DATA),
             blocked, DATA.length, crc(DATA), false));
         check(new File(blocked, "user-file").isFile());
         // Empty Python package markers are legitimate (required runtime files are checked by caller).
-        MiraVerifiedExtraction.extract(() -> new ByteArrayInputStream(new byte[0]),
+        VerifiedExtraction.extract(() -> new ByteArrayInputStream(new byte[0]),
             target, 0, 0, false);
         check(target.length() == 0);
         // Exercise real ZIP streams for both packaging methods.
@@ -94,7 +94,7 @@ public final class VerifiedExtractionTest {
             }
             try (ZipFile input = new ZipFile(zip)) {
                 ZipEntry entry = input.getEntry("runtime.so");
-                MiraVerifiedExtraction.extract(() -> input.getInputStream(entry), target,
+                VerifiedExtraction.extract(() -> input.getInputStream(entry), target,
                     entry.getSize(), entry.getCrc(), false);
                 check(Arrays.equals(DATA, Files.readAllBytes(target.toPath())));
             }

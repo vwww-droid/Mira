@@ -1,12 +1,13 @@
-package com.vwww.mira;
+package com.vwww.mira.terminal;
 
 import com.vwww.mira.command.LocalCommandServer;
+import com.vwww.mira.runtime.RuntimeInstaller;
 
 import android.content.Context;
 
 import java.io.File;
 
-public final class MiraPtyLaunchSpec {
+final class PtyLaunchSpec {
     private final String shellPath;
     private final String cwd;
     private final String[] args;
@@ -16,7 +17,7 @@ public final class MiraPtyLaunchSpec {
     private final int cellWidth;
     private final int cellHeight;
 
-    private MiraPtyLaunchSpec(
+    private PtyLaunchSpec(
         String shellPath,
         String cwd,
         String[] args,
@@ -36,29 +37,29 @@ public final class MiraPtyLaunchSpec {
         this.cellHeight = cellHeight;
     }
 
-    public static MiraPtyLaunchSpec of(
+    static PtyLaunchSpec of(
         Context context,
-        MiraBootstrap bootstrap,
+        RuntimeInstaller runtimeInstaller,
         int rows,
         int columns,
-        MiraToolbox toolbox
+        SessionToolbox toolbox
     ) {
-        return of(context, bootstrap, rows, columns, 0, 0, toolbox);
+        return of(context, runtimeInstaller, rows, columns, 0, 0, toolbox);
     }
 
-    public static MiraPtyLaunchSpec of(
+    static PtyLaunchSpec of(
         Context context,
-        MiraBootstrap bootstrap,
+        RuntimeInstaller runtimeInstaller,
         int rows,
         int columns,
         int cellWidth,
         int cellHeight,
-        MiraToolbox toolbox
+        SessionToolbox toolbox
     ) {
-        File shell = bootstrap.getShellPath();
-        File homeDir = bootstrap.getHomeDir();
-        File prefixDir = bootstrap.getPrefixDir();
-        File tmpDir = bootstrap.getTmpDir();
+        File shell = runtimeInstaller.getShellPath();
+        File homeDir = runtimeInstaller.getHomeDir();
+        File prefixDir = runtimeInstaller.getPrefixDir();
+        File tmpDir = runtimeInstaller.getTmpDir();
 
         String prefix = prefixDir.getAbsolutePath();
         String home = homeDir.getAbsolutePath();
@@ -90,38 +91,38 @@ public final class MiraPtyLaunchSpec {
             "MIRA_APP_PACKAGE=" + context.getPackageName(),
             "ENV=" + home + "/.profile"
         };
-        return new MiraPtyLaunchSpec(shell.getAbsolutePath(), home, args, env, rows, columns, cellWidth, cellHeight);
+        return new PtyLaunchSpec(shell.getAbsolutePath(), home, args, env, rows, columns, cellWidth, cellHeight);
     }
 
-    public String getShellPath() {
+    String getShellPath() {
         return shellPath;
     }
 
-    public String getCwd() {
+    String getCwd() {
         return cwd;
     }
 
-    public String[] getArgs() {
+    String[] getArgs() {
         return args.clone();
     }
 
-    public String[] getEnv() {
+    String[] getEnv() {
         return env.clone();
     }
 
-    public int getRows() {
+    int getRows() {
         return rows;
     }
 
-    public int getColumns() {
+    int getColumns() {
         return columns;
     }
 
-    public int getCellWidth() {
+    int getCellWidth() {
         return cellWidth;
     }
 
-    public int getCellHeight() {
+    int getCellHeight() {
         return cellHeight;
     }
 }

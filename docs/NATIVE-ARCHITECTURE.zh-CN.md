@@ -55,7 +55,7 @@ native/
 
 ```mermaid
 flowchart TD
-  A["Android MiraPtyProcess"] --> B["JNI bridge"]
+  A["Android terminal.NativePtyProcess"] --> B["JNI bridge"]
   I["iOS Swift bridge"] --> J["iOS C shim"]
   B --> C["mira/pty.h"]
   J --> C
@@ -117,7 +117,7 @@ flowchart TD
 
 职责:
 
-1. 将 Java 层 `MiraPtyProcess` 的 native 方法转到 `mira/pty.h`。
+1. 将 Java 层 `terminal.NativePtyProcess` 的 native 方法转到 `mira/pty.h`。
 2. 完成 Java 字符串数组和 C 字符串数组之间的转换。
 3. 把 errno(系统错误码) 转成 Java 异常。
 

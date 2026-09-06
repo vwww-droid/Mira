@@ -62,13 +62,13 @@ tools/toolbox/download-lamda-busybox.sh
 ```text
 Open Terminal
   -> MiraRelayClient
-  -> MiraToolbox.prepare(sessionId)
+  -> terminal.SessionToolbox.prepare(sessionId)
   -> 按设备 ABI 选择 BusyBox 资产
   -> /data/user/0/com.vwww.mira/cache/mira-sessions/<sessionId>/bin/busybox
   -> 执行 busybox --list 获取真实支持的 applet(子命令)
   -> 为全部真实支持的 applet 创建 symlink(符号链接)
   -> 复制 manifest.json 到 session 根目录
-  -> MiraPtyFactory 把 session bin 放到 PATH 前面
+  -> terminal.PtyFactory 把 session bin 放到 PATH 前面
   -> 创建 PTY(伪终端)
   -> session.close 后删除 mira-sessions/<sessionId>
 ```

@@ -1,5 +1,10 @@
 package com.vwww.mira;
 
+import com.vwww.mira.runtime.RuntimeInstaller;
+import com.vwww.mira.terminal.PtyFactory;
+import com.vwww.mira.terminal.PtySession;
+import com.vwww.mira.terminal.SessionToolbox;
+
 import android.content.Context;
 import android.util.Base64;
 import android.util.Log;
@@ -16,7 +21,7 @@ public final class MiraRelayClient implements Closeable {
     private static final String TAG = "MiraRelayClient";
 
     private final Context context;
-    private final MiraBootstrap bootstrap;
+    private final RuntimeInstaller runtimeInstaller;
     private final MiraIdentity identity;
     private final String serverWs;
     private final String sessionId;
@@ -28,15 +33,15 @@ public final class MiraRelayClient implements Closeable {
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     private volatile MiraWebSocketConnection websocket;
-    private MiraPtySession pty;
-    private MiraToolbox toolbox;
+    private PtySession pty;
+    private SessionToolbox toolbox;
     private Thread workerThread;
     private Thread ptyReaderThread;
     private Thread ptyWaiterThread;
 
     public MiraRelayClient(
         Context context,
-        MiraBootstrap bootstrap,
+        RuntimeInstaller runtimeInstaller,
         MiraIdentity identity,
         String serverWs,
         String sessionId,
@@ -47,7 +52,7 @@ public final class MiraRelayClient implements Closeable {
         Runnable onClose
     ) {
         this.context = context.getApplicationContext();
-        this.bootstrap = bootstrap;
+        this.runtimeInstaller = runtimeInstaller;
         this.identity = identity;
         this.serverWs = serverWs;
         this.sessionId = sessionId;
@@ -71,14 +76,14 @@ public final class MiraRelayClient implements Closeable {
     private void runRelay() {
         try {
             Log.i(TAG, "Relay starting sessionId=" + sessionId + " ws=" + serverWs);
-            bootstrap.installIfNeeded();
+            runtimeInstaller.installIfNeeded();
             Log.i(TAG, "Bootstrap ready sessionId=" + sessionId);
             if (!running.get()) return;
-            toolbox = MiraToolbox.prepare(context, sessionId);
+            toolbox = SessionToolbox.prepare(context, sessionId);
             Log.i(TAG, "Toolbox ready sessionId=" + sessionId + " bin=" + toolbox.binDirPath());
             if (!running.get()) return;
             Log.i(TAG, "Creating PTY sessionId=" + sessionId);
-            pty = MiraPtyFactory.create(context, bootstrap, initialRows, initialColumns, initialCellWidth, initialCellHeight, toolbox);
+            pty = PtyFactory.create(context, runtimeInstaller, initialRows, initialColumns, initialCellWidth, initialCellHeight, toolbox);
             Log.i(TAG, "PTY started backend=" + pty.getBackendName() + " pid=" + pty.getPid() + " cols=" + initialColumns + " rows=" + initialRows + " cellWidth=" + initialCellWidth + " cellHeight=" + initialCellHeight);
             if (!running.get()) return;
             Log.i(TAG, "Connecting relay websocket sessionId=" + sessionId + " url=" + serverWs);
@@ -93,7 +98,7 @@ public final class MiraRelayClient implements Closeable {
             Log.i(TAG, "Device attached sessionId=" + sessionId + " installId=" + identity.getInstallId());
             ptyReaderThread = new Thread(this::pumpPtyToServer, "MiraRelayPtyReader-" + pty.getPid());
             ptyReaderThread.start();
-            MiraPtySession waitingPty = pty;
+            PtySession waitingPty = pty;
             ptyWaiterThread = new Thread(() -> waitForPtyExit(waitingPty), "MiraRelayPtyWaiter-" + waitingPty.getPid());
             ptyWaiterThread.start();
             readServerLoop();
@@ -109,7 +114,7 @@ public final class MiraRelayClient implements Closeable {
         }
     }
 
-    private void waitForPtyExit(MiraPtySession waitingPty) {
+    private void waitForPtyExit(PtySession waitingPty) {
         try {
             int exitCode = waitingPty.waitFor();
             Log.i(TAG, "PTY exited backend=" + waitingPty.getBackendName() + " pid=" + waitingPty.getPid() + " exitCode=" + exitCode);

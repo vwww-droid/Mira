@@ -1,6 +1,8 @@
 package com.vwww.mira;
 
+import com.vwww.mira.runtime.RuntimeInstaller;
 import com.vwww.mira.screen.AppScreenCapture;
+import com.vwww.mira.terminal.PtyFactory;
 
 import android.app.Activity;
 import android.app.Application;
@@ -24,7 +26,7 @@ public final class MiraApplication extends Application {
         super.onCreate();
         AppScreenCapture.setOutlineRefreshCallback(MiraRuntimeService::requestOutlineUpload);
         try {
-            MiraPtyProcess.ensureNativeLibraryLoaded();
+            PtyFactory.preloadNativeLibrary();
         } catch (Throwable t) {
             Log.w(TAG, "mira_pty preload failed: " + t.getMessage(), t);
         }
@@ -112,7 +114,7 @@ public final class MiraApplication extends Application {
             }
             long startedAt = SystemClock.elapsedRealtime();
             try {
-                new MiraBootstrap(this).installIfNeeded();
+                new RuntimeInstaller(this).installIfNeeded();
                 Log.i(TAG, "Background bootstrap install finished in " + (SystemClock.elapsedRealtime() - startedAt) + "ms");
             } catch (Throwable t) {
                 Log.w(TAG, "Background bootstrap install failed after " + (SystemClock.elapsedRealtime() - startedAt) + "ms: " + t.getMessage(), t);

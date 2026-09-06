@@ -1,4 +1,4 @@
-package com.vwww.mira;
+package com.vwww.mira.terminal;
 
 import android.content.Context;
 import android.content.res.AssetManager;
@@ -19,7 +19,7 @@ import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
 
-public final class MiraToolbox implements Closeable {
+public final class SessionToolbox implements Closeable {
     private static final String TAG = "MiraToolbox";
     private static final String ASSET_ROOT = "toolbox/busybox";
     private static final String MANIFEST_ASSET = "toolbox/manifest.json";
@@ -31,7 +31,7 @@ public final class MiraToolbox implements Closeable {
     private final String busyboxAbi;
     private final String busyboxAssetPath;
 
-    private MiraToolbox(
+    private SessionToolbox(
         File sessionDir,
         File binDir,
         File busyboxFile,
@@ -47,7 +47,7 @@ public final class MiraToolbox implements Closeable {
         this.busyboxAssetPath = busyboxAssetPath;
     }
 
-    public static MiraToolbox prepare(Context context, String sessionId) throws IOException {
+    public static SessionToolbox prepare(Context context, String sessionId) throws IOException {
         Context appContext = context.getApplicationContext();
         String safeSessionId = safeName(sessionId == null || sessionId.isEmpty() ? "local" : sessionId);
         File sessionRoot = new File(new File(appContext.getCacheDir(), "mira-sessions"), safeSessionId);
@@ -67,10 +67,10 @@ public final class MiraToolbox implements Closeable {
         copyAsset(appContext.getAssets(), MANIFEST_ASSET, manifestFile);
 
         Log.i(TAG, "Prepared session toolbox " + asset.assetPath + " -> " + binDir.getAbsolutePath());
-        return new MiraToolbox(sessionRoot, binDir, busyboxFile, manifestFile, asset.abi, asset.assetPath);
+        return new SessionToolbox(sessionRoot, binDir, busyboxFile, manifestFile, asset.abi, asset.assetPath);
     }
 
-    public String pathPrefix() {
+    String pathPrefix() {
         return binDir.getAbsolutePath();
     }
 
@@ -78,19 +78,19 @@ public final class MiraToolbox implements Closeable {
         return binDir.getAbsolutePath();
     }
 
-    public String busyboxPath() {
+    String busyboxPath() {
         return busyboxFile.getAbsolutePath();
     }
 
-    public String manifestPath() {
+    String manifestPath() {
         return manifestFile == null ? "" : manifestFile.getAbsolutePath();
     }
 
-    public String busyboxAbi() {
+    String busyboxAbi() {
         return busyboxAbi;
     }
 
-    public String busyboxAssetPath() {
+    String busyboxAssetPath() {
         return busyboxAssetPath;
     }
 

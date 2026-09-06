@@ -8,26 +8,26 @@
 #include "mira/pty.h"
 #include "pty/pty_trace.h"
 
-JNIEXPORT jlong JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeOpen(JNIEnv *jni_env, jobject thiz, jstring shell_path, jstring cwd, jobjectArray args, jobjectArray env_vars, jint rows, jint columns, jint cell_width, jint cell_height);
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeResize(JNIEnv *jni_env, jobject thiz, jlong handle, jint columns, jint rows, jint cell_width, jint cell_height);
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeSetUtf8Mode(JNIEnv *jni_env, jobject thiz, jlong handle);
-JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeRead(JNIEnv *jni_env, jobject thiz, jlong handle, jbyteArray buffer, jint length);
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWrite(JNIEnv *jni_env, jobject thiz, jlong handle, jbyteArray data, jint length);
-JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWaitFor(JNIEnv *jni_env, jobject thiz, jlong handle);
-JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativePid(JNIEnv *jni_env, jobject thiz, jlong handle);
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeKill(JNIEnv *jni_env, jobject thiz, jlong handle, jint signal_number);
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeClose(JNIEnv *jni_env, jobject thiz, jlong handle);
+JNIEXPORT jlong JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeOpen(JNIEnv *jni_env, jobject thiz, jstring shell_path, jstring cwd, jobjectArray args, jobjectArray env_vars, jint rows, jint columns, jint cell_width, jint cell_height);
+JNIEXPORT void JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeResize(JNIEnv *jni_env, jobject thiz, jlong handle, jint columns, jint rows, jint cell_width, jint cell_height);
+JNIEXPORT void JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeSetUtf8Mode(JNIEnv *jni_env, jobject thiz, jlong handle);
+JNIEXPORT jint JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeRead(JNIEnv *jni_env, jobject thiz, jlong handle, jbyteArray buffer, jint length);
+JNIEXPORT void JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeWrite(JNIEnv *jni_env, jobject thiz, jlong handle, jbyteArray data, jint length);
+JNIEXPORT jint JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeWaitFor(JNIEnv *jni_env, jobject thiz, jlong handle);
+JNIEXPORT jint JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativePid(JNIEnv *jni_env, jobject thiz, jlong handle);
+JNIEXPORT void JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeKill(JNIEnv *jni_env, jobject thiz, jlong handle, jint signal_number);
+JNIEXPORT void JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeClose(JNIEnv *jni_env, jobject thiz, jlong handle);
 
 static JNINativeMethod mira_pty_methods[] = {
-    { "nativeOpen", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;IIII)J", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeOpen },
-    { "nativeRead", "(J[BI)I", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeRead },
-    { "nativeWrite", "(J[BI)V", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeWrite },
-    { "nativeResize", "(JIIII)V", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeResize },
-    { "nativeSetUtf8Mode", "(J)V", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeSetUtf8Mode },
-    { "nativeWaitFor", "(J)I", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeWaitFor },
-    { "nativePid", "(J)I", (void *) Java_com_vwww_mira_MiraPtyProcess_nativePid },
-    { "nativeKill", "(JI)V", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeKill },
-    { "nativeClose", "(J)V", (void *) Java_com_vwww_mira_MiraPtyProcess_nativeClose },
+    { "nativeOpen", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;IIII)J", (void *) Java_com_vwww_mira_terminal_NativePtyProcess_nativeOpen },
+    { "nativeRead", "(J[BI)I", (void *) Java_com_vwww_mira_terminal_NativePtyProcess_nativeRead },
+    { "nativeWrite", "(J[BI)V", (void *) Java_com_vwww_mira_terminal_NativePtyProcess_nativeWrite },
+    { "nativeResize", "(JIIII)V", (void *) Java_com_vwww_mira_terminal_NativePtyProcess_nativeResize },
+    { "nativeSetUtf8Mode", "(J)V", (void *) Java_com_vwww_mira_terminal_NativePtyProcess_nativeSetUtf8Mode },
+    { "nativeWaitFor", "(J)I", (void *) Java_com_vwww_mira_terminal_NativePtyProcess_nativeWaitFor },
+    { "nativePid", "(J)I", (void *) Java_com_vwww_mira_terminal_NativePtyProcess_nativePid },
+    { "nativeKill", "(JI)V", (void *) Java_com_vwww_mira_terminal_NativePtyProcess_nativeKill },
+    { "nativeClose", "(J)V", (void *) Java_com_vwww_mira_terminal_NativePtyProcess_nativeClose },
 };
 
 static void mira_jni_throw_runtime_exception(JNIEnv *jni_env, const char *message) {
@@ -147,7 +147,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
         return JNI_ERR;
     }
 
-    jclass klass = (*jni_env)->FindClass(jni_env, "com/vwww/mira/MiraPtyProcess");
+    jclass klass = (*jni_env)->FindClass(jni_env, "com/vwww/mira/terminal/NativePtyProcess");
     if (klass == NULL) {
         return JNI_ERR;
     }
@@ -166,7 +166,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     return JNI_VERSION_1_6;
 }
 
-JNIEXPORT jlong JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeOpen(JNIEnv *jni_env,
+JNIEXPORT jlong JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeOpen(JNIEnv *jni_env,
                                                                            jobject thiz,
                                                                            jstring shell_path,
                                                                            jstring cwd,
@@ -223,7 +223,7 @@ JNIEXPORT jlong JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeOpen(JNIEnv *jni
     return (jlong) (uintptr_t) pty_process;
 }
 
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeResize(JNIEnv *jni_env,
+JNIEXPORT void JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeResize(JNIEnv *jni_env,
                                                                             jobject thiz,
                                                                             jlong handle,
                                                                             jint columns,
@@ -241,7 +241,7 @@ JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeResize(JNIEnv *jn
     }
 }
 
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeSetUtf8Mode(JNIEnv *jni_env,
+JNIEXPORT void JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeSetUtf8Mode(JNIEnv *jni_env,
                                                                                   jobject thiz,
                                                                                   jlong handle) {
     (void) thiz;
@@ -255,7 +255,7 @@ JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeSetUtf8Mode(JNIEn
     }
 }
 
-JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeRead(JNIEnv *jni_env,
+JNIEXPORT jint JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeRead(JNIEnv *jni_env,
                                                                           jobject thiz,
                                                                           jlong handle,
                                                                           jbyteArray buffer,
@@ -295,7 +295,7 @@ JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeRead(JNIEnv *jni_
     return (jint) result;
 }
 
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWrite(JNIEnv *jni_env,
+JNIEXPORT void JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeWrite(JNIEnv *jni_env,
                                                                            jobject thiz,
                                                                            jlong handle,
                                                                            jbyteArray data,
@@ -332,7 +332,7 @@ JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWrite(JNIEnv *jni
     }
 }
 
-JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWaitFor(JNIEnv *jni_env,
+JNIEXPORT jint JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeWaitFor(JNIEnv *jni_env,
                                                                               jobject thiz,
                                                                              jlong handle) {
     (void) jni_env;
@@ -345,7 +345,7 @@ JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeWaitFor(JNIEnv *j
     return (jint) mira_pty_wait_for(pty_process);
 }
 
-JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativePid(JNIEnv *jni_env,
+JNIEXPORT jint JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativePid(JNIEnv *jni_env,
                                                                           jobject thiz,
                                                                          jlong handle) {
     (void) jni_env;
@@ -358,7 +358,7 @@ JNIEXPORT jint JNICALL Java_com_vwww_mira_MiraPtyProcess_nativePid(JNIEnv *jni_e
     return (jint) mira_pty_pid(pty_process);
 }
 
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeKill(JNIEnv *jni_env,
+JNIEXPORT void JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeKill(JNIEnv *jni_env,
                                                                            jobject thiz,
                                                                            jlong handle,
                                                                            jint signal_number) {
@@ -372,7 +372,7 @@ JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeKill(JNIEnv *jni_
     (void) mira_pty_kill(pty_process, (int) signal_number);
 }
 
-JNIEXPORT void JNICALL Java_com_vwww_mira_MiraPtyProcess_nativeClose(JNIEnv *jni_env,
+JNIEXPORT void JNICALL Java_com_vwww_mira_terminal_NativePtyProcess_nativeClose(JNIEnv *jni_env,
                                                                            jobject thiz,
                                                                             jlong handle) {
     (void) jni_env;

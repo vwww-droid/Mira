@@ -82,7 +82,7 @@ ABI 分包使用 [Android 官方 splits.abi](https://developer.android.com/build
 
 ```bash
 ./gradlew :mira-app:assembleDebug :mira-app:assembleRelease -PmiraAbiSplits=true -x :mira-app:buildTermuxPrefixAssets
-python3 -m unittest discover -s tests -p 'test_bootstrap_extraction.py' -v
+python3 -m unittest discover -s tests -p 'test_runtime_extraction.py' -v
 python3 -m unittest discover -s tests -p 'test_apk_*.py' -v
 python3 tools/android/check-apk-variants.py \
   build/apk-variants/mira-app-universal-debug.apk \

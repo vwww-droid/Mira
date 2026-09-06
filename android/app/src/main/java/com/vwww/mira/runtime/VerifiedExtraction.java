@@ -1,4 +1,4 @@
-package com.vwww.mira;
+package com.vwww.mira.runtime;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -10,14 +10,14 @@ import java.security.NoSuchAlgorithmException;
 import java.util.zip.CRC32;
 
 /** Verified, bounded-retry writes. The old destination survives failed attempts. */
-final class MiraVerifiedExtraction {
+final class VerifiedExtraction {
     private static final int MAX_ATTEMPTS = 2;
 
     interface Source {
         InputStream open() throws IOException;
     }
 
-    private MiraVerifiedExtraction() {}
+    private VerifiedExtraction() {}
 
     static void extract(Source source, File destination, long expectedSize,
                         long expectedCrc, boolean executable) throws IOException {
