@@ -15,11 +15,12 @@
 1. `REMOTE-RELAY.md`: Relay and remote on-demand terminal guide.
 2. `MCP.md`: MCP server guide and practical Claude Desktop and Codex integration config.
 3. `IOS-APP.md`: iOS app architecture and runtime notes.
-4. `NATIVE-ARCHITECTURE.md`: shared native PTY architecture for Android and iOS.
-5. `TOOLBOX.md`: built-in Android toolbox guide.
-6. `REPO-ARCHITECTURE.md`: current repository layering and directory layout.
-7. `ANDROID-MOTION-EVENT-LOGGING.md`: Android MotionEvent structured logging guide.
-8. `THIRD-PARTY-NOTICES.md`: third-party licenses and source notes.
+4. `ANDROID-ARCHITECTURE.md`: Android package boundaries and Java/C placement decisions.
+5. `NATIVE-ARCHITECTURE.md`: shared native PTY architecture for Android and iOS.
+6. `TOOLBOX.md`: built-in Android toolbox guide.
+7. `REPO-ARCHITECTURE.md`: current repository layering and directory layout.
+8. `ANDROID-MOTION-EVENT-LOGGING.md`: Android MotionEvent structured logging guide.
+9. `THIRD-PARTY-NOTICES.md`: third-party licenses and source notes.
 
 ## Drafts
 

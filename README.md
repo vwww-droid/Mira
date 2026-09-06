@@ -44,6 +44,12 @@ Mira turns real runtime cases into reusable workflows, tools, and detection note
 
 The APK's offline Python/Frida runtime requires arm64-v8a and supports Android 10 through 15. Android 16 Java hooks are not supported, and no confirmed official Frida fix is available. See the [compatibility notes](./docs/notes/android-frida-gadget-compatibility-2026-09-05.md).
 
+## Architecture
+
+- [Android application architecture and Java/C boundaries](./docs/ANDROID-ARCHITECTURE.md)
+- [Shared native PTY architecture](./docs/NATIVE-ARCHITECTURE.md)
+- [Repository layout](./docs/REPO-ARCHITECTURE.md)
+
 ## Contributing
 
 Mira welcomes issues and pull requests from mobile security researchers, reverse engineers, Frida users, MCP users, and device testers.

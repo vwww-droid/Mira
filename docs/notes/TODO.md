@@ -75,7 +75,7 @@ Mira 当前 v1.0.0 是研究原型和参考实现, 重点不是做完整企业�
 - [x] 建立 `runtime`, `terminal`, `relay`, `device`, `command`, `screen` 职责包. `TerminalRelayClient`/`DeviceControlClient` 分别管理终端会话与设备控制, `WebSocketConnection` 提供共享传输, `DeviceIdentity`/`DeviceMetrics` 提供设备信息. 内部实现去除重复 Mira 前缀, App 入口保留. Pixel 4 覆盖安装后 identity preferences 哈希不变, 遥测更新、PTY、远端 logcat、屏幕推流正常.
 - [x] `relay/RelayEndpoint` 收敛 control/screen 的重复 URL 构造; 宿主 golden 测试覆盖 scheme、IPv6、路径前缀、已有 endpoint、尾斜杠、转义路径、query/fragment 与非法 URI, 保留原兼容语义. 回归命令: `python3 -m unittest tests.test_relay_endpoint -v`.
 - [x] View 轮廓与触摸日志迁入 `screen/ViewOutlineCollector`、`MotionEventLogger`; Application 注入轮廓刷新回调以移除采集对具体 Service 的反向依赖. `RemoteInputHandler` 接管输入校验/路由/响应, Service 动态读取当前控制连接并保留 queued sender. 相关宿主测试 3 项通过; Pixel 4 实测 7 种输入的设备确认、文字/粘贴/按键/复制/全选/清空、轮廓刷新与 20 帧推流, 原输入已恢复.
-- [ ] 评估共享 C 的最小切口: Android `screen/AvcBitstream`, `screen/ScreenVideoPacket` 与 iOS `MiraRemoteServices.swift` 中的 Annex B/MHS1 处理. 先对齐两端输入契约、NAL 长度前缀规则与序号策略, 再决定迁移; Java MediaCodec/View/Settings/生命周期保留在 Android 层, PTY/进程底层继续复用现有 native 实现. 不将具体检测策略写死进 C 或 Java 基座.
+- [x] 完成 [Android Java/C 边界评估](../ANDROID-ARCHITECTURE.md#screen-codec-decision): PTY/进程底层继续复用现有 C; Android `AvcBitstream`/`ScreenVideoPacket` 与 iOS Annex B/MHS1 当前输入格式、参数集注入与序号范围不同, 本轮保留 Java/Swift 实现. 若公共解析增长或测得性能/拷贝问题, 先统一输入与错误契约、序号/时间戳策略并建立跨桥 golden 测试, 再提取共享 C. MediaCodec/View/Settings/生命周期保留平台层, 具体检测策略仍放脚本.
 
 ### 产品与自动化
 

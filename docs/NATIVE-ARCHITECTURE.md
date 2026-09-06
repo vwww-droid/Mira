@@ -4,7 +4,7 @@
 
 # Native Architecture
 
-This document describes the Mira native-layer architecture. The current goal is to let Android and iOS share the core PTY process-lifecycle capabilities, especially the low-level fork and exec path, so the project does not drift into two hard-to-maintain implementations.
+This document describes the Mira native-layer architecture. The current goal is to let Android and iOS share the core PTY process-lifecycle capabilities, especially the low-level fork and exec path, so the project does not drift into two hard-to-maintain implementations. See [Android Architecture](./ANDROID-ARCHITECTURE.md) for the Android application packages and the Java/C placement decision.
 
 ## Architecture principles
 
@@ -48,7 +48,7 @@ Owns Darwin-side PTY pair behavior for iOS and related Apple targets.
 
 ### `bridge/android/jni/mira_pty_jni.c`
 
-Owns the JNI bridge from Android code into the native PTY layer.
+Owns the JNI bridge from Android `terminal.NativePtyProcess` into the native PTY layer. Native registration uses `com/vwww/mira/terminal/NativePtyProcess`.
 
 ### `bridge/ios/mira_pty_ios_shim.*`
 
@@ -57,6 +57,10 @@ Owns the thin C shim consumed by Swift on iOS.
 ## CMake targets
 
 The build should keep shared PTY logic reusable while exposing only the bridge surface each platform needs.
+
+## Native placement boundary
+
+Keep POSIX PTY lifecycle and platform PTY-pair differences in C. Keep Android framework lifecycle, views, `MediaCodec`, `Settings`, Relay JSON, and WebSocket coordination in Java, and keep the corresponding Apple framework work in Swift. The Android and iOS screen encoders currently share wire semantics but receive different encoded-buffer forms and use different parameter-set and timestamp policies; moving their small Annex B and `MHS1` helpers to C would introduce buffer-ownership and bridge contracts, with no measured runtime benefit today. The criteria for reconsidering that split are documented in [Android Architecture](./ANDROID-ARCHITECTURE.md#screen-codec-decision).
 
 ## Current Android validation result
 
